@@ -10,17 +10,32 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.use('/api/*', cors())
 app.use('/static/*', serveStatic({ root: './public' }))
 
+const JSON_URL = 'https://script.google.com/macros/s/AKfycbyGPqAcIBVFFzHuu5ZxtQWHGOmM8ragfZspoiF72NyvdLXc1qW0TWBeovokFJlVEDEI/exec'
 
 // ============================================================
 // INIT DATABASE
 // ============================================================
 async function initDB(db: D1Database) {
-  await db.prepare(`CREATE TABLE IF NOT EXISTS mesin (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nama TEXT NOT NULL UNIQUE,
-    urutan INTEGER DEFAULT 0,
-    aktif INTEGER DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  await db.prepare(`CREATE TABLE IF NOT EXISTS mesin_cache (
+    id_mesin    INTEGER PRIMARY KEY,
+    up3         TEXT NOT NULL,
+    kode_unit   INTEGER NOT NULL,
+    nama_unit   TEXT NOT NULL,
+    mesin       TEXT NOT NULL,
+    type        TEXT,
+    s_n         TEXT,
+    nama_mesin  TEXT,
+    cached_at   TEXT NOT NULL
+  )`).run()
+
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_mesin_cache_kode_unit ON mesin_cache(kode_unit)`).run()
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_mesin_cache_up3 ON mesin_cache(up3)`).run()
+
+  await db.prepare(`CREATE TABLE IF NOT EXISTS sync_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    sync_type    TEXT NOT NULL UNIQUE,
+    synced_at    TEXT NOT NULL,
+    record_count INTEGER DEFAULT 0
   )`).run()
 
   await db.prepare(`CREATE TABLE IF NOT EXISTS data_monitoring (
@@ -34,8 +49,7 @@ async function initDB(db: D1Database) {
     jam_kerja_mesin REAL, status_mesin TEXT DEFAULT 'Operasi',
     kwh_produksi REAL, pemakaian_bbm REAL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (mesin_id) REFERENCES mesin(id)
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`).run()
 
   await db.prepare(
@@ -60,44 +74,135 @@ async function initDB(db: D1Database) {
   await db.prepare(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_lap_ops ON lap_operasional(kode_unit, tanggal)`
   ).run()
-
-  const count = await db.prepare('SELECT COUNT(*) as c FROM mesin').first<{ c: number }>()
-  if (count && count.c === 0) {
-    await db.batch([
-      db.prepare(`INSERT OR IGNORE INTO mesin (nama, urutan) VALUES ('Mesin 1', 1)`),
-      db.prepare(`INSERT OR IGNORE INTO mesin (nama, urutan) VALUES ('Mesin 2', 2)`),
-      db.prepare(`INSERT OR IGNORE INTO mesin (nama, urutan) VALUES ('Mesin 3', 3)`),
-    ])
-  }
 }
 
 // ============================================================
-// API: MESIN
+// SYNC MESIN FROM JSON (cache 1x per hari)
 // ============================================================
-app.get('/api/mesin', async (c) => {
+async function syncMesinIfNeeded(db: D1Database): Promise<{ synced: boolean, count: number }> {
+  const today = new Date().toISOString().split('T')[0]
+
+  // Cek apakah sudah sync hari ini
+  const lastSync = await db.prepare(
+    `SELECT synced_at, record_count FROM sync_log WHERE sync_type = 'mesin_cache'`
+  ).first<{ synced_at: string, record_count: number }>()
+
+  if (lastSync && lastSync.synced_at >= today) {
+    return { synced: false, count: lastSync.record_count }
+  }
+
+  // Fetch dari Google Script
+  const res = await fetch(JSON_URL)
+  if (!res.ok) throw new Error('Gagal fetch data mesin dari sumber')
+
+  const data: any[] = await res.json()
+  if (!Array.isArray(data) || data.length === 0) throw new Error('Data mesin kosong')
+
+  // Filter data valid (skip yang nama_mesinnya #N/A atau null)
+  const valid = data.filter((r: any) =>
+    r.id_mesin && r.kode_unit && r.nama_unit && r.mesin &&
+    r.mesin !== '#N/A' && r.nama_mesin !== '#N/A'
+  )
+
+  // Hapus cache lama, insert batch baru
+  await db.prepare(`DELETE FROM mesin_cache`).run()
+
+  const BATCH = 50
+  for (let i = 0; i < valid.length; i += BATCH) {
+    const chunk = valid.slice(i, i + BATCH)
+    const stmts = chunk.map((r: any) =>
+      db.prepare(`
+        INSERT OR REPLACE INTO mesin_cache
+          (id_mesin, up3, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, cached_at)
+        VALUES (?,?,?,?,?,?,?,?,?)
+      `).bind(
+        r.id_mesin,
+        r.up3 || '',
+        r.kode_unit,
+        r.nama_unit,
+        r.mesin,
+        r.type || null,
+        String(r.s_n || ''),
+        r.nama_mesin || r.mesin,
+        today
+      )
+    )
+    await db.batch(stmts)
+  }
+
+  // Update sync log
+  await db.prepare(`
+    INSERT INTO sync_log (sync_type, synced_at, record_count)
+    VALUES ('mesin_cache', ?, ?)
+    ON CONFLICT(sync_type) DO UPDATE SET synced_at=excluded.synced_at, record_count=excluded.record_count
+  `).bind(today, valid.length).run()
+
+  return { synced: true, count: valid.length }
+}
+
+// ============================================================
+// API: SYNC MESIN (manual trigger / auto)
+// ============================================================
+app.get('/api/sync-mesin', async (c) => {
   try {
     await initDB(c.env.DB)
-    const result = await c.env.DB.prepare('SELECT * FROM mesin WHERE aktif=1 ORDER BY urutan, nama').all()
+    const result = await syncMesinIfNeeded(c.env.DB)
+    return c.json({ success: true, ...result })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+app.post('/api/sync-mesin/force', async (c) => {
+  try {
+    await initDB(c.env.DB)
+    // Reset sync log agar paksa sync ulang
+    await c.env.DB.prepare(`DELETE FROM sync_log WHERE sync_type='mesin_cache'`).run()
+    const result = await syncMesinIfNeeded(c.env.DB)
+    return c.json({ success: true, ...result, forced: true })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ============================================================
+// API: GET UP3 LIST
+// ============================================================
+app.get('/api/up3', async (c) => {
+  try {
+    await initDB(c.env.DB)
+    await syncMesinIfNeeded(c.env.DB)
+    const result = await c.env.DB.prepare(
+      `SELECT DISTINCT up3 FROM mesin_cache ORDER BY up3`
+    ).all<{ up3: string }>()
+    return c.json({ success: true, data: result.results.map(r => r.up3) })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ============================================================
+// API: GET UNIT BY UP3
+// ============================================================
+app.get('/api/unit', async (c) => {
+  try {
+    await initDB(c.env.DB)
+    const up3 = c.req.query('up3') || ''
+    let query = `SELECT DISTINCT kode_unit, nama_unit FROM mesin_cache`
+    const params: any[] = []
+    if (up3) { query += ` WHERE up3 = ?`; params.push(up3) }
+    query += ` ORDER BY nama_unit`
+    const result = await c.env.DB.prepare(query).bind(...params).all()
     return c.json({ success: true, data: result.results })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
-app.post('/api/mesin', async (c) => {
+// ============================================================
+// API: GET MESIN BY KODE_UNIT
+// ============================================================
+app.get('/api/mesin-unit', async (c) => {
   try {
-    const { nama } = await c.req.json()
-    if (!nama) return c.json({ success: false, error: 'Nama mesin wajib diisi' }, 400)
-    const maxUrutan = await c.env.DB.prepare('SELECT MAX(urutan) as m FROM mesin').first<{ m: number }>()
-    const urutan = (maxUrutan?.m || 0) + 1
-    const result = await c.env.DB.prepare('INSERT INTO mesin (nama, urutan) VALUES (?, ?)').bind(nama, urutan).run()
-    return c.json({ success: true, id: result.meta.last_row_id })
-  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
-})
-
-app.delete('/api/mesin/:id', async (c) => {
-  try {
-    const id = c.req.param('id')
-    await c.env.DB.prepare('UPDATE mesin SET aktif=0 WHERE id=?').bind(id).run()
-    return c.json({ success: true })
+    await initDB(c.env.DB)
+    const kode_unit = c.req.query('kode_unit') || ''
+    if (!kode_unit) return c.json({ success: false, error: 'kode_unit wajib' }, 400)
+    const result = await c.env.DB.prepare(
+      `SELECT id_mesin, mesin, type, s_n, nama_mesin FROM mesin_cache WHERE kode_unit = ? ORDER BY id_mesin`
+    ).bind(kode_unit).all()
+    return c.json({ success: true, data: result.results })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
@@ -109,10 +214,16 @@ app.get('/api/monitoring', async (c) => {
     await initDB(c.env.DB)
     const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
     const jam = c.req.query('jam') || null
-    let query = `SELECT dm.*, m.nama as nama_mesin FROM data_monitoring dm JOIN mesin m ON dm.mesin_id = m.id WHERE dm.tanggal = ?`
+    const kode_unit = c.req.query('kode_unit') || null
+
+    let query = `SELECT dm.* FROM data_monitoring dm WHERE dm.tanggal = ?`
     const params: any[] = [tanggal]
     if (jam) { query += ' AND dm.jam = ?'; params.push(jam) }
-    query += ' ORDER BY dm.jam, m.urutan'
+    if (kode_unit) {
+      query += ` AND dm.mesin_id IN (SELECT id_mesin FROM mesin_cache WHERE kode_unit = ?)`
+      params.push(kode_unit)
+    }
+    query += ' ORDER BY dm.jam, dm.mesin_id'
     const result = await c.env.DB.prepare(query).bind(...params).all()
     return c.json({ success: true, data: result.results })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
@@ -120,7 +231,15 @@ app.get('/api/monitoring', async (c) => {
 
 app.get('/api/monitoring/tanggal', async (c) => {
   try {
-    const result = await c.env.DB.prepare('SELECT DISTINCT tanggal FROM data_monitoring ORDER BY tanggal DESC LIMIT 90').all()
+    const kode_unit = c.req.query('kode_unit') || null
+    let query = `SELECT DISTINCT tanggal FROM data_monitoring`
+    const params: any[] = []
+    if (kode_unit) {
+      query += ` WHERE mesin_id IN (SELECT id_mesin FROM mesin_cache WHERE kode_unit = ?)`
+      params.push(kode_unit)
+    }
+    query += ` ORDER BY tanggal DESC LIMIT 90`
+    const result = await c.env.DB.prepare(query).bind(...params).all()
     return c.json({ success: true, data: result.results })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
@@ -128,7 +247,9 @@ app.get('/api/monitoring/tanggal', async (c) => {
 app.get('/api/monitoring/jam', async (c) => {
   try {
     const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
-    const result = await c.env.DB.prepare('SELECT DISTINCT jam FROM data_monitoring WHERE tanggal=? ORDER BY jam').bind(tanggal).all()
+    const result = await c.env.DB.prepare(
+      'SELECT DISTINCT jam FROM data_monitoring WHERE tanggal=? ORDER BY jam'
+    ).bind(tanggal).all()
     return c.json({ success: true, data: result.results })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
@@ -214,10 +335,9 @@ app.post('/api/lap-operasional', async (c) => {
 })
 
 // ============================================================
-// SERVE MAIN PAGE (HTML inline, JS/CSS dari /static/)
+// SERVE MAIN PAGE
 // ============================================================
 app.get('/', (c) => {
-  // Generate jam options
   const jamOptions = Array.from({length:24}, (_,i) => {
     const h = String(i).padStart(2,'0') + ':00'
     return `<option value="${h}">${h}</option>`
@@ -251,10 +371,7 @@ app.get('/', (c) => {
     <p class="text-xs text-blue-300 mt-1" id="last-update">—</p>
   </div>
   <div class="flex gap-2 items-center flex-wrap flex-shrink-0" id="header-actions-monitoring">
-    <button class="btn btn-outline" style="color:#fff;border-color:#93c5fd;" onclick="showAddMesinModal()">
-      <i class="fas fa-plus"></i> Tambah Mesin
-    </button>
-    <button class="btn btn-success" onclick="saveAllData()">
+    <button class="btn btn-success" id="btn-simpan-semua" onclick="saveAllData()" disabled style="opacity:0.5;cursor:not-allowed;">
       <i class="fas fa-save"></i> Simpan Semua
     </button>
   </div>
@@ -271,98 +388,111 @@ app.get('/', (c) => {
 <!-- ===== TOOLBAR ===== -->
 <div class="px-5 py-2.5 bg-white shadow-sm border-b border-slate-200">
   <!-- Monitoring toolbar -->
-  <div id="toolbar-monitoring" class="toolbar">
-    <div class="flex items-center gap-2">
-      <label class="text-sm font-semibold text-slate-600"><i class="fas fa-calendar mr-1"></i>Tanggal:</label>
-      <input type="date" id="sel-tanggal" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+  <div id="toolbar-monitoring">
+    <!-- Baris 1: Filter UP3 → Unit -->
+    <div class="toolbar mb-2">
+      <div class="flex items-center gap-2">
+        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-network-wired mr-1 text-blue-500"></i>UP3:</label>
+        <select id="mon-sel-up3" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[180px]" onchange="onMonUp3Change(this.value)">
+          <option value="">-- Pilih UP3 --</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-building mr-1 text-blue-500"></i>Unit:</label>
+        <select id="mon-sel-unit" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[230px]" onchange="onMonUnitChange(this.value)" disabled>
+          <option value="">-- Pilih Unit --</option>
+        </select>
+      </div>
+      <div id="loading-indicator-mesin" class="hidden"><span class="spinner"></span></div>
+      <div class="ml-auto text-xs text-slate-400" id="info-mesin-count"></div>
     </div>
-    <div class="flex items-center gap-2">
-      <label class="text-sm font-semibold text-slate-600"><i class="fas fa-clock mr-1"></i>Jam:</label>
-      <select id="sel-jam" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-        ${jamOptions}
-      </select>
+    <!-- Baris 2: Tanggal + Jam + Aksi -->
+    <div class="toolbar">
+      <div class="flex items-center gap-2">
+        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-calendar mr-1"></i>Tanggal:</label>
+        <input type="date" id="sel-tanggal" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-clock mr-1"></i>Jam:</label>
+        <select id="sel-jam" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          ${jamOptions}
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="loadData()" id="btn-tampilkan" disabled style="opacity:0.5;cursor:not-allowed;"><i class="fas fa-search"></i> Tampilkan</button>
+      <button class="btn btn-outline" onclick="showRiwayat()" id="btn-riwayat" disabled style="opacity:0.5;cursor:not-allowed;"><i class="fas fa-history"></i> Riwayat</button>
+      <div id="loading-indicator" class="hidden"><span class="spinner"></span></div>
+      <div class="ml-auto text-xs text-slate-400" id="info-record"></div>
     </div>
-    <button class="btn btn-primary" onclick="loadData()"><i class="fas fa-search"></i> Tampilkan</button>
-    <button class="btn btn-outline" onclick="showRiwayat()"><i class="fas fa-history"></i> Riwayat</button>
-    <div id="loading-indicator" class="hidden"><span class="spinner"></span></div>
-    <div class="ml-auto text-xs text-slate-400" id="info-record"></div>
   </div>
   <!-- Lap operasional toolbar -->
   <div id="toolbar-laporan" class="hidden">
-    <!-- Baris 1: Tanggal + Riwayat -->
+    <!-- Baris 1: Filter UP3 → Unit -->
     <div class="toolbar mb-2">
       <div class="flex items-center gap-2">
-        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-calendar mr-1"></i>Tanggal:</label>
-        <input type="date" id="lap-tanggal" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
-      </div>
-      <button class="btn btn-outline" onclick="showRiwayatLap()"><i class="fas fa-history"></i> Riwayat</button>
-      <div id="loading-indicator-lap" class="hidden"><span class="spinner"></span></div>
-      <div class="ml-auto text-xs text-slate-400" id="info-lap-record"></div>
-    </div>
-    <!-- Baris 2: Pilih Area → Pilih ULD -->
-    <div class="toolbar">
-      <div class="flex items-center gap-2">
-        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-map-marker-alt mr-1 text-blue-500"></i>Area:</label>
-        <select id="sel-area" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[200px]" onchange="onAreaChange(this.value)">
-          <option value="">-- Pilih Area --</option>
+        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-network-wired mr-1 text-blue-500"></i>UP3:</label>
+        <select id="lap-sel-up3" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[180px]" onchange="onLapUp3Change(this.value)">
+          <option value="">-- Pilih UP3 --</option>
         </select>
       </div>
       <div class="flex items-center gap-2">
         <label class="text-sm font-semibold text-slate-600"><i class="fas fa-building mr-1 text-blue-500"></i>Unit (ULD):</label>
-        <select id="sel-unit" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[220px]" onchange="onUnitChange(this.value)" disabled>
+        <select id="lap-sel-unit" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[230px]" onchange="onLapUnitChange(this.value)" disabled>
           <option value="">-- Pilih Unit --</option>
         </select>
       </div>
-      <button class="btn btn-primary" onclick="loadLapData()"><i class="fas fa-search"></i> Tampilkan</button>
+      <div id="loading-indicator-lap-unit" class="hidden"><span class="spinner"></span></div>
+    </div>
+    <!-- Baris 2: Tanggal + Aksi -->
+    <div class="toolbar">
+      <div class="flex items-center gap-2">
+        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-calendar mr-1"></i>Tanggal:</label>
+        <input type="date" id="lap-tanggal" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+      </div>
+      <button class="btn btn-primary" onclick="loadLapData()" id="btn-tampilkan-lap" disabled style="opacity:0.5;cursor:not-allowed;"><i class="fas fa-search"></i> Tampilkan</button>
+      <button class="btn btn-outline" onclick="showRiwayatLap()"><i class="fas fa-history"></i> Riwayat</button>
+      <div id="loading-indicator-lap" class="hidden"><span class="spinner"></span></div>
+      <div class="ml-auto text-xs text-slate-400" id="info-lap-record"></div>
     </div>
   </div>
 </div>
 
 <!-- ===== TAB: MONITORING MESIN ===== -->
 <div id="tab-monitoring" class="tab-content active px-4 py-3">
-  <div class="table-wrap">
-    <table id="main-table">
-      <thead id="table-head"></thead>
-      <tbody id="table-body"></tbody>
-    </table>
+  <!-- State: belum pilih unit -->
+  <div id="mon-state-empty" class="flex flex-col items-center justify-center py-20 text-slate-400">
+    <i class="fas fa-network-wired text-5xl mb-4 text-blue-200"></i>
+    <p class="text-lg font-semibold text-slate-500">Pilih UP3 dan Unit</p>
+    <p class="text-sm mt-1">Silakan pilih <strong>UP3</strong> kemudian <strong>Unit</strong> di toolbar atas</p>
+  </div>
+  <!-- Tabel monitoring -->
+  <div id="mon-table-wrap" class="hidden">
+    <div class="table-wrap">
+      <table id="main-table">
+        <thead id="table-head"></thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
 <!-- ===== TAB: LAP. OPERASIONAL ===== -->
 <div id="tab-laporan" class="tab-content px-4 py-3">
-  <!-- State: belum pilih area -->
   <div id="lap-state-empty" class="flex flex-col items-center justify-center py-16 text-slate-400">
-    <i class="fas fa-map-marker-alt text-5xl mb-4 text-blue-200"></i>
-    <p class="text-lg font-semibold text-slate-500">Pilih Area dan Unit</p>
-    <p class="text-sm mt-1">Silakan pilih <strong>Area</strong> kemudian <strong>Unit (ULD)</strong> di toolbar atas</p>
+    <i class="fas fa-network-wired text-5xl mb-4 text-blue-200"></i>
+    <p class="text-lg font-semibold text-slate-500">Pilih UP3 dan Unit</p>
+    <p class="text-sm mt-1">Silakan pilih <strong>UP3</strong> kemudian <strong>Unit (ULD)</strong> di toolbar atas</p>
   </div>
-  <!-- State: sudah pilih area, belum pilih unit -->
   <div id="lap-state-pick-unit" class="hidden flex flex-col items-center justify-center py-16 text-slate-400">
     <i class="fas fa-building text-5xl mb-4 text-blue-200"></i>
     <p class="text-lg font-semibold text-slate-500">Pilih Unit (ULD)</p>
-    <p class="text-sm mt-1">Area sudah dipilih, sekarang pilih <strong>Unit (ULD)</strong> di dropdown atas</p>
+    <p class="text-sm mt-1">UP3 sudah dipilih, sekarang pilih <strong>Unit (ULD)</strong> di dropdown atas</p>
   </div>
-  <!-- Form single unit -->
   <div id="lap-form-container" class="hidden max-w-2xl mx-auto"></div>
-  <!-- Review & Kirim -->
   <div id="lap-review-container" class="hidden max-w-2xl mx-auto"></div>
 </div>
 
 <!-- TOAST -->
 <div id="toast"></div>
-
-<!-- MODAL: Tambah Mesin -->
-<div id="modal-mesin" class="modal-overlay hidden">
-  <div class="modal-box">
-    <div class="modal-title"><i class="fas fa-cog"></i>Tambah Mesin Baru</div>
-    <input type="text" id="input-nama-mesin" placeholder="Contoh: Mesin 4"
-      class="w-full border border-slate-300 rounded px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-400"/>
-    <div class="flex gap-2 justify-end">
-      <button class="btn btn-outline" onclick="closeModal('modal-mesin')">Batal</button>
-      <button class="btn btn-primary" onclick="addMesin()"><i class="fas fa-plus"></i> Tambah</button>
-    </div>
-  </div>
-</div>
 
 <!-- MODAL: Riwayat Monitoring -->
 <div id="modal-riwayat" class="modal-overlay hidden">
@@ -391,11 +521,9 @@ app.get('/', (c) => {
   <div class="modal-box" style="width:480px;max-width:96vw">
     <div class="modal-title"><i class="fas fa-paper-plane" style="color:#16a34a"></i>Kirim Laporan</div>
     <p class="text-xs text-slate-400 mb-3">Pratinjau teks laporan yang akan dikirim:</p>
-    <!-- Preview teks laporan -->
     <div class="kirim-preview-box">
       <pre id="kirim-preview-text" class="kirim-preview-text"></pre>
     </div>
-    <!-- Tombol aksi kirim -->
     <div class="kirim-actions">
       <button class="btn btn-outline-dark" onclick="copyKirimText()">
         <i class="fas fa-copy"></i> Salin Teks
