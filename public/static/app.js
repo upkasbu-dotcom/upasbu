@@ -195,49 +195,52 @@ function renderTable() {
   var thead = document.getElementById('table-head')
   var tbody = document.getElementById('table-body')
 
-  // Header: baris = "Parameter", lalu nama mesin + ID + S/N
-  var headHTML = '<tr><th class="th-param">Parameter</th>'
-  for (var i = 0; i < mesinList.length; i++) {
-    var m = mesinList[i]
-    var sn = m.s_n ? String(m.s_n) : '-'
+  // ── HEADER: kolom pertama = "Mesin", lalu satu kolom per parameter ──
+  var headHTML = '<tr>'
+  headHTML += '<th class="th-param" style="min-width:200px;">Mesin</th>'
+  for (var pi = 0; pi < PARAMS.length; pi++) {
+    var p = PARAMS[pi]
     headHTML += '<th class="th-mesin">'
-    headHTML += '<div class="th-mesin-name">' + m.mesin + '</div>'
-    headHTML += '<div class="th-mesin-meta">'
-    headHTML += '<span class="th-id">ID: ' + m.id_mesin + '</span>'
-    headHTML += '<span class="th-sn">S/N: ' + sn + '</span>'
-    headHTML += '</div>'
+    headHTML += '<div class="th-mesin-name" style="font-size:0.72rem;">' + p.label + '</div>'
+    if (p.unit) headHTML += '<div style="font-size:0.65rem;color:#93c5fd;font-weight:400;">(' + p.unit + ')</div>'
     headHTML += '</th>'
   }
   headHTML += '</tr>'
   thead.innerHTML = headHTML
 
+  // ── BODY: satu baris per mesin ──
   var bodyHTML = ''
-  for (var pi = 0; pi < PARAMS.length; pi++) {
-    var p = PARAMS[pi]
-    if (pi === 13) {
-      bodyHTML += '<tr class="row-section"><td colspan="' + (mesinList.length+1) + '">— Produksi —</td></tr>'
-    }
-    bodyHTML += '<tr data-param="' + p.key + '">'
-    bodyHTML += '<td><span class="param-label">' + p.label + '</span>'
-    if (p.unit) bodyHTML += '<span class="param-unit">(' + p.unit + ')</span>'
+  for (var mi = 0; mi < mesinList.length; mi++) {
+    var m = mesinList[mi]
+    var sn = m.s_n ? String(m.s_n) : '-'
+
+    bodyHTML += '<tr data-mesin="' + m.id_mesin + '">'
+    // Kolom pertama: info mesin (sticky)
+    bodyHTML += '<td style="text-align:left;">'
+    bodyHTML += '<div class="th-mesin-name" style="font-size:0.78rem;color:#1e3a5f;font-weight:700;">' + m.mesin + '</div>'
+    bodyHTML += '<div class="th-mesin-meta">'
+    bodyHTML += '<span class="th-id">ID: ' + m.id_mesin + '</span>'
+    bodyHTML += '<span class="th-sn">S/N: ' + sn + '</span>'
+    bodyHTML += '</div>'
     bodyHTML += '</td>'
 
-    for (var mi = 0; mi < mesinList.length; mi++) {
-      var m2  = mesinList[mi]
-      var val = (currentData[m2.id_mesin] && currentData[m2.id_mesin][p.key] !== undefined && currentData[m2.id_mesin][p.key] !== null)
-                ? currentData[m2.id_mesin][p.key] : ''
-      if (p.type === 'select') {
-        bodyHTML += '<td><select class="cell-input" onchange="setCellValue(' + m2.id_mesin + ',\'' + p.key + '\',this.value)">'
+    // Kolom-kolom parameter
+    for (var pi2 = 0; pi2 < PARAMS.length; pi2++) {
+      var p2  = PARAMS[pi2]
+      var val = (currentData[m.id_mesin] && currentData[m.id_mesin][p2.key] !== undefined && currentData[m.id_mesin][p2.key] !== null)
+                ? currentData[m.id_mesin][p2.key] : ''
+      if (p2.type === 'select') {
+        bodyHTML += '<td><select class="cell-input" onchange="setCellValue(' + m.id_mesin + ',\'' + p2.key + '\',this.value)">'
         for (var si = 0; si < STATUS_OPTIONS.length; si++) {
-          var opt = STATUS_OPTIONS[si]
-          var sel = (val === opt || (!val && opt === 'Operasi')) ? ' selected' : ''
-          bodyHTML += '<option value="' + opt + '"' + sel + '>' + opt + '</option>'
+          var sopt = STATUS_OPTIONS[si]
+          var sel  = (val === sopt || (!val && sopt === 'Operasi')) ? ' selected' : ''
+          bodyHTML += '<option value="' + sopt + '"' + sel + '>' + sopt + '</option>'
         }
         bodyHTML += '</select></td>'
       } else {
         bodyHTML += '<td><input type="number" step="any" class="cell-input" placeholder="—"'
         bodyHTML += ' value="' + val + '"'
-        bodyHTML += ' oninput="setCellValue(' + m2.id_mesin + ',\'' + p.key + '\',this.value)"/></td>'
+        bodyHTML += ' oninput="setCellValue(' + m.id_mesin + ',\'' + p2.key + '\',this.value)"/></td>'
       }
     }
     bodyHTML += '</tr>'
