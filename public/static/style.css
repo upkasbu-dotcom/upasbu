@@ -97,6 +97,14 @@ select.cell-input { width:118px; cursor:pointer; }
 .input-unit-label { position:absolute; right:10px; font-size:0.72rem; color:#94a3b8; font-weight:600; pointer-events:none; }
 .lap-single-footer { padding:14px 20px; border-top:1px solid #f1f5f9; display:flex; align-items:center; justify-content:space-between; background:#fafafa; }
 
+/* Wajib & opsional label */
+.wajib { color:#dc2626; font-weight:700; margin-left:2px; }
+.opsional { color:#94a3b8; font-weight:400; font-size:0.68rem; margin-left:4px; }
+
+/* Input error highlight */
+.form-input.input-error { border-color:#dc2626 !important; background:#fff5f5; box-shadow:0 0 0 3px #fecaca; animation: shakeX 0.3s ease; }
+@keyframes shakeX { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+
 /* ===== LAP EMPTY STATE ===== */
 #lap-state-empty, #lap-state-pick-unit { display:flex; }
 #lap-state-empty.hidden, #lap-state-pick-unit.hidden { display:none; }

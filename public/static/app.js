@@ -245,61 +245,61 @@ function renderLapForm() {
   // Form body
   html += '<div class="lap-single-body">'
 
-  // Nama Operator (full)
+  // Nama Operator (full) — WAJIB
   html += '<div class="form-group full">'
-  html += '<label class="form-label"><i class="fas fa-user-tie"></i> Nama Operator</label>'
-  html += '<input type="text" class="form-input" placeholder="Masukkan nama operator..."'
+  html += '<label class="form-label"><i class="fas fa-user-tie"></i> Nama Operator <span class="wajib">*</span></label>'
+  html += '<input id="field-nama-operator" type="text" class="form-input" placeholder="Masukkan nama operator..."'
   html += ' value="' + (d.nama_operator || '') + '"'
   html += ' oninput="setLapField(\'nama_operator\', this.value)"/>'
   html += '</div>'
 
-  // Row: kWh + Saldo Awal
+  // Row: Saldo Awal + Saldo Akhir — WAJIB
   html += '<div class="form-row">'
   html += '<div class="form-group">'
-  html += '<label class="form-label"><i class="fas fa-bolt" style="color:#f59e0b"></i> kWh Produksi</label>'
+  html += '<label class="form-label"><i class="fas fa-gas-pump" style="color:#d97706"></i> Saldo Awal <span class="wajib">*</span></label>'
   html += '<div class="input-unit-wrap">'
-  html += '<input type="number" step="any" class="form-input" placeholder="0"'
+  html += '<input id="field-saldo-awal" type="number" step="any" class="form-input" placeholder="0"'
+  html += ' value="' + (d.saldo_awal !== undefined && d.saldo_awal !== null ? d.saldo_awal : '') + '"'
+  html += ' oninput="setLapField(\'saldo_awal\', this.value)"/>'
+  html += '<span class="input-unit-label">ltr</span>'
+  html += '</div></div>'
+
+  html += '<div class="form-group">'
+  html += '<label class="form-label"><i class="fas fa-gas-pump" style="color:#16a34a"></i> Saldo Akhir <span class="wajib">*</span></label>'
+  html += '<div class="input-unit-wrap">'
+  html += '<input id="field-saldo-akhir" type="number" step="any" class="form-input" placeholder="0"'
+  html += ' value="' + (d.saldo_akhir !== undefined && d.saldo_akhir !== null ? d.saldo_akhir : '') + '"'
+  html += ' oninput="setLapField(\'saldo_akhir\', this.value)"/>'
+  html += '<span class="input-unit-label">ltr</span>'
+  html += '</div></div>'
+  html += '</div>'
+
+  // Row: kWh Produksi + Penerimaan BBM
+  html += '<div class="form-row">'
+  html += '<div class="form-group">'
+  html += '<label class="form-label"><i class="fas fa-bolt" style="color:#f59e0b"></i> kWh Produksi <span class="wajib">*</span></label>'
+  html += '<div class="input-unit-wrap">'
+  html += '<input id="field-kwh-produksi" type="number" step="any" class="form-input" placeholder="0"'
   html += ' value="' + (d.kwh_produksi !== undefined && d.kwh_produksi !== null ? d.kwh_produksi : '') + '"'
   html += ' oninput="setLapField(\'kwh_produksi\', this.value)"/>'
   html += '<span class="input-unit-label">kWh</span>'
   html += '</div></div>'
 
   html += '<div class="form-group">'
-  html += '<label class="form-label"><i class="fas fa-gas-pump" style="color:#d97706"></i> Saldo Awal</label>'
+  html += '<label class="form-label"><i class="fas fa-truck-ramp-box" style="color:#2563eb"></i> Penerimaan BBM <span class="opsional">(opsional)</span></label>'
   html += '<div class="input-unit-wrap">'
-  html += '<input type="number" step="any" class="form-input" placeholder="0"'
-  html += ' value="' + (d.saldo_awal !== undefined && d.saldo_awal !== null ? d.saldo_awal : '') + '"'
-  html += ' oninput="setLapField(\'saldo_awal\', this.value)"/>'
-  html += '<span class="input-unit-label">ltr</span>'
-  html += '</div></div>'
-  html += '</div>'
-
-  // Row: Saldo Akhir + Penerimaan BBM
-  html += '<div class="form-row">'
-  html += '<div class="form-group">'
-  html += '<label class="form-label"><i class="fas fa-gas-pump" style="color:#16a34a"></i> Saldo Akhir</label>'
-  html += '<div class="input-unit-wrap">'
-  html += '<input type="number" step="any" class="form-input" placeholder="0"'
-  html += ' value="' + (d.saldo_akhir !== undefined && d.saldo_akhir !== null ? d.saldo_akhir : '') + '"'
-  html += ' oninput="setLapField(\'saldo_akhir\', this.value)"/>'
-  html += '<span class="input-unit-label">ltr</span>'
-  html += '</div></div>'
-
-  html += '<div class="form-group">'
-  html += '<label class="form-label"><i class="fas fa-truck-ramp-box" style="color:#2563eb"></i> Penerimaan BBM</label>'
-  html += '<div class="input-unit-wrap">'
-  html += '<input type="number" step="any" class="form-input" placeholder="0"'
+  html += '<input id="field-penerimaan-bbm" type="number" step="any" class="form-input" placeholder="0"'
   html += ' value="' + (d.penerimaan_bbm !== undefined && d.penerimaan_bbm !== null ? d.penerimaan_bbm : '') + '"'
   html += ' oninput="setLapField(\'penerimaan_bbm\', this.value)"/>'
   html += '<span class="input-unit-label">ltr</span>'
   html += '</div></div>'
   html += '</div>'
 
-  // Estimasi BBM Maks (full)
+  // Estimasi BBM Maks (full) — WAJIB
   html += '<div class="form-group full">'
-  html += '<label class="form-label"><i class="fas fa-calculator" style="color:#dc2626"></i> Estimasi Pemakaian BBM Maksimal</label>'
+  html += '<label class="form-label"><i class="fas fa-calculator" style="color:#dc2626"></i> Estimasi Pemakaian BBM Maksimal <span class="wajib">*</span></label>'
   html += '<div class="input-unit-wrap">'
-  html += '<input type="number" step="any" class="form-input" placeholder="0"'
+  html += '<input id="field-estimasi-bbm" type="number" step="any" class="form-input" placeholder="0"'
   html += ' value="' + (d.estimasi_bbm_max !== undefined && d.estimasi_bbm_max !== null ? d.estimasi_bbm_max : '') + '"'
   html += ' oninput="setLapField(\'estimasi_bbm_max\', this.value)"/>'
   html += '<span class="input-unit-label">ltr</span>'
@@ -374,12 +374,59 @@ async function loadLapData() {
 }
 
 // =============================================
+// VALIDASI FORM (wajib isi kecuali penerimaan_bbm)
+// =============================================
+function validateLapForm() {
+  var d = currentLapForm
+  var errors = []
+
+  if (!d.nama_operator || d.nama_operator.trim() === '') {
+    errors.push('Nama Operator')
+    highlightError('field-nama-operator')
+  }
+  if (d.saldo_awal === null || d.saldo_awal === undefined || d.saldo_awal === '') {
+    errors.push('Saldo Awal')
+    highlightError('field-saldo-awal')
+  }
+  if (d.saldo_akhir === null || d.saldo_akhir === undefined || d.saldo_akhir === '') {
+    errors.push('Saldo Akhir')
+    highlightError('field-saldo-akhir')
+  }
+  if (d.kwh_produksi === null || d.kwh_produksi === undefined || d.kwh_produksi === '') {
+    errors.push('kWh Produksi')
+    highlightError('field-kwh-produksi')
+  }
+  if (d.estimasi_bbm_max === null || d.estimasi_bbm_max === undefined || d.estimasi_bbm_max === '') {
+    errors.push('Estimasi Pemakaian BBM Maksimal')
+    highlightError('field-estimasi-bbm')
+  }
+
+  return errors
+}
+
+function highlightError(fieldId) {
+  var el = document.getElementById(fieldId)
+  if (!el) return
+  el.classList.add('input-error')
+  el.addEventListener('input', function() {
+    el.classList.remove('input-error')
+  }, { once: true })
+}
+
+// =============================================
 // SAVE CURRENT UNIT → lalu tampilkan REVIEW
 // =============================================
 async function saveLapCurrent() {
   if (!selectedKode) { showToast('Pilih unit terlebih dahulu','info'); return }
   var tanggal = document.getElementById('lap-tanggal').value
   if (!tanggal) { showToast('Pilih tanggal terlebih dahulu','info'); return }
+
+  // Validasi field wajib
+  var errors = validateLapForm()
+  if (errors.length > 0) {
+    showToast('Wajib diisi: ' + errors.join(', '), 'error')
+    return
+  }
 
   var unit = null
   for (var i = 0; i < UNIT_DATA.length; i++) {
