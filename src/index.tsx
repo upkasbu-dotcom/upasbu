@@ -145,7 +145,6 @@ async function syncMesinIfNeeded(db: D1Database): Promise<{ synced: boolean, cou
 // ============================================================
 app.get('/api/sync-mesin', async (c) => {
   try {
-    await initDB(c.env.DB)
     const result = await syncMesinIfNeeded(c.env.DB)
     return c.json({ success: true, ...result })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
@@ -153,8 +152,6 @@ app.get('/api/sync-mesin', async (c) => {
 
 app.post('/api/sync-mesin/force', async (c) => {
   try {
-    await initDB(c.env.DB)
-    // Reset sync log agar paksa sync ulang
     await c.env.DB.prepare(`DELETE FROM sync_log WHERE sync_type='mesin_cache'`).run()
     const result = await syncMesinIfNeeded(c.env.DB)
     return c.json({ success: true, ...result, forced: true })
@@ -162,11 +159,11 @@ app.post('/api/sync-mesin/force', async (c) => {
 })
 
 // ============================================================
-// API: GET UP3 LIST
+// API: GET UP3 LIST  (+ trigger sync harian jika perlu)
 // ============================================================
 app.get('/api/up3', async (c) => {
   try {
-    await initDB(c.env.DB)
+    // Sync hanya di endpoint ini — entry point pertama setiap hari
     await syncMesinIfNeeded(c.env.DB)
     const result = await c.env.DB.prepare(
       `SELECT DISTINCT up3 FROM mesin_cache ORDER BY up3`
@@ -180,7 +177,6 @@ app.get('/api/up3', async (c) => {
 // ============================================================
 app.get('/api/unit', async (c) => {
   try {
-    await initDB(c.env.DB)
     const up3 = c.req.query('up3') || ''
     let query = `SELECT DISTINCT kode_unit, nama_unit FROM mesin_cache`
     const params: any[] = []
@@ -196,7 +192,6 @@ app.get('/api/unit', async (c) => {
 // ============================================================
 app.get('/api/mesin-unit', async (c) => {
   try {
-    await initDB(c.env.DB)
     const kode_unit = c.req.query('kode_unit') || ''
     if (!kode_unit) return c.json({ success: false, error: 'kode_unit wajib' }, 400)
     const result = await c.env.DB.prepare(
@@ -211,7 +206,6 @@ app.get('/api/mesin-unit', async (c) => {
 // ============================================================
 app.get('/api/monitoring', async (c) => {
   try {
-    await initDB(c.env.DB)
     const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
     const jam = c.req.query('jam') || null
     const kode_unit = c.req.query('kode_unit') || null
@@ -290,7 +284,6 @@ app.post('/api/monitoring/batch', async (c) => {
 // ============================================================
 app.get('/api/lap-operasional', async (c) => {
   try {
-    await initDB(c.env.DB)
     const tanggal   = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
     const kode_unit = c.req.query('kode_unit') || null
     let query = `SELECT * FROM lap_operasional WHERE tanggal = ?`
@@ -313,7 +306,6 @@ app.get('/api/lap-operasional/tanggal', async (c) => {
 
 app.post('/api/lap-operasional', async (c) => {
   try {
-    await initDB(c.env.DB)
     const body = await c.req.json()
     const { kode_unit, nama_unit, tanggal, nama_operator, kwh_produksi, saldo_awal, saldo_akhir, penerimaan_bbm, estimasi_bbm_max } = body
     if (!kode_unit || !tanggal) return c.json({ success: false, error: 'kode_unit dan tanggal wajib diisi' }, 400)

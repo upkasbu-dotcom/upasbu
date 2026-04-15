@@ -43,6 +43,25 @@ var lastSavedData    = {}
 var up3List          = []
 
 // =============================================
+// LOCALSTORAGE CACHE HELPERS (TTL = hari ini)
+// =============================================
+var LS_PREFIX = 'mm_'
+var LS_TODAY  = new Date().toISOString().split('T')[0]  // YYYY-MM-DD
+
+function lsSet(key, data) {
+  try { localStorage.setItem(LS_PREFIX + key, JSON.stringify({ d: LS_TODAY, v: data })) } catch(e) {}
+}
+function lsGet(key) {
+  try {
+    var raw = localStorage.getItem(LS_PREFIX + key)
+    if (!raw) return null
+    var obj = JSON.parse(raw)
+    if (!obj || obj.d !== LS_TODAY) return null   // kedaluwarsa (beda hari)
+    return obj.v
+  } catch(e) { return null }
+}
+
+// =============================================
 // INIT
 // =============================================
 document.addEventListener('DOMContentLoaded', function() {
@@ -64,10 +83,17 @@ document.addEventListener('DOMContentLoaded', function() {
 async function loadUp3List() {
   showLoading(true, 'loading-indicator-mesin')
   try {
-    var res  = await fetch('/api/up3')
-    var json = await res.json()
-    if (!json.success) throw new Error(json.error)
-    up3List = json.data
+    // Cek localStorage dulu
+    var cached = lsGet('up3')
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      up3List = cached
+    } else {
+      var res  = await fetch('/api/up3')
+      var json = await res.json()
+      if (!json.success) throw new Error(json.error)
+      up3List = json.data
+      lsSet('up3', up3List)   // simpan ke cache
+    }
 
     // Populate monitoring UP3 selector
     var selMon = document.getElementById('mon-sel-up3')
@@ -115,11 +141,19 @@ async function onMonUp3Change(up3) {
 
   showLoading(true, 'loading-indicator-mesin')
   try {
-    var res  = await fetch('/api/unit?up3=' + encodeURIComponent(up3))
-    var json = await res.json()
-    if (!json.success) throw new Error(json.error)
-    for (var i = 0; i < json.data.length; i++) {
-      var u = json.data[i]
+    var units
+    var cachedUnits = lsGet('unit_' + up3)
+    if (cachedUnits && Array.isArray(cachedUnits) && cachedUnits.length > 0) {
+      units = cachedUnits
+    } else {
+      var res  = await fetch('/api/unit?up3=' + encodeURIComponent(up3))
+      var json = await res.json()
+      if (!json.success) throw new Error(json.error)
+      units = json.data
+      lsSet('unit_' + up3, units)
+    }
+    for (var i = 0; i < units.length; i++) {
+      var u = units[i]
       var opt = document.createElement('option')
       opt.value = u.kode_unit
       opt.textContent = u.nama_unit + ' (' + u.kode_unit + ')'
@@ -148,10 +182,16 @@ async function onMonUnitChange(kodeUnit) {
 
   showLoading(true, 'loading-indicator-mesin')
   try {
-    var res  = await fetch('/api/mesin-unit?kode_unit=' + kodeUnit)
-    var json = await res.json()
-    if (!json.success) throw new Error(json.error)
-    mesinList = json.data
+    var cachedMesin = lsGet('mesin_' + kodeUnit)
+    if (cachedMesin && Array.isArray(cachedMesin) && cachedMesin.length > 0) {
+      mesinList = cachedMesin
+    } else {
+      var res  = await fetch('/api/mesin-unit?kode_unit=' + kodeUnit)
+      var json = await res.json()
+      if (!json.success) throw new Error(json.error)
+      mesinList = json.data
+      lsSet('mesin_' + kodeUnit, mesinList)
+    }
 
     if (mesinList.length === 0) {
       document.getElementById('info-mesin-count').textContent = 'Tidak ada mesin untuk unit ini'
@@ -408,11 +448,20 @@ async function onLapUp3Change(up3) {
 
   showLoading(true, 'loading-indicator-lap-unit')
   try {
-    var res  = await fetch('/api/unit?up3=' + encodeURIComponent(up3))
-    var json = await res.json()
-    if (!json.success) throw new Error(json.error)
-    for (var i = 0; i < json.data.length; i++) {
-      var u = json.data[i]
+    // Pakai cache yang sama dengan monitoring (key sama)
+    var units
+    var cachedUnits = lsGet('unit_' + up3)
+    if (cachedUnits && Array.isArray(cachedUnits) && cachedUnits.length > 0) {
+      units = cachedUnits
+    } else {
+      var res  = await fetch('/api/unit?up3=' + encodeURIComponent(up3))
+      var json = await res.json()
+      if (!json.success) throw new Error(json.error)
+      units = json.data
+      lsSet('unit_' + up3, units)
+    }
+    for (var i = 0; i < units.length; i++) {
+      var u = units[i]
       var opt = document.createElement('option')
       opt.value = u.kode_unit
       opt.textContent = u.nama_unit + ' (' + u.kode_unit + ')'
