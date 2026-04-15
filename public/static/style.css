@@ -100,3 +100,55 @@ select.cell-input { width:118px; cursor:pointer; }
 /* ===== LAP EMPTY STATE ===== */
 #lap-state-empty, #lap-state-pick-unit { display:flex; }
 #lap-state-empty.hidden, #lap-state-pick-unit.hidden { display:none; }
+
+/* ===== REVIEW LAPORAN ===== */
+.review-wrap { background:#fff; border-radius:12px; border:1px solid #e2e8f0; box-shadow:0 2px 16px rgba(0,0,0,0.09); overflow:hidden; margin-top:4px; max-width:640px; margin-left:auto; margin-right:auto; }
+
+/* Kop surat */
+.review-kop { background:linear-gradient(135deg,#1e3a5f 0%,#1d4ed8 100%); color:#fff; padding:20px 24px; display:flex; align-items:center; justify-content:space-between; }
+.review-kop-left { display:flex; align-items:center; gap:16px; }
+.review-kop-icon { width:46px; height:46px; background:rgba(255,255,255,0.15); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1.4rem; flex-shrink:0; }
+.review-kop-title { font-size:1.05rem; font-weight:800; letter-spacing:0.04em; line-height:1.2; }
+.review-kop-sub { font-size:0.72rem; color:#93c5fd; margin-top:3px; }
+.review-kop-stamp { text-align:center; background:rgba(255,255,255,0.12); border:2px solid rgba(255,255,255,0.3); border-radius:8px; padding:6px 12px; font-size:0.6rem; font-weight:800; letter-spacing:0.12em; color:#bbf7d0; line-height:1.5; flex-shrink:0; }
+.review-kop-stamp i { font-size:1rem; display:block; margin-bottom:2px; color:#4ade80; }
+
+/* Divider */
+.review-divider { height:1px; background:linear-gradient(90deg,#e2e8f0 0%,#bfdbfe 50%,#e2e8f0 100%); margin:0 24px; }
+
+/* Identitas unit */
+.review-identity { padding:18px 24px 14px; }
+.review-unit-name { font-size:1.25rem; font-weight:800; color:#1e3a5f; margin-bottom:12px; letter-spacing:0.01em; }
+.review-id-table { border-collapse:collapse; width:auto; }
+.review-id-table td { padding:3px 0; font-size:0.88rem; }
+.rid-label { color:#64748b; min-width:130px; font-weight:500; }
+.rid-sep { color:#94a3b8; padding:0 10px; }
+.rid-val { color:#1e293b; font-weight:700; }
+
+/* Data operasional */
+.review-data-section { padding:14px 24px 18px; }
+.review-section-label { font-size:0.68rem; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px; display:flex; align-items:center; gap:6px; }
+.review-section-label i { color:#3b82f6; }
+.review-data-table { border-collapse:collapse; width:100%; }
+.review-data-table tr { border-bottom:1px solid #f1f5f9; }
+.review-data-table tr:last-child { border-bottom:none; }
+.rdt-label { color:#475569; font-size:0.88rem; padding:8px 0; min-width:200px; }
+.rdt-sep { color:#94a3b8; padding:8px 12px; }
+.rdt-val { font-size:0.95rem; color:#1e293b; padding:8px 0; }
+.rdt-unit { font-size:0.72rem; color:#64748b; margin-left:4px; font-weight:500; }
+.rdt-last { background:#f8fafc; border-radius:6px; }
+.rdt-last .rdt-label, .rdt-last .rdt-sep, .rdt-last .rdt-val { font-weight:700; color:#1e3a5f; }
+
+/* Footer review */
+.review-footer { padding:14px 24px; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+.review-save-info { font-size:0.72rem; color:#94a3b8; display:flex; align-items:center; gap:6px; }
+.review-actions { display:flex; gap:10px; align-items:center; }
+.btn-outline-dark { background:#fff; color:#1e3a5f; border:1.5px solid #1e3a5f; } .btn-outline-dark:hover { background:#eff6ff; }
+.btn-kirim { background:linear-gradient(135deg,#16a34a,#15803d); color:#fff; box-shadow:0 2px 8px rgba(22,163,74,0.3); }
+.btn-kirim:hover { background:linear-gradient(135deg,#15803d,#166534); }
+
+/* ===== MODAL KIRIM ===== */
+.kirim-preview-box { background:#f0f4fa; border:1px solid #dde4ef; border-radius:8px; padding:16px; margin-bottom:16px; max-height:300px; overflow-y:auto; }
+.kirim-preview-text { font-family:'Courier New',monospace; font-size:0.82rem; color:#1e293b; white-space:pre-wrap; line-height:1.6; margin:0; }
+.kirim-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.btn-wa { background:#25d366; color:#fff; } .btn-wa:hover { background:#1da851; }

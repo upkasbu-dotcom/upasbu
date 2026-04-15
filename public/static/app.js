@@ -55,6 +55,7 @@ var lapData        = {}      // { kode_unit: { ...fields } }
 var selectedArea   = ''
 var selectedKode   = null    // kode_unit yang sedang aktif
 var currentLapForm = {}      // data form yang sedang diedit
+var lastSavedData  = {}      // data yang sudah berhasil disimpan (untuk review)
 
 // =============================================
 // INIT
@@ -100,6 +101,7 @@ function onAreaChange(area) {
   selectedArea = area
   selectedKode = null
   currentLapForm = {}
+  lastSavedData  = {}
 
   var selUnit = document.getElementById('sel-unit')
   selUnit.innerHTML = '<option value="">-- Pilih Unit --</option>'
@@ -107,6 +109,8 @@ function onAreaChange(area) {
   // Reset form
   document.getElementById('lap-form-container').classList.add('hidden')
   document.getElementById('lap-form-container').innerHTML = ''
+  document.getElementById('lap-review-container').classList.add('hidden')
+  document.getElementById('lap-review-container').innerHTML = ''
 
   // Reset save button
   var btnSave = document.getElementById('btn-save-lap')
@@ -139,7 +143,9 @@ function onUnitChange(kode) {
   if (!kode) {
     selectedKode = null
     currentLapForm = {}
+    lastSavedData  = {}
     document.getElementById('lap-form-container').classList.add('hidden')
+    document.getElementById('lap-review-container').classList.add('hidden')
     var btnSave = document.getElementById('btn-save-lap')
     btnSave.disabled = true
     btnSave.style.opacity = '0.5'
@@ -151,6 +157,7 @@ function onUnitChange(kode) {
   selectedKode = parseInt(kode)
   // Ambil data dari cache jika ada
   currentLapForm = lapData[selectedKode] ? JSON.parse(JSON.stringify(lapData[selectedKode])) : {}
+  lastSavedData  = {}
 
   renderLapForm()
 
@@ -169,6 +176,20 @@ function showLapState(state) {
   document.getElementById('lap-state-empty').classList.toggle('hidden', state !== 'empty')
   document.getElementById('lap-state-pick-unit').classList.toggle('hidden', state !== 'pick-unit')
   document.getElementById('lap-form-container').classList.toggle('hidden', state !== 'form')
+  document.getElementById('lap-review-container').classList.toggle('hidden', state !== 'review')
+
+  // Header button visibility
+  var btnSave = document.getElementById('btn-save-lap')
+  var btnEdit = document.getElementById('btn-edit-lap')
+  if (btnEdit) btnEdit.style.display = (state === 'review') ? 'inline-flex' : 'none'
+  if (btnSave) {
+    btnSave.style.display = (state === 'review') ? 'none' : 'inline-flex'
+    if (state === 'form') {
+      btnSave.disabled = false
+      btnSave.style.opacity = '1'
+      btnSave.style.cursor = 'pointer'
+    }
+  }
 }
 
 // =============================================
@@ -188,6 +209,15 @@ function renderLapForm() {
 
   var alreadySaved = !!lapData[selectedKode]
 
+  var kodeFormatted = String(unit.kode_unit).padStart(4, '0')
+
+  // Format tgl untuk display
+  var tglDisplay = tgl
+  if (tgl && tgl !== '—') {
+    var parts = tgl.split('-')
+    tglDisplay = parts[2] + '/' + parts[1] + '/' + parts[0]
+  }
+
   var html = ''
   html += '<div class="lap-single-card">'
 
@@ -201,15 +231,15 @@ function renderLapForm() {
   if (alreadySaved) {
     html += '<span class="badge-saved"><i class="fas fa-check-circle"></i> Data Tersimpan</span>'
   }
-  html += '<span class="lap-kode-badge">ID: ' + unit.kode_unit + '</span>'
+  html += '<span class="lap-kode-badge">ID: ' + kodeFormatted + '</span>'
   html += '</div>'
   html += '</div>'
 
   // Info bar
   html += '<div class="lap-single-infobar">'
   html += '<div class="info-item"><span class="info-label">UNIT</span><span class="info-val">' + unit.nama_unit + '</span></div>'
-  html += '<div class="info-item"><span class="info-label">ID UNIT</span><span class="info-val">' + unit.kode_unit + '</span></div>'
-  html += '<div class="info-item"><span class="info-label">TANGGAL</span><span class="info-val">' + tgl + '</span></div>'
+  html += '<div class="info-item"><span class="info-label">ID UNIT</span><span class="info-val">' + kodeFormatted + '</span></div>'
+  html += '<div class="info-item"><span class="info-label">TANGGAL</span><span class="info-val">' + tglDisplay + '</span></div>'
   html += '</div>'
 
   // Form body
@@ -344,7 +374,7 @@ async function loadLapData() {
 }
 
 // =============================================
-// SAVE CURRENT UNIT
+// SAVE CURRENT UNIT → lalu tampilkan REVIEW
 // =============================================
 async function saveLapCurrent() {
   if (!selectedKode) { showToast('Pilih unit terlebih dahulu','info'); return }
@@ -356,6 +386,14 @@ async function saveLapCurrent() {
     if (UNIT_DATA[i].kode_unit === selectedKode) { unit = UNIT_DATA[i]; break }
   }
   if (!unit) return
+
+  // Disable tombol sementara
+  var btnSave = document.getElementById('btn-save-lap')
+  if (btnSave) { btnSave.disabled = true; btnSave.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...' }
+
+  // Juga disable footer button dalam form
+  var footerBtn = document.querySelector('#lap-form-container .lap-single-footer .btn-success')
+  if (footerBtn) { footerBtn.disabled = true; footerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...' }
 
   var d = currentLapForm
   var payload = {
@@ -381,17 +419,171 @@ async function saveLapCurrent() {
 
     // Update cache
     lapData[selectedKode] = JSON.parse(JSON.stringify(currentLapForm))
+    lastSavedData = JSON.parse(JSON.stringify(currentLapForm))
 
     showToast(unit.nama_unit + ' berhasil disimpan!', 'success')
 
-    // Update status text di form
-    var statusEl = document.getElementById('lap-save-status')
-    if (statusEl) statusEl.textContent = 'Disimpan: ' + new Date().toLocaleString('id-ID')
+    // Tampilkan halaman REVIEW
+    renderReview(unit, tanggal, d)
+    showLapState('review')
 
-    // Re-render agar badge "Data Tersimpan" muncul
-    renderLapForm()
+  } catch(e) {
+    showToast('Gagal menyimpan: ' + e.message,'error')
+    if (btnSave) {
+      btnSave.disabled = false
+      btnSave.innerHTML = '<i class="fas fa-save"></i> Simpan Data'
+    }
+    if (footerBtn) {
+      footerBtn.disabled = false
+      footerBtn.innerHTML = '<i class="fas fa-save"></i> Simpan Data'
+    }
+  }
+}
 
-  } catch(e) { showToast('Gagal menyimpan: ' + e.message,'error') }
+// =============================================
+// RENDER HALAMAN REVIEW (FORMAT LAPORAN)
+// =============================================
+function renderReview(unit, tanggal, d) {
+  // Format tanggal ke DD/MM/YYYY
+  var tglParts = tanggal.split('-')
+  var tglFormatted = tglParts[2] + '/' + tglParts[1] + '/' + tglParts[0]
+
+  // Format kode unit 4 digit
+  var kodeFormatted = String(unit.kode_unit).padStart(4, '0')
+
+  // Format nilai angka
+  function fmtNum(val) {
+    if (val === null || val === undefined || val === '') return '-'
+    return Number(val).toLocaleString('id-ID')
+  }
+  function fmtStr(val) {
+    if (!val || val.trim() === '') return '-'
+    return val
+  }
+
+  var savedAt = new Date().toLocaleString('id-ID', { dateStyle:'long', timeStyle:'short' })
+
+  // ===== TEKS LAPORAN (format asli mirip dokumen) =====
+  var teksLaporan =
+    'LAPORAN OPERASIONAL PLTD\n' +
+    unit.nama_unit + '\n' +
+    'ID Unit  : ' + kodeFormatted + '\n' +
+    'Tgl      : ' + tglFormatted + '\n\n' +
+    'Nama Operator          : ' + fmtStr(d.nama_operator) + '\n' +
+    'kWh Produksi           : ' + fmtNum(d.kwh_produksi) + ' kWh\n' +
+    'Saldo Awal             : ' + fmtNum(d.saldo_awal) + ' ltr\n' +
+    'Saldo Akhir            : ' + fmtNum(d.saldo_akhir) + ' ltr\n' +
+    'Penerimaan BBM         : ' + fmtNum(d.penerimaan_bbm) + ' ltr\n' +
+    'Estimasi Pemakaian BBM : ' + fmtNum(d.estimasi_bbm_max) + ' ltr'
+
+  var html = ''
+  html += '<div class="review-wrap">'
+
+  // ===== KOP LAPORAN =====
+  html += '<div class="review-kop">'
+  html += '<div class="review-kop-left">'
+  html += '<div class="review-kop-icon"><i class="fas fa-file-invoice"></i></div>'
+  html += '<div>'
+  html += '<div class="review-kop-title">LAPORAN OPERASIONAL PLTD</div>'
+  html += '<div class="review-kop-sub">Dokumen Operasional Harian</div>'
+  html += '</div>'
+  html += '</div>'
+  html += '<div class="review-kop-stamp"><i class="fas fa-check-circle"></i><br/>TERSIMPAN</div>'
+  html += '</div>'
+
+  html += '<div class="review-divider"></div>'
+
+  // ===== IDENTITAS UNIT =====
+  html += '<div class="review-identity">'
+  html += '<div class="review-unit-name">' + unit.nama_unit + '</div>'
+  html += '<table class="review-id-table">'
+  html += '<tr><td class="rid-label">ID Unit</td><td class="rid-sep">:</td><td class="rid-val">' + kodeFormatted + '</td></tr>'
+  html += '<tr><td class="rid-label">Tgl</td><td class="rid-sep">:</td><td class="rid-val">' + tglFormatted + '</td></tr>'
+  html += '<tr><td class="rid-label">Nama Operator</td><td class="rid-sep">:</td><td class="rid-val">' + fmtStr(d.nama_operator) + '</td></tr>'
+  html += '</table>'
+  html += '</div>'
+
+  html += '<div class="review-divider"></div>'
+
+  // ===== DATA OPERASIONAL =====
+  html += '<div class="review-data-section">'
+  html += '<div class="review-section-label"><i class="fas fa-table-list"></i> Data Operasional</div>'
+  html += '<table class="review-data-table">'
+  html += '<tr><td class="rdt-label">kWh Produksi</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.kwh_produksi) + '</strong> <span class="rdt-unit">kWh</span></td></tr>'
+  html += '<tr><td class="rdt-label">Saldo Awal</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.saldo_awal) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
+  html += '<tr><td class="rdt-label">Saldo Akhir</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.saldo_akhir) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
+  html += '<tr><td class="rdt-label">Penerimaan BBM</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.penerimaan_bbm) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
+  html += '<tr class="rdt-last"><td class="rdt-label">Estimasi Pemakaian BBM Maks</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.estimasi_bbm_max) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
+  html += '</table>'
+  html += '</div>'
+
+  html += '<div class="review-divider"></div>'
+
+  // ===== FOOTER: TOMBOL AKSI =====
+  html += '<div class="review-footer">'
+  html += '<div class="review-save-info"><i class="fas fa-clock"></i> Disimpan: ' + savedAt + '</div>'
+  html += '<div class="review-actions">'
+  html += '<button class="btn btn-outline-dark" onclick="backToForm()">'
+  html += '<i class="fas fa-pen"></i> Edit</button>'
+  html += '<button class="btn btn-kirim" onclick="kirimLaporan(\'' + encodeURIComponent(teksLaporan) + '\')">'
+  html += '<i class="fas fa-paper-plane"></i> Kirim</button>'
+  html += '</div>'
+  html += '</div>'
+
+  html += '</div>' // end review-wrap
+
+  document.getElementById('lap-review-container').innerHTML = html
+}
+
+// =============================================
+// BACK TO FORM (dari review)
+// =============================================
+function backToForm() {
+  showLapState('form')
+  renderLapForm()
+}
+
+// =============================================
+// KIRIM LAPORAN → tampilkan modal preview
+// =============================================
+function kirimLaporan(encodedTeks) {
+  var teks = decodeURIComponent(encodedTeks)
+  document.getElementById('kirim-preview-text').textContent = teks
+  document.getElementById('modal-kirim').classList.remove('hidden')
+}
+
+// Salin teks ke clipboard
+function copyKirimText() {
+  var el = document.getElementById('kirim-preview-text')
+  var teks = el.textContent
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(teks).then(function() {
+      showToast('Teks berhasil disalin!', 'success')
+    }).catch(function() {
+      fallbackCopy(teks)
+    })
+  } else {
+    fallbackCopy(teks)
+  }
+}
+
+function fallbackCopy(teks) {
+  var ta = document.createElement('textarea')
+  ta.value = teks
+  ta.style.position = 'fixed'
+  ta.style.opacity  = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  document.execCommand('copy')
+  document.body.removeChild(ta)
+  showToast('Teks berhasil disalin!', 'success')
+}
+
+// Kirim via WhatsApp
+function kirimWhatsApp() {
+  var teks = document.getElementById('kirim-preview-text').textContent
+  var url  = 'https://wa.me/?text=' + encodeURIComponent(teks)
+  window.open(url, '_blank')
 }
 
 // =============================================

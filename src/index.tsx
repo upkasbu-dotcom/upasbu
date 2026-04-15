@@ -259,6 +259,9 @@ app.get('/', (c) => {
     </button>
   </div>
   <div class="flex gap-2 items-center hidden" id="header-actions-laporan">
+    <button class="btn btn-outline" id="btn-edit-lap" style="color:#fff;border-color:#93c5fd;display:none;" onclick="backToForm()">
+      <i class="fas fa-pen"></i> Edit
+    </button>
     <button class="btn btn-success" id="btn-save-lap" onclick="saveLapCurrent()" disabled style="opacity:0.5;cursor:not-allowed;">
       <i class="fas fa-save"></i> Simpan Data
     </button>
@@ -341,6 +344,8 @@ app.get('/', (c) => {
   </div>
   <!-- Form single unit -->
   <div id="lap-form-container" class="hidden max-w-2xl mx-auto"></div>
+  <!-- Review & Kirim -->
+  <div id="lap-review-container" class="hidden max-w-2xl mx-auto"></div>
 </div>
 
 <!-- TOAST -->
@@ -377,6 +382,30 @@ app.get('/', (c) => {
     <div id="riwayat-lap-list" class="max-h-64 overflow-y-auto"></div>
     <div class="flex justify-end mt-3">
       <button class="btn btn-outline" onclick="closeModal('modal-riwayat-lap')">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: KIRIM LAPORAN -->
+<div id="modal-kirim" class="modal-overlay hidden">
+  <div class="modal-box" style="width:480px;max-width:96vw">
+    <div class="modal-title"><i class="fas fa-paper-plane" style="color:#16a34a"></i>Kirim Laporan</div>
+    <p class="text-xs text-slate-400 mb-3">Pratinjau teks laporan yang akan dikirim:</p>
+    <!-- Preview teks laporan -->
+    <div class="kirim-preview-box">
+      <pre id="kirim-preview-text" class="kirim-preview-text"></pre>
+    </div>
+    <!-- Tombol aksi kirim -->
+    <div class="kirim-actions">
+      <button class="btn btn-outline-dark" onclick="copyKirimText()">
+        <i class="fas fa-copy"></i> Salin Teks
+      </button>
+      <button class="btn btn-wa" onclick="kirimWhatsApp()">
+        <i class="fab fa-whatsapp"></i> WhatsApp
+      </button>
+      <button class="btn btn-outline" onclick="closeModal('modal-kirim')" style="margin-left:auto">
+        Tutup
+      </button>
     </div>
   </div>
 </div>
