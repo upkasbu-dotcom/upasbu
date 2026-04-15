@@ -10,7 +10,7 @@
     {
       "binding": "DB",
       "database_name": "mesin-monitor-production",
-      "database_id": "placeholder-will-be-replaced-after-deploy"
+      "database_id": "cb755a53-9a4c-4b5d-8976-88608d54c81c"
     }
   ]
 }
