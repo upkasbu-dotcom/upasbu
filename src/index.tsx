@@ -10,6 +10,7 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.use('/api/*', cors())
 app.use('/static/*', serveStatic({ root: './public' }))
 
+
 // ============================================================
 // INIT DATABASE
 // ============================================================
@@ -230,6 +231,7 @@ app.get('/', (c) => {
   <title>Sistem Operasional Mesin</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
   <link href="/static/style.css" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
