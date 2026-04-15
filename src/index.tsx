@@ -259,8 +259,8 @@ app.get('/', (c) => {
     </button>
   </div>
   <div class="flex gap-2 items-center hidden" id="header-actions-laporan">
-    <button class="btn btn-success" onclick="saveAllLap()">
-      <i class="fas fa-save"></i> Simpan Semua
+    <button class="btn btn-success" id="btn-save-lap" onclick="saveLapCurrent()" disabled style="opacity:0.5;cursor:not-allowed;">
+      <i class="fas fa-save"></i> Simpan Data
     </button>
   </div>
 </header>
@@ -285,16 +285,33 @@ app.get('/', (c) => {
     <div class="ml-auto text-xs text-slate-400" id="info-record"></div>
   </div>
   <!-- Lap operasional toolbar -->
-  <div id="toolbar-laporan" class="toolbar hidden">
-    <div class="flex items-center gap-2">
-      <label class="text-sm font-semibold text-slate-600"><i class="fas fa-calendar mr-1"></i>Tanggal:</label>
-      <input type="date" id="lap-tanggal" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+  <div id="toolbar-laporan" class="hidden">
+    <!-- Baris 1: Tanggal + Riwayat -->
+    <div class="toolbar mb-2">
+      <div class="flex items-center gap-2">
+        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-calendar mr-1"></i>Tanggal:</label>
+        <input type="date" id="lap-tanggal" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+      </div>
+      <button class="btn btn-outline" onclick="showRiwayatLap()"><i class="fas fa-history"></i> Riwayat</button>
+      <div id="loading-indicator-lap" class="hidden"><span class="spinner"></span></div>
+      <div class="ml-auto text-xs text-slate-400" id="info-lap-record"></div>
     </div>
-    <button class="btn btn-primary" onclick="loadLapData()"><i class="fas fa-search"></i> Tampilkan</button>
-    <button class="btn btn-outline" onclick="showRiwayatLap()"><i class="fas fa-history"></i> Riwayat</button>
-    <input type="text" id="search-unit" class="search-unit" placeholder="Cari unit..." oninput="filterUnit(this.value)"/>
-    <div id="loading-indicator-lap" class="hidden"><span class="spinner"></span></div>
-    <div class="ml-auto text-xs text-slate-400" id="info-lap-record"></div>
+    <!-- Baris 2: Pilih Area → Pilih ULD -->
+    <div class="toolbar">
+      <div class="flex items-center gap-2">
+        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-map-marker-alt mr-1 text-blue-500"></i>Area:</label>
+        <select id="sel-area" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[200px]" onchange="onAreaChange(this.value)">
+          <option value="">-- Pilih Area --</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-building mr-1 text-blue-500"></i>Unit (ULD):</label>
+        <select id="sel-unit" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[220px]" onchange="onUnitChange(this.value)" disabled>
+          <option value="">-- Pilih Unit --</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="loadLapData()"><i class="fas fa-search"></i> Tampilkan</button>
+    </div>
   </div>
 </div>
 
@@ -310,7 +327,20 @@ app.get('/', (c) => {
 
 <!-- ===== TAB: LAP. OPERASIONAL ===== -->
 <div id="tab-laporan" class="tab-content px-4 py-3">
-  <div class="lap-form-wrap" id="lap-cards-container"></div>
+  <!-- State: belum pilih area -->
+  <div id="lap-state-empty" class="flex flex-col items-center justify-center py-16 text-slate-400">
+    <i class="fas fa-map-marker-alt text-5xl mb-4 text-blue-200"></i>
+    <p class="text-lg font-semibold text-slate-500">Pilih Area dan Unit</p>
+    <p class="text-sm mt-1">Silakan pilih <strong>Area</strong> kemudian <strong>Unit (ULD)</strong> di toolbar atas</p>
+  </div>
+  <!-- State: sudah pilih area, belum pilih unit -->
+  <div id="lap-state-pick-unit" class="hidden flex flex-col items-center justify-center py-16 text-slate-400">
+    <i class="fas fa-building text-5xl mb-4 text-blue-200"></i>
+    <p class="text-lg font-semibold text-slate-500">Pilih Unit (ULD)</p>
+    <p class="text-sm mt-1">Area sudah dipilih, sekarang pilih <strong>Unit (ULD)</strong> di dropdown atas</p>
+  </div>
+  <!-- Form single unit -->
+  <div id="lap-form-container" class="hidden max-w-2xl mx-auto"></div>
 </div>
 
 <!-- TOAST -->

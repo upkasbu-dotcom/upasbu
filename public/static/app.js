@@ -1,7 +1,7 @@
 // =============================================
 // DATA UNIT
 // =============================================
-const UNIT_DATA = [
+var UNIT_DATA = [
   { kode_unit: 366, nama_unit: "ULD BABAI",             area: "AREA KUALA KAPUAS" },
   { kode_unit: 372, nama_unit: "ULD GUNUNG PUREI",      area: "AREA KUALA KAPUAS" },
   { kode_unit: 373, nama_unit: "ULD KENAMBUI",          area: "AREA PANGKALAN BUN" },
@@ -26,7 +26,7 @@ const UNIT_DATA = [
 // =============================================
 // CONSTANTS
 // =============================================
-const PARAMS = [
+var PARAMS = [
   { key:'daya_mampu',         label:'Daya Mampu',         unit:'kW',   type:'number' },
   { key:'beban',              label:'Beban',              unit:'kW',   type:'number' },
   { key:'stand_kwh',          label:'Stand KWH',          unit:'kWh',  type:'number' },
@@ -44,19 +44,22 @@ const PARAMS = [
   { key:'kwh_produksi',       label:'KWH Produksi',       unit:'kWh',  type:'number' },
   { key:'pemakaian_bbm',      label:'Pemakaian BBM',      unit:'ltr',  type:'number' },
 ]
-const STATUS_OPTIONS = ['Operasi','Standby','Pemeliharaan','Gangguan','Rusak Permanen']
+var STATUS_OPTIONS = ['Operasi','Standby','Pemeliharaan','Gangguan','Rusak Permanen']
 
 // =============================================
 // STATE
 // =============================================
-let mesinList   = []
-let currentData = {}
-let lapData     = {}
+var mesinList      = []
+var currentData    = {}
+var lapData        = {}      // { kode_unit: { ...fields } }
+var selectedArea   = ''
+var selectedKode   = null    // kode_unit yang sedang aktif
+var currentLapForm = {}      // data form yang sedang diedit
 
 // =============================================
 // INIT
 // =============================================
-document.addEventListener('DOMContentLoaded', async function() {
+document.addEventListener('DOMContentLoaded', function() {
   var today = new Date()
   var todayStr = today.toISOString().split('T')[0]
   document.getElementById('sel-tanggal').value = todayStr
@@ -64,11 +67,363 @@ document.addEventListener('DOMContentLoaded', async function() {
   var hr = String(today.getHours()).padStart(2,'0') + ':00'
   document.getElementById('sel-jam').value = hr
   document.getElementById('last-update').textContent = 'Update: ' + today.toLocaleString('id-ID')
-  await loadMesin()
-  renderTable()
-  await loadData()
-  renderLapCards('')
+
+  // Populate Area dropdown
+  buildAreaDropdown()
+
+  // Load monitoring
+  loadMesin().then(function() {
+    renderTable()
+    loadData()
+  })
 })
+
+// =============================================
+// BUILD AREA DROPDOWN
+// =============================================
+function buildAreaDropdown() {
+  var areas = []
+  for (var i = 0; i < UNIT_DATA.length; i++) {
+    if (areas.indexOf(UNIT_DATA[i].area) === -1) areas.push(UNIT_DATA[i].area)
+  }
+  var sel = document.getElementById('sel-area')
+  sel.innerHTML = '<option value="">-- Pilih Area --</option>'
+  for (var i = 0; i < areas.length; i++) {
+    sel.innerHTML += '<option value="' + areas[i] + '">' + areas[i] + '</option>'
+  }
+}
+
+// =============================================
+// AREA CHANGE → populate ULD dropdown
+// =============================================
+function onAreaChange(area) {
+  selectedArea = area
+  selectedKode = null
+  currentLapForm = {}
+
+  var selUnit = document.getElementById('sel-unit')
+  selUnit.innerHTML = '<option value="">-- Pilih Unit --</option>'
+
+  // Reset form
+  document.getElementById('lap-form-container').classList.add('hidden')
+  document.getElementById('lap-form-container').innerHTML = ''
+
+  // Reset save button
+  var btnSave = document.getElementById('btn-save-lap')
+  btnSave.disabled = true
+  btnSave.style.opacity = '0.5'
+  btnSave.style.cursor = 'not-allowed'
+
+  if (!area) {
+    selUnit.disabled = true
+    showLapState('empty')
+    return
+  }
+
+  // Filter units by area
+  var units = UNIT_DATA.filter(function(u) { return u.area === area })
+  for (var i = 0; i < units.length; i++) {
+    var opt = document.createElement('option')
+    opt.value = units[i].kode_unit
+    opt.textContent = units[i].nama_unit + ' (' + units[i].kode_unit + ')'
+    selUnit.appendChild(opt)
+  }
+  selUnit.disabled = false
+  showLapState('pick-unit')
+}
+
+// =============================================
+// UNIT CHANGE → tampilkan form
+// =============================================
+function onUnitChange(kode) {
+  if (!kode) {
+    selectedKode = null
+    currentLapForm = {}
+    document.getElementById('lap-form-container').classList.add('hidden')
+    var btnSave = document.getElementById('btn-save-lap')
+    btnSave.disabled = true
+    btnSave.style.opacity = '0.5'
+    btnSave.style.cursor = 'not-allowed'
+    showLapState('pick-unit')
+    return
+  }
+
+  selectedKode = parseInt(kode)
+  // Ambil data dari cache jika ada
+  currentLapForm = lapData[selectedKode] ? JSON.parse(JSON.stringify(lapData[selectedKode])) : {}
+
+  renderLapForm()
+
+  // Enable save button
+  var btnSave = document.getElementById('btn-save-lap')
+  btnSave.disabled = false
+  btnSave.style.opacity = '1'
+  btnSave.style.cursor = 'pointer'
+  showLapState('form')
+}
+
+// =============================================
+// SHOW LAP STATE
+// =============================================
+function showLapState(state) {
+  document.getElementById('lap-state-empty').classList.toggle('hidden', state !== 'empty')
+  document.getElementById('lap-state-pick-unit').classList.toggle('hidden', state !== 'pick-unit')
+  document.getElementById('lap-form-container').classList.toggle('hidden', state !== 'form')
+}
+
+// =============================================
+// RENDER FORM SINGLE UNIT
+// =============================================
+function renderLapForm() {
+  if (!selectedKode) return
+
+  var unit = null
+  for (var i = 0; i < UNIT_DATA.length; i++) {
+    if (UNIT_DATA[i].kode_unit === selectedKode) { unit = UNIT_DATA[i]; break }
+  }
+  if (!unit) return
+
+  var tgl = document.getElementById('lap-tanggal').value || '—'
+  var d   = currentLapForm
+
+  var alreadySaved = !!lapData[selectedKode]
+
+  var html = ''
+  html += '<div class="lap-single-card">'
+
+  // Card header
+  html += '<div class="lap-single-header">'
+  html += '<div>'
+  html += '<div class="lap-single-title">' + unit.nama_unit + '</div>'
+  html += '<div class="lap-single-sub">' + unit.area + '</div>'
+  html += '</div>'
+  html += '<div style="display:flex;gap:8px;align-items:center;">'
+  if (alreadySaved) {
+    html += '<span class="badge-saved"><i class="fas fa-check-circle"></i> Data Tersimpan</span>'
+  }
+  html += '<span class="lap-kode-badge">ID: ' + unit.kode_unit + '</span>'
+  html += '</div>'
+  html += '</div>'
+
+  // Info bar
+  html += '<div class="lap-single-infobar">'
+  html += '<div class="info-item"><span class="info-label">UNIT</span><span class="info-val">' + unit.nama_unit + '</span></div>'
+  html += '<div class="info-item"><span class="info-label">ID UNIT</span><span class="info-val">' + unit.kode_unit + '</span></div>'
+  html += '<div class="info-item"><span class="info-label">TANGGAL</span><span class="info-val">' + tgl + '</span></div>'
+  html += '</div>'
+
+  // Form body
+  html += '<div class="lap-single-body">'
+
+  // Nama Operator (full)
+  html += '<div class="form-group full">'
+  html += '<label class="form-label"><i class="fas fa-user-tie"></i> Nama Operator</label>'
+  html += '<input type="text" class="form-input" placeholder="Masukkan nama operator..."'
+  html += ' value="' + (d.nama_operator || '') + '"'
+  html += ' oninput="setLapField(\'nama_operator\', this.value)"/>'
+  html += '</div>'
+
+  // Row: kWh + Saldo Awal
+  html += '<div class="form-row">'
+  html += '<div class="form-group">'
+  html += '<label class="form-label"><i class="fas fa-bolt" style="color:#f59e0b"></i> kWh Produksi</label>'
+  html += '<div class="input-unit-wrap">'
+  html += '<input type="number" step="any" class="form-input" placeholder="0"'
+  html += ' value="' + (d.kwh_produksi !== undefined && d.kwh_produksi !== null ? d.kwh_produksi : '') + '"'
+  html += ' oninput="setLapField(\'kwh_produksi\', this.value)"/>'
+  html += '<span class="input-unit-label">kWh</span>'
+  html += '</div></div>'
+
+  html += '<div class="form-group">'
+  html += '<label class="form-label"><i class="fas fa-gas-pump" style="color:#d97706"></i> Saldo Awal</label>'
+  html += '<div class="input-unit-wrap">'
+  html += '<input type="number" step="any" class="form-input" placeholder="0"'
+  html += ' value="' + (d.saldo_awal !== undefined && d.saldo_awal !== null ? d.saldo_awal : '') + '"'
+  html += ' oninput="setLapField(\'saldo_awal\', this.value)"/>'
+  html += '<span class="input-unit-label">ltr</span>'
+  html += '</div></div>'
+  html += '</div>'
+
+  // Row: Saldo Akhir + Penerimaan BBM
+  html += '<div class="form-row">'
+  html += '<div class="form-group">'
+  html += '<label class="form-label"><i class="fas fa-gas-pump" style="color:#16a34a"></i> Saldo Akhir</label>'
+  html += '<div class="input-unit-wrap">'
+  html += '<input type="number" step="any" class="form-input" placeholder="0"'
+  html += ' value="' + (d.saldo_akhir !== undefined && d.saldo_akhir !== null ? d.saldo_akhir : '') + '"'
+  html += ' oninput="setLapField(\'saldo_akhir\', this.value)"/>'
+  html += '<span class="input-unit-label">ltr</span>'
+  html += '</div></div>'
+
+  html += '<div class="form-group">'
+  html += '<label class="form-label"><i class="fas fa-truck-ramp-box" style="color:#2563eb"></i> Penerimaan BBM</label>'
+  html += '<div class="input-unit-wrap">'
+  html += '<input type="number" step="any" class="form-input" placeholder="0"'
+  html += ' value="' + (d.penerimaan_bbm !== undefined && d.penerimaan_bbm !== null ? d.penerimaan_bbm : '') + '"'
+  html += ' oninput="setLapField(\'penerimaan_bbm\', this.value)"/>'
+  html += '<span class="input-unit-label">ltr</span>'
+  html += '</div></div>'
+  html += '</div>'
+
+  // Estimasi BBM Maks (full)
+  html += '<div class="form-group full">'
+  html += '<label class="form-label"><i class="fas fa-calculator" style="color:#dc2626"></i> Estimasi Pemakaian BBM Maksimal</label>'
+  html += '<div class="input-unit-wrap">'
+  html += '<input type="number" step="any" class="form-input" placeholder="0"'
+  html += ' value="' + (d.estimasi_bbm_max !== undefined && d.estimasi_bbm_max !== null ? d.estimasi_bbm_max : '') + '"'
+  html += ' oninput="setLapField(\'estimasi_bbm_max\', this.value)"/>'
+  html += '<span class="input-unit-label">ltr</span>'
+  html += '</div></div>'
+
+  html += '</div>' // end lap-single-body
+
+  // Footer
+  html += '<div class="lap-single-footer">'
+  html += '<span class="text-xs text-slate-400" id="lap-save-status"></span>'
+  html += '<button class="btn btn-success" onclick="saveLapCurrent()">'
+  html += '<i class="fas fa-save"></i> Simpan Data</button>'
+  html += '</div>'
+
+  html += '</div>' // end lap-single-card
+
+  document.getElementById('lap-form-container').innerHTML = html
+}
+
+// =============================================
+// SET FIELD VALUE
+// =============================================
+function setLapField(field, value) {
+  if (field === 'nama_operator') {
+    currentLapForm[field] = value
+  } else {
+    currentLapForm[field] = value === '' ? null : parseFloat(value)
+  }
+}
+
+// =============================================
+// LOAD LAP DATA (untuk tanggal tertentu)
+// =============================================
+async function loadLapData() {
+  var tanggal = document.getElementById('lap-tanggal').value
+  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu','info'); return }
+
+  showLoading(true,'loading-indicator-lap')
+  try {
+    var res  = await fetch('/api/lap-operasional?tanggal=' + tanggal)
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error)
+
+    lapData = {}
+    for (var i = 0; i < json.data.length; i++) {
+      var row = json.data[i]
+      lapData[row.kode_unit] = {
+        nama_operator:    row.nama_operator,
+        kwh_produksi:     row.kwh_produksi,
+        saldo_awal:       row.saldo_awal,
+        saldo_akhir:      row.saldo_akhir,
+        penerimaan_bbm:   row.penerimaan_bbm,
+        estimasi_bbm_max: row.estimasi_bbm_max
+      }
+    }
+
+    var cnt = json.data.length
+    document.getElementById('info-lap-record').textContent = cnt > 0
+      ? cnt + ' unit sudah ada data'
+      : 'Belum ada data untuk ' + tanggal
+
+    // Jika unit sudah dipilih, refresh form-nya
+    if (selectedKode) {
+      currentLapForm = lapData[selectedKode] ? JSON.parse(JSON.stringify(lapData[selectedKode])) : {}
+      renderLapForm()
+    }
+
+    document.getElementById('last-update').textContent = 'LAP. OPERASIONAL — ' + tanggal
+    showToast('Data ' + tanggal + ' dimuat (' + cnt + ' unit)','info')
+  } catch(e) { showToast('Gagal memuat data: ' + e.message,'error') }
+  finally { showLoading(false,'loading-indicator-lap') }
+}
+
+// =============================================
+// SAVE CURRENT UNIT
+// =============================================
+async function saveLapCurrent() {
+  if (!selectedKode) { showToast('Pilih unit terlebih dahulu','info'); return }
+  var tanggal = document.getElementById('lap-tanggal').value
+  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu','info'); return }
+
+  var unit = null
+  for (var i = 0; i < UNIT_DATA.length; i++) {
+    if (UNIT_DATA[i].kode_unit === selectedKode) { unit = UNIT_DATA[i]; break }
+  }
+  if (!unit) return
+
+  var d = currentLapForm
+  var payload = {
+    kode_unit:        unit.kode_unit,
+    nama_unit:        unit.nama_unit,
+    tanggal:          tanggal,
+    nama_operator:    d.nama_operator    || '',
+    kwh_produksi:     d.kwh_produksi     !== undefined ? d.kwh_produksi     : null,
+    saldo_awal:       d.saldo_awal       !== undefined ? d.saldo_awal       : null,
+    saldo_akhir:      d.saldo_akhir      !== undefined ? d.saldo_akhir      : null,
+    penerimaan_bbm:   d.penerimaan_bbm   !== undefined ? d.penerimaan_bbm   : null,
+    estimasi_bbm_max: d.estimasi_bbm_max !== undefined ? d.estimasi_bbm_max : null
+  }
+
+  try {
+    var res  = await fetch('/api/lap-operasional', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload)
+    })
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error)
+
+    // Update cache
+    lapData[selectedKode] = JSON.parse(JSON.stringify(currentLapForm))
+
+    showToast(unit.nama_unit + ' berhasil disimpan!', 'success')
+
+    // Update status text di form
+    var statusEl = document.getElementById('lap-save-status')
+    if (statusEl) statusEl.textContent = 'Disimpan: ' + new Date().toLocaleString('id-ID')
+
+    // Re-render agar badge "Data Tersimpan" muncul
+    renderLapForm()
+
+  } catch(e) { showToast('Gagal menyimpan: ' + e.message,'error') }
+}
+
+// =============================================
+// RIWAYAT LAP OPERASIONAL
+// =============================================
+async function showRiwayatLap() {
+  var list = document.getElementById('riwayat-lap-list')
+  list.innerHTML = '<div style="text-align:center;padding:16px;color:#94a3b8"><span class="spinner"></span> Memuat...</div>'
+  document.getElementById('modal-riwayat-lap').classList.remove('hidden')
+  try {
+    var res  = await fetch('/api/lap-operasional/tanggal')
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error)
+    if (json.data.length === 0) {
+      list.innerHTML = '<div style="text-align:center;padding:16px;color:#94a3b8">Belum ada data tersimpan</div>'
+      return
+    }
+    var html = ''
+    for (var i = 0; i < json.data.length; i++) {
+      var tgl = json.data[i].tanggal
+      html += '<button class="riwayat-btn" onclick="selectRiwayatLap(\'' + tgl + '\')">'
+      html += '<i class="fas fa-calendar-day"></i><span>' + tgl + '</span></button>'
+    }
+    list.innerHTML = html
+  } catch(e) { list.innerHTML = '<div style="text-align:center;padding:16px;color:#dc2626">Gagal memuat</div>' }
+}
+
+async function selectRiwayatLap(tanggal) {
+  document.getElementById('lap-tanggal').value = tanggal
+  closeModal('modal-riwayat-lap')
+  await loadLapData()
+}
 
 // =============================================
 // TAB SWITCHING
@@ -82,9 +437,14 @@ function switchTab(tab) {
   document.getElementById('toolbar-laporan').classList.toggle('hidden', tab !== 'laporan')
   document.getElementById('header-actions-monitoring').classList.toggle('hidden', tab !== 'monitoring')
   document.getElementById('header-actions-laporan').classList.toggle('hidden', tab !== 'laporan')
+
   if (tab === 'laporan') {
     document.getElementById('last-update').textContent = 'LAP. OPERASIONAL'
-    loadLapData()
+    // Tampilkan state awal jika belum pilih
+    if (!selectedKode) {
+      if (!selectedArea) showLapState('empty')
+      else showLapState('pick-unit')
+    }
   } else {
     document.getElementById('last-update').textContent = 'MONITORING MESIN'
   }
@@ -105,7 +465,6 @@ function renderTable() {
   var thead = document.getElementById('table-head')
   var tbody = document.getElementById('table-body')
 
-  // Header
   var headHTML = '<tr><th>Parameter</th>'
   for (var i = 0; i < mesinList.length; i++) {
     headHTML += '<th>' + mesinList[i].nama + '</th>'
@@ -113,7 +472,6 @@ function renderTable() {
   headHTML += '</tr>'
   thead.innerHTML = headHTML
 
-  // Body
   var bodyHTML = ''
   for (var pi = 0; pi < PARAMS.length; pi++) {
     var p = PARAMS[pi]
@@ -126,7 +484,7 @@ function renderTable() {
     bodyHTML += '</td>'
 
     for (var mi = 0; mi < mesinList.length; mi++) {
-      var m = mesinList[mi]
+      var m   = mesinList[mi]
       var val = (currentData[m.id] && currentData[m.id][p.key] !== undefined && currentData[m.id][p.key] !== null)
                 ? currentData[m.id][p.key] : ''
       if (p.type === 'select') {
@@ -139,7 +497,7 @@ function renderTable() {
         bodyHTML += '</select></td>'
       } else {
         bodyHTML += '<td><input type="number" step="any" class="cell-input" placeholder="—"'
-        bodyHTML += ' value="' + (val !== '' ? val : '') + '"'
+        bodyHTML += ' value="' + val + '"'
         bodyHTML += ' oninput="setCellValue(' + m.id + ',\'' + p.key + '\',this.value)"/></td>'
       }
     }
@@ -195,7 +553,7 @@ async function saveAllData() {
   var records = []
   for (var i = 0; i < mesinList.length; i++) {
     var m = mesinList[i]
-    var d = currentData[m.id] || { status_mesin: 'Operasi' }
+    var d = Object.assign({}, currentData[m.id] || { status_mesin: 'Operasi' })
     d.mesin_id = m.id
     records.push(d)
   }
@@ -208,7 +566,7 @@ async function saveAllData() {
     })
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
-    showToast('Data berhasil disimpan! (' + json.saved + ' mesin, ' + tanggal + ' ' + jam + ')','success')
+    showToast('Data berhasil disimpan! (' + json.saved + ' mesin)','success')
     document.getElementById('last-update').textContent = 'Disimpan: ' + new Date().toLocaleString('id-ID')
   } catch(e) { showToast('Gagal menyimpan: ' + e.message,'error') }
   finally { showLoading(false,'loading-indicator') }
@@ -240,14 +598,14 @@ async function addMesin() {
 
 async function showRiwayat() {
   var list = document.getElementById('riwayat-list')
-  list.innerHTML = '<div class="text-sm text-slate-400 text-center py-4"><span class="spinner"></span> Memuat...</div>'
+  list.innerHTML = '<div style="text-align:center;padding:16px;color:#94a3b8"><span class="spinner"></span> Memuat...</div>'
   document.getElementById('modal-riwayat').classList.remove('hidden')
   try {
     var res  = await fetch('/api/monitoring/tanggal')
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
     if (json.data.length === 0) {
-      list.innerHTML = '<div class="text-sm text-slate-400 text-center py-4">Belum ada data</div>'
+      list.innerHTML = '<div style="text-align:center;padding:16px;color:#94a3b8">Belum ada data</div>'
       return
     }
     var html = ''
@@ -257,7 +615,7 @@ async function showRiwayat() {
       html += '<i class="fas fa-calendar-day"></i><span>' + tgl + '</span></button>'
     }
     list.innerHTML = html
-  } catch(e) { list.innerHTML = '<div class="text-sm text-red-400 text-center py-4">Gagal memuat</div>' }
+  } catch(e) { list.innerHTML = '<div style="text-align:center;padding:16px;color:#dc2626">Gagal memuat</div>' }
 }
 
 async function selectRiwayat(tanggal) {
@@ -271,260 +629,6 @@ async function selectRiwayat(tanggal) {
     }
   } catch(e) {}
   await loadData()
-}
-
-// =============================================
-// ===== LAP. OPERASIONAL =====
-// =============================================
-function renderLapCards(filter) {
-  var container = document.getElementById('lap-cards-container')
-  var filtered = filter
-    ? UNIT_DATA.filter(function(u) {
-        return u.nama_unit.toLowerCase().indexOf(filter.toLowerCase()) >= 0
-          || String(u.kode_unit).indexOf(filter) >= 0
-      })
-    : UNIT_DATA
-
-  if (filtered.length === 0) {
-    container.innerHTML = '<div class="text-center py-12 text-slate-400"><i class="fas fa-search text-3xl mb-2"></i><p>Tidak ada unit ditemukan</p></div>'
-    return
-  }
-
-  // Group by area
-  var areas = {}
-  for (var i = 0; i < filtered.length; i++) {
-    var u = filtered[i]
-    if (!areas[u.area]) areas[u.area] = []
-    areas[u.area].push(u)
-  }
-
-  var tgl = document.getElementById('lap-tanggal') ? document.getElementById('lap-tanggal').value : ''
-  var html = ''
-  var areaKeys = Object.keys(areas)
-
-  for (var ai = 0; ai < areaKeys.length; ai++) {
-    var area = areaKeys[ai]
-    var units = areas[area]
-    html += '<div class="area-group">'
-    html += '<div class="area-label"><i class="fas fa-map-marker-alt"></i>' + area + '</div>'
-    html += '<div class="cards-grid">'
-
-    for (var ui = 0; ui < units.length; ui++) {
-      var unit = units[ui]
-      var kode = unit.kode_unit
-      var d = lapData[kode] || {}
-      html += '<div class="lap-card" id="card-' + kode + '">'
-      // Card header
-      html += '<div class="lap-card-header">'
-      html += '<div><div class="unit-name">' + unit.nama_unit + '</div>'
-      html += '<div class="unit-area">' + unit.area + '</div></div>'
-      html += '<div style="display:flex;align-items:center;gap:8px;">'
-      html += '<span id="saved-' + kode + '" class="lap-saved"><i class="fas fa-check-circle"></i> Tersimpan</span>'
-      html += '<span class="unit-kode">ID: ' + kode + '</span>'
-      html += '</div></div>'
-      // Info bar
-      html += '<div class="lap-info-bar">'
-      html += '<span><i class="fas fa-building"></i> UNIT: ' + unit.nama_unit + '</span>'
-      html += '<span><i class="fas fa-hashtag"></i> ID: ' + kode + '</span>'
-      html += '<span><i class="fas fa-calendar"></i> Tgl: ' + (tgl || '—') + '</span>'
-      html += '</div>'
-      // Fields grid
-      html += '<div class="lap-grid">'
-      // Nama Operator (full width)
-      var valOp = d.nama_operator || ''
-      html += '<div class="lap-field full">'
-      html += '<label><i class="fas fa-user"></i> Nama Operator</label>'
-      html += '<input type="text" placeholder="Nama operator..." value="' + valOp + '"'
-      html += ' oninput="setLapValue(' + kode + ',\'nama_operator\',this.value)"/>'
-      html += '</div>'
-      // kWh Produksi
-      html += '<div class="lap-field">'
-      html += '<label><i class="fas fa-bolt"></i> kWh Produksi (kWh)</label>'
-      html += '<input type="number" step="any" placeholder="0" value="' + (d.kwh_produksi !== undefined && d.kwh_produksi !== null ? d.kwh_produksi : '') + '"'
-      html += ' oninput="setLapValue(' + kode + ',\'kwh_produksi\',this.value)"/>'
-      html += '</div>'
-      // Saldo Awal
-      html += '<div class="lap-field">'
-      html += '<label><i class="fas fa-gas-pump" style="color:#d97706"></i> Saldo Awal (ltr)</label>'
-      html += '<input type="number" step="any" placeholder="0" value="' + (d.saldo_awal !== undefined && d.saldo_awal !== null ? d.saldo_awal : '') + '"'
-      html += ' oninput="setLapValue(' + kode + ',\'saldo_awal\',this.value)"/>'
-      html += '</div>'
-      // Saldo Akhir
-      html += '<div class="lap-field">'
-      html += '<label><i class="fas fa-gas-pump" style="color:#16a34a"></i> Saldo Akhir (ltr)</label>'
-      html += '<input type="number" step="any" placeholder="0" value="' + (d.saldo_akhir !== undefined && d.saldo_akhir !== null ? d.saldo_akhir : '') + '"'
-      html += ' oninput="setLapValue(' + kode + ',\'saldo_akhir\',this.value)"/>'
-      html += '</div>'
-      // Penerimaan BBM
-      html += '<div class="lap-field">'
-      html += '<label><i class="fas fa-truck-ramp-box" style="color:#2563eb"></i> Penerimaan BBM (ltr)</label>'
-      html += '<input type="number" step="any" placeholder="0" value="' + (d.penerimaan_bbm !== undefined && d.penerimaan_bbm !== null ? d.penerimaan_bbm : '') + '"'
-      html += ' oninput="setLapValue(' + kode + ',\'penerimaan_bbm\',this.value)"/>'
-      html += '</div>'
-      // Estimasi BBM Maks (full width)
-      html += '<div class="lap-field full">'
-      html += '<label><i class="fas fa-calculator" style="color:#dc2626"></i> Estimasi Pemakaian BBM Maksimal (ltr)</label>'
-      html += '<input type="number" step="any" placeholder="0" value="' + (d.estimasi_bbm_max !== undefined && d.estimasi_bbm_max !== null ? d.estimasi_bbm_max : '') + '"'
-      html += ' oninput="setLapValue(' + kode + ',\'estimasi_bbm_max\',this.value)"/>'
-      html += '</div>'
-      html += '</div>' // end lap-grid
-      // Footer button
-      html += '<div class="lap-card-footer">'
-      html += '<button class="btn btn-primary btn-sm" onclick="saveLapSingle(' + kode + ',\'' + unit.nama_unit + '\')">'
-      html += '<i class="fas fa-save"></i> Simpan</button>'
-      html += '</div>'
-      html += '</div>' // end lap-card
-    }
-    html += '</div></div>' // end cards-grid + area-group
-  }
-  container.innerHTML = html
-
-  // Restore saved badges
-  var keys = Object.keys(lapData)
-  for (var ki = 0; ki < keys.length; ki++) {
-    var badge = document.getElementById('saved-' + keys[ki])
-    if (badge) badge.classList.add('show')
-  }
-}
-
-function setLapValue(kode, field, value) {
-  if (!lapData[kode]) lapData[kode] = {}
-  lapData[kode][field] = value === '' ? null : (field === 'nama_operator' ? value : parseFloat(value))
-}
-
-async function loadLapData() {
-  var tanggal = document.getElementById('lap-tanggal').value
-  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu','info'); return }
-  showLoading(true,'loading-indicator-lap')
-  try {
-    var res  = await fetch('/api/lap-operasional?tanggal=' + tanggal)
-    var json = await res.json()
-    if (!json.success) throw new Error(json.error)
-    lapData = {}
-    for (var i = 0; i < json.data.length; i++) {
-      var row = json.data[i]
-      lapData[row.kode_unit] = {
-        nama_operator:  row.nama_operator,
-        kwh_produksi:   row.kwh_produksi,
-        saldo_awal:     row.saldo_awal,
-        saldo_akhir:    row.saldo_akhir,
-        penerimaan_bbm: row.penerimaan_bbm,
-        estimasi_bbm_max: row.estimasi_bbm_max
-      }
-    }
-    var filterVal = document.getElementById('search-unit') ? document.getElementById('search-unit').value : ''
-    renderLapCards(filterVal)
-    var cnt = json.data.length
-    document.getElementById('info-lap-record').textContent = cnt > 0
-      ? cnt + ' unit sudah ada data pada ' + tanggal
-      : 'Belum ada data untuk ' + tanggal
-    document.getElementById('last-update').textContent = 'LAP. OPERASIONAL — ' + tanggal
-  } catch(e) { showToast('Gagal memuat data: ' + e.message,'error') }
-  finally { showLoading(false,'loading-indicator-lap') }
-}
-
-async function saveLapSingle(kode, namaUnit) {
-  var tanggal = document.getElementById('lap-tanggal').value
-  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu','info'); return }
-  var d = lapData[kode] || {}
-  try {
-    var payload = { kode_unit: kode, nama_unit: namaUnit, tanggal: tanggal }
-    payload.nama_operator   = d.nama_operator   || ''
-    payload.kwh_produksi    = d.kwh_produksi    !== undefined ? d.kwh_produksi    : null
-    payload.saldo_awal      = d.saldo_awal      !== undefined ? d.saldo_awal      : null
-    payload.saldo_akhir     = d.saldo_akhir     !== undefined ? d.saldo_akhir     : null
-    payload.penerimaan_bbm  = d.penerimaan_bbm  !== undefined ? d.penerimaan_bbm  : null
-    payload.estimasi_bbm_max= d.estimasi_bbm_max!== undefined ? d.estimasi_bbm_max: null
-
-    var res  = await fetch('/api/lap-operasional', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    var json = await res.json()
-    if (!json.success) throw new Error(json.error)
-    showToast(namaUnit + ' berhasil disimpan','success')
-    var badge = document.getElementById('saved-' + kode)
-    if (badge) {
-      badge.classList.add('show')
-      setTimeout(function(){ badge.classList.remove('show') }, 3000)
-    }
-  } catch(e) { showToast('Gagal: ' + e.message,'error') }
-}
-
-async function saveAllLap() {
-  var tanggal = document.getElementById('lap-tanggal').value
-  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu','info'); return }
-  showLoading(true,'loading-indicator-lap')
-  var saved = 0, errors = 0
-  var promises = []
-  for (var i = 0; i < UNIT_DATA.length; i++) {
-    (function(unit) {
-      var d = lapData[unit.kode_unit] || {}
-      var hasData = false
-      var vals = Object.values(d)
-      for (var vi = 0; vi < vals.length; vi++) {
-        if (vals[vi] !== null && vals[vi] !== undefined && vals[vi] !== '') { hasData = true; break }
-      }
-      if (!hasData) return
-      var payload = { kode_unit: unit.kode_unit, nama_unit: unit.nama_unit, tanggal: tanggal }
-      payload.nama_operator    = d.nama_operator    || ''
-      payload.kwh_produksi     = d.kwh_produksi     !== undefined ? d.kwh_produksi     : null
-      payload.saldo_awal       = d.saldo_awal       !== undefined ? d.saldo_awal       : null
-      payload.saldo_akhir      = d.saldo_akhir      !== undefined ? d.saldo_akhir      : null
-      payload.penerimaan_bbm   = d.penerimaan_bbm   !== undefined ? d.penerimaan_bbm   : null
-      payload.estimasi_bbm_max = d.estimasi_bbm_max !== undefined ? d.estimasi_bbm_max : null
-      promises.push(
-        fetch('/api/lap-operasional', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        }).then(function(r){ return r.json() }).then(function(j){
-          if (j.success) {
-            saved++
-            var badge = document.getElementById('saved-' + unit.kode_unit)
-            if (badge) { badge.classList.add('show'); setTimeout(function(){ badge.classList.remove('show') }, 3000) }
-          } else errors++
-        }).catch(function(){ errors++ })
-      )
-    })(UNIT_DATA[i])
-  }
-  await Promise.all(promises)
-  showLoading(false,'loading-indicator-lap')
-  if (errors === 0) showToast(saved + ' unit berhasil disimpan','success')
-  else showToast(saved + ' disimpan, ' + errors + ' gagal','error')
-}
-
-function filterUnit(val) {
-  renderLapCards(val)
-}
-
-async function showRiwayatLap() {
-  var list = document.getElementById('riwayat-lap-list')
-  list.innerHTML = '<div class="text-sm text-slate-400 text-center py-4"><span class="spinner"></span> Memuat...</div>'
-  document.getElementById('modal-riwayat-lap').classList.remove('hidden')
-  try {
-    var res  = await fetch('/api/lap-operasional/tanggal')
-    var json = await res.json()
-    if (!json.success) throw new Error(json.error)
-    if (json.data.length === 0) {
-      list.innerHTML = '<div class="text-sm text-slate-400 text-center py-4">Belum ada data</div>'
-      return
-    }
-    var html = ''
-    for (var i = 0; i < json.data.length; i++) {
-      var tgl = json.data[i].tanggal
-      html += '<button class="riwayat-btn" onclick="selectRiwayatLap(\'' + tgl + '\')">'
-      html += '<i class="fas fa-calendar-day"></i><span>' + tgl + '</span></button>'
-    }
-    list.innerHTML = html
-  } catch(e) { list.innerHTML = '<div class="text-sm text-red-400 text-center py-4">Gagal memuat</div>' }
-}
-
-async function selectRiwayatLap(tanggal) {
-  document.getElementById('lap-tanggal').value = tanggal
-  closeModal('modal-riwayat-lap')
-  await loadLapData()
 }
 
 // =============================================
@@ -552,7 +656,6 @@ function showToast(msg, type) {
   setTimeout(function(){ el.remove() }, 3500)
 }
 
-// Click outside modal to close
 document.addEventListener('click', function(e) {
   var modals = document.querySelectorAll('.modal-overlay')
   modals.forEach(function(modal) {
