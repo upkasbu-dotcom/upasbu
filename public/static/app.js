@@ -733,7 +733,7 @@ function fallbackCopy(teks) {
 
 function kirimWhatsApp() {
   var teks = document.getElementById('kirim-preview-text').textContent
-  window.open('https://wa.me/?text=' + encodeURIComponent(teks), '_blank')
+  window.open('https://wa.me/6285388709607?text=' + encodeURIComponent(teks), '_blank')
 }
 
 async function showRiwayatLap() {
