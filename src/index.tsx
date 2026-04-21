@@ -383,13 +383,70 @@ app.get('/api/data-stok', async (c) => {
     const avgMap: Record<number, number> = {}
     for (const row of avgResult.results) avgMap[row.kode_unit] = row.avg_pemakaian
 
-    // Ambil stok awal bulan (tanggal 01 bulan ini)
-    const bulanIni = tanggal.substring(0, 7) + '-01'
-    const stokAwalBulan = await c.env.DB.prepare(
-      `SELECT kode_unit, saldo_awal FROM lap_operasional WHERE tanggal = ? ORDER BY kode_unit`
-    ).bind(bulanIni).all<{ kode_unit: number, saldo_awal: number }>()
+    // Stok awal bulan aktual (April 2026) — data referensi dari dokumen resmi
+    const STOK_AWAL_APRIL_2026: Record<number, number> = {
+      366: 6141,   // BABAI
+      910: 48836,  // MANGKATIP
+      385: 37213,  // RANGGA ILUNG
+      911: 455,    // TELUK BETUNG
+      913: 6030,   // TUMPUNG LAUNG
+      372: 28202,  // GUNUNG PUREI
+      915: 36359,  // SUNGAI BALI
+      918: 26560,  // KERAYAAN
+      919: 18231,  // KERUMPUTAN
+      917: 25242,  // KERASIAN
+      920: 29058,  // MARABATUAN
+      399: 17803,  // TUMBANG SENAMANG
+      390: 13983,  // TELAGA
+      382: 46810,  // PAGATAN
+      391: 13117,  // TELAGA PULANG
+      376: 67517,  // MENDAWAI
+      373: 9229,   // KENAMBUI
+      395: 26263,  // TUMBANG MANJUL
+      375: 25627,  // KUDANGAN
+    }
+
+    const bulanTanggal = tanggal.substring(0, 7) // "YYYY-MM"
     const stokAwalBulanMap: Record<number, number> = {}
-    for (const row of stokAwalBulan.results) stokAwalBulanMap[row.kode_unit] = row.saldo_awal
+
+    if (bulanTanggal === '2026-04') {
+      // Bulan April 2026: pakai data referensi statis
+      for (const [kode, val] of Object.entries(STOK_AWAL_APRIL_2026)) {
+        stokAwalBulanMap[Number(kode)] = val
+      }
+    } else {
+      // Bulan lain: ambil stock_bersih tanggal terakhir bulan sebelumnya dari DB
+      // tanggal terakhir bulan sebelumnya = hari terakhir bulan sebelum bulanTanggal
+      const [yr, mo] = bulanTanggal.split('-').map(Number)
+      const lastDayPrevMonth = new Date(yr, mo - 1, 0).toISOString().split('T')[0] // hari terakhir bulan lalu
+      const prevData = await c.env.DB.prepare(
+        `SELECT kode_unit, saldo_akhir FROM lap_operasional WHERE tanggal = ? ORDER BY kode_unit`
+      ).bind(lastDayPrevMonth).all<{ kode_unit: number, saldo_akhir: number }>()
+
+      if (prevData.results.length > 0) {
+        // Hitung stock_bersih = saldo_akhir - stock_mati per unit
+        for (const row of prevData.results) {
+          const meta = UNIT_META[row.kode_unit]
+          const stockMati = meta?.stock_mati ?? 0
+          stokAwalBulanMap[row.kode_unit] = Math.max(0, row.saldo_akhir - stockMati)
+        }
+      } else {
+        // Fallback: cari tanggal terakhir yang ada di bulan sebelumnya
+        const fallback = await c.env.DB.prepare(`
+          SELECT kode_unit, saldo_akhir
+          FROM lap_operasional
+          WHERE tanggal = (
+            SELECT MAX(tanggal) FROM lap_operasional
+            WHERE tanggal < ?
+          )
+        `).bind(bulanTanggal + '-01').all<{ kode_unit: number, saldo_akhir: number }>()
+        for (const row of fallback.results) {
+          const meta = UNIT_META[row.kode_unit]
+          const stockMati = meta?.stock_mati ?? 0
+          stokAwalBulanMap[row.kode_unit] = Math.max(0, row.saldo_akhir - stockMati)
+        }
+      }
+    }
 
     const SAFETY_STOCK_HARI = 3  // hari safety stock
 
