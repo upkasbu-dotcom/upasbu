@@ -774,13 +774,38 @@ async function selectRiwayatLap(tanggal) {
 // ===== TAB: DATA =====
 // =============================================
 
+var dataTableInited = false
+
+function initDataTable() {
+  if (dataTableInited) return
+  var cols = ['NO','ULD','JALUR','KAPASITAS TANGKI','STOK AWAL BULAN','STOCK AWAL',
+              'STOCK MATI','STOCK BERSIH','RATA-RATA PEMAKAIAN HARIAN',
+              'DAYA TAMPUNG STORAGE','BBM SIAP KIRIM','SAFETY STOCK',
+              'ESTIMASI BBM HABIS','KONDISI STOCK']
+  var headHTML = '<tr>'
+  for (var i = 0; i < cols.length; i++) {
+    var stickyStyle = i < 2 ? 'position:sticky;left:' + (i===0?'0':'40px') + ';z-index:2;' : ''
+    headHTML += '<th style="background:#1e3a5f;color:#fff;padding:8px 10px;white-space:nowrap;font-size:0.72rem;text-align:center;' + stickyStyle + '">' + cols[i] + '</th>'
+  }
+  headHTML += '</tr>'
+  document.getElementById('data-table-head').innerHTML = headHTML
+  document.getElementById('data-state-empty').style.display = 'none'
+  document.getElementById('data-table-wrap').classList.remove('hidden')
+  dataTableInited = true
+}
+
+function fmtData(val) {
+  if (val === null || val === undefined) return '<span style="color:#cbd5e1">—</span>'
+  return Number(val).toLocaleString('id-ID')
+}
+
 async function loadDataTab() {
   var tanggal = document.getElementById('data-tanggal').value
   if (!tanggal) { showToast('Pilih tanggal terlebih dahulu', 'info'); return }
 
+  // Render header hanya sekali, body saja yang diupdate
+  initDataTable()
   showLoading(true, 'loading-indicator-data')
-  document.getElementById('data-state-empty').style.display = 'none'
-  document.getElementById('data-table-wrap').classList.add('hidden')
 
   try {
     var res  = await fetch('/api/data-stok?tanggal=' + tanggal)
@@ -788,33 +813,11 @@ async function loadDataTab() {
     if (!json.success) throw new Error(json.error)
     var rows = json.data || []
 
-    var thead = document.getElementById('data-table-head')
-    var tbody = document.getElementById('data-table-body')
-
-    // ── HEADER ──
-    var cols = ['NO','ULD','JALUR','KAPASITAS TANGKI','STOK AWAL BULAN','STOCK AWAL',
-                'STOCK MATI','STOCK BERSIH','RATA-RATA PEMAKAIAN HARIAN',
-                'DAYA TAMPUNG STORAGE','BBM SIAP KIRIM','SAFETY STOCK',
-                'ESTIMASI BBM HABIS','KONDISI STOCK']
-    var headHTML = '<tr>'
-    for (var i = 0; i < cols.length; i++) {
-      var stickyStyle = i < 2 ? 'position:sticky;left:' + (i===0?'0':'40px') + ';z-index:2;' : ''
-      headHTML += '<th style="background:#1e3a5f;color:#fff;padding:8px 10px;white-space:nowrap;font-size:0.72rem;text-align:center;' + stickyStyle + '">' + cols[i] + '</th>'
-    }
-    headHTML += '</tr>'
-    thead.innerHTML = headHTML
-
-    // ── BODY ──
-    function fmt(val) {
-      if (val === null || val === undefined) return '<span style="color:#cbd5e1">—</span>'
-      return Number(val).toLocaleString('id-ID')
-    }
-
     var bodyHTML = ''
     for (var r = 0; r < rows.length; r++) {
       var d = rows[r]
       var kondisiColor = '#475569'
-      if (d.kondisi_stock === 'KRITIS')  kondisiColor = '#dc2626'
+      if (d.kondisi_stock === 'KRITIS')       kondisiColor = '#dc2626'
       else if (d.kondisi_stock === 'MENIPIS') kondisiColor = '#d97706'
       else if (d.kondisi_stock === 'AMAN')    kondisiColor = '#16a34a'
       else if (d.kondisi_stock === 'CUKUP')   kondisiColor = '#2563eb'
@@ -824,27 +827,24 @@ async function loadDataTab() {
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;position:sticky;left:0;background:' + bgRow + ';z-index:1;">' + d.no + '</td>'
       bodyHTML += '<td style="padding:7px 10px;white-space:nowrap;font-size:0.78rem;font-weight:600;color:#1e3a5f;position:sticky;left:40px;background:' + bgRow + ';z-index:1;">' + d.nama_unit + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;">' + (d.jalur || '—') + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmt(d.kapasitas_tangki) + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmt(d.stok_awal_bulan) + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmt(d.stok_awal) + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmt(d.stock_mati) + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;">' + fmt(d.stock_bersih) + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmt(d.rata_rata_harian) + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmt(d.daya_tampung_storage) + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;">' + fmt(d.bbm_siap_kirim) + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmt(d.safety_stock) + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.kapasitas_tangki) + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.stok_awal_bulan) + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.stok_awal) + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.stock_mati) + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;">' + fmtData(d.stock_bersih) + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.rata_rata_harian) + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.daya_tampung_storage) + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;">' + fmtData(d.bbm_siap_kirim) + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.safety_stock) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;">' + (d.estimasi_bbm_habis || '—') + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;font-weight:700;color:' + kondisiColor + ';">' + d.kondisi_stock + '</td>'
       bodyHTML += '</tr>'
     }
-    tbody.innerHTML = bodyHTML
-
+    document.getElementById('data-table-body').innerHTML = bodyHTML
     document.getElementById('info-data-record').textContent = rows.length + ' unit'
-    document.getElementById('data-table-wrap').classList.remove('hidden')
 
   } catch(e) {
     showToast('Gagal memuat data: ' + e.message, 'error')
-    document.getElementById('data-state-empty').style.display = 'flex'
   } finally {
     showLoading(false, 'loading-indicator-data')
   }
