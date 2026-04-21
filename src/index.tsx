@@ -381,7 +381,6 @@ app.get('/', (c) => {
 <div class="toolbar-wrap">
   <!-- Monitoring toolbar -->
   <div id="toolbar-monitoring">
-    <!-- Baris 1: UP3 + Unit -->
     <div class="toolbar">
       <div class="toolbar-group">
         <label class="toolbar-label">UP3</label>
@@ -395,11 +394,6 @@ app.get('/', (c) => {
           <option value="">-- Pilih Unit --</option>
         </select>
       </div>
-      <div id="loading-indicator-mesin" class="hidden"><span class="spinner"></span></div>
-      <span class="toolbar-info" id="info-mesin-count"></span>
-    </div>
-    <!-- Baris 2: Tanggal + Jam + Aksi -->
-    <div class="toolbar">
       <div class="toolbar-group">
         <label class="toolbar-label">Tgl</label>
         <input type="date" id="sel-tanggal" class="toolbar-input"/>
@@ -416,14 +410,15 @@ app.get('/', (c) => {
       <button class="btn btn-outline" onclick="showRiwayat()" id="btn-riwayat" disabled style="opacity:0.5;cursor:not-allowed;">
         <i class="fas fa-history"></i><span class="btn-text"> Riwayat</span>
       </button>
+      <div id="loading-indicator-mesin" class="hidden"><span class="spinner"></span></div>
       <div id="loading-indicator" class="hidden"><span class="spinner"></span></div>
+      <span class="toolbar-info" id="info-mesin-count"></span>
       <span class="toolbar-info" id="info-record"></span>
     </div>
   </div>
 
   <!-- Lap operasional toolbar -->
   <div id="toolbar-laporan" class="hidden">
-    <!-- Baris 1: UP3 + Unit -->
     <div class="toolbar">
       <div class="toolbar-group">
         <label class="toolbar-label">UP3</label>
@@ -437,10 +432,6 @@ app.get('/', (c) => {
           <option value="">-- Pilih Unit --</option>
         </select>
       </div>
-      <div id="loading-indicator-lap-unit" class="hidden"><span class="spinner"></span></div>
-    </div>
-    <!-- Baris 2: Tanggal + Aksi -->
-    <div class="toolbar">
       <div class="toolbar-group">
         <label class="toolbar-label">Tgl</label>
         <input type="date" id="lap-tanggal" class="toolbar-input"/>
@@ -451,6 +442,7 @@ app.get('/', (c) => {
       <button class="btn btn-outline" onclick="showRiwayatLap()">
         <i class="fas fa-history"></i><span class="btn-text"> Riwayat</span>
       </button>
+      <div id="loading-indicator-lap-unit" class="hidden"><span class="spinner"></span></div>
       <div id="loading-indicator-lap" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-lap-record"></span>
     </div>

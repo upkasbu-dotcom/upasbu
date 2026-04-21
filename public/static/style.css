@@ -62,7 +62,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   align-items: center;
   flex-wrap: wrap;
 }
-.toolbar + .toolbar { margin-top: 8px; }
+
 .toolbar-label {
   font-size: 0.75rem;
   font-weight: 700;
@@ -83,7 +83,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   transition: border 0.15s;
   min-width: 0;
   flex: 1;
-  max-width: 260px;
+  max-width: 220px;
 }
 .toolbar-select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px #bfdbfe; }
 .toolbar-select:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
@@ -340,11 +340,13 @@ select.cell-input { width: 112px; cursor: pointer; }
   .btn .btn-text { display: none; }
   .btn { padding: 7px 10px; }
 
-  /* Toolbar full-width selects */
-  .toolbar-wrap { padding: 8px 10px; }
-  .toolbar { gap: 6px; }
-  .toolbar-group { width: 100%; }
-  .toolbar-select { max-width: 100%; flex: 1; }
+  /* Toolbar single-row on mobile */
+  .toolbar-wrap { padding: 6px 8px; }
+  .toolbar { gap: 5px; flex-wrap: wrap; }
+  .toolbar-group { flex: 1 1 auto; min-width: 0; }
+  .toolbar-select { max-width: 100%; min-width: 80px; flex: 1; font-size: 0.75rem; padding: 5px 6px; }
+  .toolbar-input { font-size: 0.75rem; padding: 5px 6px; min-width: 100px; flex: 1 1 auto; }
+  .toolbar-label { font-size: 0.7rem; }
   .toolbar-info { display: none; }
 
   /* Table */
@@ -388,7 +390,7 @@ select.cell-input { width: 112px; cursor: pointer; }
    TABLET  641px – 1024px
    ============================================= */
 @media (min-width: 641px) and (max-width: 1024px) {
-  .toolbar-select { max-width: 200px; }
+  .toolbar-select { max-width: 180px; }
   .table-wrap { max-height: calc(100vh - 225px); }
   thead th:first-child { min-width: 160px; }
   tbody td:first-child  { min-width: 160px; }
