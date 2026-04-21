@@ -163,8 +163,6 @@ app.post('/api/sync-mesin/force', async (c) => {
 // ============================================================
 app.get('/api/up3', async (c) => {
   try {
-    // Sync hanya di endpoint ini — entry point pertama setiap hari
-    await syncMesinIfNeeded(c.env.DB)
     const result = await c.env.DB.prepare(
       `SELECT DISTINCT up3 FROM mesin_cache ORDER BY up3`
     ).all<{ up3: string }>()
@@ -177,6 +175,8 @@ app.get('/api/up3', async (c) => {
 // ============================================================
 app.get('/api/unit', async (c) => {
   try {
+    // Sync harian — entry point utama sejak filter UP3 dihapus
+    await syncMesinIfNeeded(c.env.DB)
     const up3 = c.req.query('up3') || ''
     let query = `SELECT DISTINCT kode_unit, nama_unit FROM mesin_cache`
     const params: any[] = []
