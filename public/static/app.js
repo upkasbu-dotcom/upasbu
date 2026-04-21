@@ -30,7 +30,7 @@ var monSelectedUp3  = ''
 var monSelectedUnit = null    // kode_unit (integer)
 
 // =============================================
-// STATE LAP. OPERASIONAL
+// STATE OPERASIONAL
 // =============================================
 var lapData          = {}
 var lapSelectedUp3   = ''
@@ -412,7 +412,7 @@ function switchTab(tab) {
   document.getElementById('header-actions-laporan').style.display   = (tab === 'laporan')    ? 'flex' : 'none'
 
   if (tab === 'laporan') {
-    document.getElementById('last-update').textContent = 'LAP. OPERASIONAL'
+    document.getElementById('last-update').textContent = 'OPERASIONAL'
     if (!lapSelectedKode) {
       if (!lapSelectedUp3) showLapState('empty')
       else showLapState('pick-unit')
@@ -423,7 +423,7 @@ function switchTab(tab) {
 }
 
 // =============================================
-// ===== LAP. OPERASIONAL =====
+// ===== OPERASIONAL =====
 // =============================================
 
 // UP3 berubah untuk laporan
@@ -632,7 +632,7 @@ async function loadLapData() {
       currentLapForm = lapData[lapSelectedKode] ? JSON.parse(JSON.stringify(lapData[lapSelectedKode])) : {}
       renderLapForm()
     }
-    document.getElementById('last-update').textContent = 'LAP. OPERASIONAL — ' + tanggal
+    document.getElementById('last-update').textContent = 'OPERASIONAL — ' + tanggal
     showToast('Data ' + tanggal + ' dimuat','info')
   } catch(e) { showToast('Gagal memuat data: ' + e.message,'error') }
   finally { showLoading(false,'loading-indicator-lap') }

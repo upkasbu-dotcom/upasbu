@@ -280,7 +280,7 @@ app.post('/api/monitoring/batch', async (c) => {
 })
 
 // ============================================================
-// API: LAP. OPERASIONAL
+// API: OPERASIONAL
 // ============================================================
 app.get('/api/lap-operasional', async (c) => {
   try {
@@ -357,7 +357,7 @@ app.get('/', (c) => {
         <span class="btn-text">LOG SHEET</span>
       </button>
       <button id="tab-btn-laporan" class="tab-btn" onclick="switchTab('laporan')">
-        <span class="btn-text">LAP. OPERASIONAL</span>
+        <span class="btn-text">OPERASIONAL</span>
       </button>
     </div>
     <p class="app-header-sub" id="last-update">—</p>
@@ -462,7 +462,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<!-- ===== TAB: LAP. OPERASIONAL ===== -->
+<!-- ===== TAB: OPERASIONAL ===== -->
 <div id="tab-laporan" class="tab-content" style="padding:10px 12px;">
   <div id="lap-state-empty" style="flex-direction:column;"></div>
   <div id="lap-state-pick-unit" style="display:none;flex-direction:column;"></div>
