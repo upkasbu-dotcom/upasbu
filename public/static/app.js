@@ -70,7 +70,12 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('lap-tanggal').value  = todayStr
   var hr = String(today.getHours()).padStart(2,'0') + ':00'
   document.getElementById('sel-jam').value = hr
-  document.getElementById('last-update').textContent = 'Digitalisasi Pelaporan'
+  // Hapus cache UP3-based lama agar tidak konflik
+  try {
+    Object.keys(localStorage).forEach(function(k) {
+      if (k.startsWith('mm_up3') || k.startsWith('mm_unit_')) localStorage.removeItem(k)
+    })
+  } catch(e) {}
 
   // Load semua unit untuk kedua tab
   loadAllUnits()
@@ -82,17 +87,14 @@ document.addEventListener('DOMContentLoaded', function() {
 async function loadAllUnits() {
   showLoading(true, 'loading-indicator-mesin')
   try {
-    var units
-    var cached = lsGet('all_units')
-    if (cached && Array.isArray(cached) && cached.length > 0) {
-      units = cached
-    } else {
-      var res  = await fetch('/api/unit')
-      var json = await res.json()
-      if (!json.success) throw new Error(json.error)
-      units = json.data
-      lsSet('all_units', units)
-    }
+    // Selalu fetch dari server — tidak pakai cache untuk memastikan data terbaru
+    var res  = await fetch('/api/unit')
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error || 'Gagal memuat unit')
+    var units = json.data || []
+    if (units.length === 0) throw new Error('Data unit kosong')
+    lsSet('all_units', units)
     populateUnitSelect('mon-sel-unit', units)
     populateUnitSelect('lap-sel-unit', units)
   } catch(e) {
@@ -281,7 +283,6 @@ async function loadData() {
     document.getElementById('info-record').textContent = cnt > 0
       ? cnt + ' mesin sudah ada data'
       : 'Belum ada data untuk ' + tanggal + ' ' + jam
-    document.getElementById('last-update').textContent = 'Ditampilkan: ' + tanggal + ' Jam ' + jam
   } catch(e) { showToast('Gagal memuat data: ' + e.message,'error') }
   finally { showLoading(false,'loading-indicator') }
 }
@@ -309,7 +310,6 @@ async function saveAllData() {
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
     showToast('Data berhasil disimpan! (' + json.saved + ' mesin)','success')
-    document.getElementById('last-update').textContent = 'Disimpan: ' + new Date().toLocaleString('id-ID')
   } catch(e) { showToast('Gagal menyimpan: ' + e.message,'error') }
   finally { showLoading(false,'loading-indicator') }
 }
@@ -366,10 +366,8 @@ function switchTab(tab) {
   document.getElementById('header-actions-laporan').style.display   = (tab === 'laporan')    ? 'flex' : 'none'
 
   if (tab === 'laporan') {
-    document.getElementById('last-update').textContent = 'OPERASIONAL'
     if (!lapSelectedKode) showLapState('empty')
   } else {
-    document.getElementById('last-update').textContent = 'LOG SHEET HARIAN'
   }
 }
 
@@ -534,7 +532,6 @@ async function loadLapData() {
       currentLapForm = lapData[lapSelectedKode] ? JSON.parse(JSON.stringify(lapData[lapSelectedKode])) : {}
       renderLapForm()
     }
-    document.getElementById('last-update').textContent = 'OPERASIONAL — ' + tanggal
     showToast('Data ' + tanggal + ' dimuat','info')
   } catch(e) { showToast('Gagal memuat data: ' + e.message,'error') }
   finally { showLoading(false,'loading-indicator-lap') }
