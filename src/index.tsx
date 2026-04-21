@@ -354,7 +354,7 @@ app.get('/', (c) => {
   <div class="app-header-body">
     <div class="tab-row">
       <button id="tab-btn-monitoring" class="tab-btn active" onclick="switchTab('monitoring')">
-        <span class="btn-text">MONITORING</span>
+        <span class="btn-text">LOG SHEET</span>
       </button>
       <button id="tab-btn-laporan" class="tab-btn" onclick="switchTab('laporan')">
         <span class="btn-text">LAP. OPERASIONAL</span>
