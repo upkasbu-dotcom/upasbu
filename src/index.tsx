@@ -354,10 +354,10 @@ app.get('/', (c) => {
   <div class="app-header-body">
     <div class="tab-row">
       <button id="tab-btn-monitoring" class="tab-btn active" onclick="switchTab('monitoring')">
-        <i class="fas fa-table-cells"></i><span class="btn-text"> MONITORING</span>
+        <span class="btn-text">MONITORING</span>
       </button>
       <button id="tab-btn-laporan" class="tab-btn" onclick="switchTab('laporan')">
-        <i class="fas fa-file-lines"></i><span class="btn-text"> LAP. OPERASIONAL</span>
+        <span class="btn-text">LAP. OPERASIONAL</span>
       </button>
     </div>
     <p class="app-header-sub" id="last-update">—</p>
