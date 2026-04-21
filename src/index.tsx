@@ -384,13 +384,13 @@ app.get('/', (c) => {
     <!-- Baris 1: UP3 + Unit -->
     <div class="toolbar">
       <div class="toolbar-group">
-        <label class="toolbar-label"><i class="fas fa-network-wired" style="color:#3b82f6"></i> UP3</label>
+        <label class="toolbar-label">UP3</label>
         <select id="mon-sel-up3" class="toolbar-select" onchange="onMonUp3Change(this.value)">
           <option value="">-- Pilih UP3 --</option>
         </select>
       </div>
       <div class="toolbar-group">
-        <label class="toolbar-label"><i class="fas fa-building" style="color:#3b82f6"></i> Unit</label>
+        <label class="toolbar-label">Unit</label>
         <select id="mon-sel-unit" class="toolbar-select" onchange="onMonUnitChange(this.value)" disabled>
           <option value="">-- Pilih Unit --</option>
         </select>
@@ -401,11 +401,11 @@ app.get('/', (c) => {
     <!-- Baris 2: Tanggal + Jam + Aksi -->
     <div class="toolbar">
       <div class="toolbar-group">
-        <label class="toolbar-label"><i class="fas fa-calendar"></i> Tgl</label>
+        <label class="toolbar-label">Tgl</label>
         <input type="date" id="sel-tanggal" class="toolbar-input"/>
       </div>
       <div class="toolbar-group">
-        <label class="toolbar-label"><i class="fas fa-clock"></i> Jam</label>
+        <label class="toolbar-label">Jam</label>
         <select id="sel-jam" class="toolbar-select" style="max-width:100px;">
           ${jamOptions}
         </select>
@@ -426,13 +426,13 @@ app.get('/', (c) => {
     <!-- Baris 1: UP3 + Unit -->
     <div class="toolbar">
       <div class="toolbar-group">
-        <label class="toolbar-label"><i class="fas fa-network-wired" style="color:#3b82f6"></i> UP3</label>
+        <label class="toolbar-label">UP3</label>
         <select id="lap-sel-up3" class="toolbar-select" onchange="onLapUp3Change(this.value)">
           <option value="">-- Pilih UP3 --</option>
         </select>
       </div>
       <div class="toolbar-group">
-        <label class="toolbar-label"><i class="fas fa-building" style="color:#3b82f6"></i> Unit</label>
+        <label class="toolbar-label">Unit</label>
         <select id="lap-sel-unit" class="toolbar-select" onchange="onLapUnitChange(this.value)" disabled>
           <option value="">-- Pilih Unit --</option>
         </select>
@@ -442,7 +442,7 @@ app.get('/', (c) => {
     <!-- Baris 2: Tanggal + Aksi -->
     <div class="toolbar">
       <div class="toolbar-group">
-        <label class="toolbar-label"><i class="fas fa-calendar"></i> Tgl</label>
+        <label class="toolbar-label">Tgl</label>
         <input type="date" id="lap-tanggal" class="toolbar-input"/>
       </div>
       <button class="btn btn-primary" onclick="loadLapData()" id="btn-tampilkan-lap" disabled style="opacity:0.5;cursor:not-allowed;">
