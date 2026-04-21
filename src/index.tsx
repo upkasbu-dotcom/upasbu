@@ -327,6 +327,108 @@ app.post('/api/lap-operasional', async (c) => {
 })
 
 // ============================================================
+// API: DATA STOK (tabel rekap semua unit per tanggal)
+// ============================================================
+app.get('/api/data-stok', async (c) => {
+  try {
+    const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
+
+    // Ambil semua unit dari mesin_cache
+    const units = await c.env.DB.prepare(
+      `SELECT DISTINCT kode_unit, nama_unit FROM mesin_cache ORDER BY nama_unit`
+    ).all<{ kode_unit: number, nama_unit: string }>()
+
+    // Ambil data lap_operasional hari ini
+    const lapHariIni = await c.env.DB.prepare(
+      `SELECT * FROM lap_operasional WHERE tanggal = ? ORDER BY kode_unit`
+    ).bind(tanggal).all<any>()
+    const lapMap: Record<number, any> = {}
+    for (const row of lapHariIni.results) lapMap[row.kode_unit] = row
+
+    // Ambil rata-rata pemakaian 30 hari terakhir per unit
+    // pemakaian = saldo_awal - saldo_akhir + penerimaan_bbm
+    const avgResult = await c.env.DB.prepare(`
+      SELECT kode_unit,
+             AVG(CASE WHEN (saldo_awal - saldo_akhir + COALESCE(penerimaan_bbm,0)) > 0
+                      THEN (saldo_awal - saldo_akhir + COALESCE(penerimaan_bbm,0))
+                      ELSE NULL END) AS avg_pemakaian
+      FROM lap_operasional
+      WHERE tanggal >= date(?, '-30 days') AND tanggal < ?
+      GROUP BY kode_unit
+    `).bind(tanggal, tanggal).all<{ kode_unit: number, avg_pemakaian: number }>()
+    const avgMap: Record<number, number> = {}
+    for (const row of avgResult.results) avgMap[row.kode_unit] = row.avg_pemakaian
+
+    // Ambil stok awal bulan (tanggal 01 bulan ini)
+    const bulanIni = tanggal.substring(0, 7) + '-01'
+    const stokAwalBulan = await c.env.DB.prepare(
+      `SELECT kode_unit, saldo_awal FROM lap_operasional WHERE tanggal = ? ORDER BY kode_unit`
+    ).bind(bulanIni).all<{ kode_unit: number, saldo_awal: number }>()
+    const stokAwalBulanMap: Record<number, number> = {}
+    for (const row of stokAwalBulan.results) stokAwalBulanMap[row.kode_unit] = row.saldo_awal
+
+    const STOCK_MATI = 200  // liter - nilai konstanta minimum
+    const SAFETY_STOCK_HARI = 3  // hari safety stock
+
+    const rows = units.results.map((u, idx) => {
+      const lap       = lapMap[u.kode_unit]
+      const avgPakai  = avgMap[u.kode_unit] || null
+
+      const stokAwalBln  = stokAwalBulanMap[u.kode_unit] ?? null
+      const stokAwal     = lap?.saldo_awal ?? null
+      const stokAkhir    = lap?.saldo_akhir ?? null
+      const estimasiBbm  = lap?.estimasi_bbm_max ?? null
+      const penerimaanBbm = lap?.penerimaan_bbm ?? null
+
+      const stockMati    = STOCK_MATI
+      const stockBersih  = stokAkhir !== null ? Math.max(0, stokAkhir - stockMati) : null
+      const safetyStock  = avgPakai !== null ? Math.round(avgPakai * SAFETY_STOCK_HARI) : null
+      const bbmSiapKirim = (stockBersih !== null && safetyStock !== null)
+                           ? Math.max(0, stockBersih - safetyStock) : null
+      const dayaTampung  = estimasiBbm ?? null
+
+      // Estimasi BBM habis: stockBersih / avgPakai
+      let estimasiBbmHabis: string | null = null
+      if (stockBersih !== null && avgPakai !== null && avgPakai > 0) {
+        const hariLagi = Math.floor(stockBersih / avgPakai)
+        const tglHabis = new Date(tanggal)
+        tglHabis.setDate(tglHabis.getDate() + hariLagi)
+        estimasiBbmHabis = tglHabis.toISOString().split('T')[0]
+      }
+
+      // Kondisi stok
+      let kondisi = '-'
+      if (stockBersih !== null && safetyStock !== null) {
+        if (stockBersih <= 0) kondisi = 'KRITIS'
+        else if (stockBersih <= safetyStock) kondisi = 'MENIPIS'
+        else if (bbmSiapKirim !== null && bbmSiapKirim > 0) kondisi = 'AMAN'
+        else kondisi = 'CUKUP'
+      }
+
+      return {
+        no: idx + 1,
+        kode_unit: u.kode_unit,
+        nama_unit: u.nama_unit,
+        jalur: lap?.nama_operator ?? '-',
+        kapasitas_tangki: dayaTampung,
+        stok_awal_bulan: stokAwalBln,
+        stok_awal: stokAwal,
+        stock_mati: stockMati,
+        stock_bersih: stockBersih,
+        rata_rata_harian: avgPakai !== null ? Math.round(avgPakai) : null,
+        daya_tampung_storage: dayaTampung,
+        bbm_siap_kirim: bbmSiapKirim,
+        safety_stock: safetyStock,
+        estimasi_bbm_habis: estimasiBbmHabis,
+        kondisi_stock: kondisi
+      }
+    })
+
+    return c.json({ success: true, data: rows })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ============================================================
 // SERVE MAIN PAGE
 // ============================================================
 app.get('/', (c) => {
@@ -419,12 +521,6 @@ app.get('/', (c) => {
   <!-- Data toolbar -->
   <div id="toolbar-data" class="hidden">
     <div class="toolbar">
-      <div class="toolbar-group">
-        <label class="toolbar-label">Unit</label>
-        <select id="data-sel-unit" class="toolbar-select" onchange="onDataUnitChange(this.value)">
-          <option value="">-- Pilih Unit --</option>
-        </select>
-      </div>
       <div class="toolbar-group">
         <label class="toolbar-label">Tanggal</label>
         <input type="date" id="data-tanggal" class="toolbar-input"/>
