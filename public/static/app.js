@@ -63,6 +63,7 @@ var lapSelectedKode  = null   // kode_unit (integer)
 var lapSelectedUnit  = null   // { kode_unit, nama_unit } object
 var currentLapForm   = {}
 var lastSavedData    = {}
+var currentTeksLaporan = ''
 
 
 
@@ -672,11 +673,11 @@ function renderReview(unit, tanggal, d) {
     'ID Unit: ' + kodeFormatted + '\n' +
     'Tgl : ' + tanggal + '\n' +
     'Nama Operator: ' + fmtStr(d.nama_operator) + '\n\n' +
-    'kWh Produksi : ' + fmtNum(d.kwh_produksi) + ' kWh\n' +
-    'Saldo Awal : ' + fmtNum(d.saldo_awal) + ' ltr\n' +
-    'Saldo Akhir : ' + fmtNum(d.saldo_akhir) + ' ltr\n' +
-    'Penerimaan BBM : ' + fmtNum(d.penerimaan_bbm) + ' ltr\n' +
-    'Estimasi Pemakaian BBM Maksimal : ' + fmtNum(d.estimasi_bbm_max) + ' ltr'
+    'kWh Produksi : ' + fmtNum(d.kwh_produksi) + '\n' +
+    'Saldo Awal : ' + fmtNum(d.saldo_awal) + '\n' +
+    'Saldo Akhir : ' + fmtNum(d.saldo_akhir) + '\n' +
+    'Penerimaan BBM : ' + fmtNum(d.penerimaan_bbm) + '\n' +
+    'Estimasi Pemakaian BBM Maksimal : ' + fmtNum(d.estimasi_bbm_max)
 
   var html = '<div class="review-wrap">'
   html += '<div class="review-kop"><div class="review-kop-left"><div class="review-kop-icon"><i class="fas fa-file-invoice"></i></div>'
@@ -702,7 +703,8 @@ function renderReview(unit, tanggal, d) {
   html += '<div class="review-footer"><div class="review-save-info"><i class="fas fa-clock"></i> Disimpan: ' + savedAt + '</div>'
   html += '<div class="review-actions">'
   html += '<button class="btn btn-outline-dark" onclick="backToForm()"><i class="fas fa-pen"></i> Edit</button>'
-  html += '<button class="btn btn-kirim" onclick="kirimLaporan(\'' + encodeURIComponent(teksLaporan) + '\')"><i class="fas fa-paper-plane"></i> Kirim</button>'
+  currentTeksLaporan = teksLaporan
+  html += '<button class="btn btn-kirim" onclick="kirimLaporan()"><i class="fas fa-paper-plane"></i> Kirim</button>'
   html += '</div></div></div>'
 
   document.getElementById('lap-review-container').innerHTML = html
@@ -710,9 +712,8 @@ function renderReview(unit, tanggal, d) {
 
 function backToForm() { showLapState('form'); renderLapForm() }
 
-function kirimLaporan(encodedTeks) {
-  var teks = decodeURIComponent(encodedTeks)
-  document.getElementById('kirim-preview-text').textContent = teks
+function kirimLaporan() {
+  document.getElementById('kirim-preview-text').textContent = currentTeksLaporan
   document.getElementById('modal-kirim').classList.remove('hidden')
 }
 
