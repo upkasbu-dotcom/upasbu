@@ -449,7 +449,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<!-- ===== TAB: MONITORING MESIN ===== -->
+<!-- ===== TAB: LOG SHEET HARIAN ===== -->
 <div id="tab-monitoring" class="tab-content active" style="padding:10px 12px;">
   <div id="mon-state-empty" style="display:flex;"></div>
   <div id="mon-table-wrap" class="hidden">

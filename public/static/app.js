@@ -116,7 +116,7 @@ async function loadUp3List() {
 }
 
 // =============================================
-// ===== MONITORING MESIN =====
+// ===== LOG SHEET HARIAN =====
 // =============================================
 
 // UP3 berubah → load unit
@@ -418,7 +418,7 @@ function switchTab(tab) {
       else showLapState('pick-unit')
     }
   } else {
-    document.getElementById('last-update').textContent = 'MONITORING MESIN'
+    document.getElementById('last-update').textContent = 'LOG SHEET HARIAN'
   }
 }
 
