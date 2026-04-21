@@ -523,11 +523,9 @@ app.get('/', (c) => {
     <div class="toolbar">
       <div class="toolbar-group">
         <label class="toolbar-label">Tanggal</label>
-        <input type="date" id="data-tanggal" class="toolbar-input"/>
+        <input type="date" id="data-tanggal" class="toolbar-input" onchange="loadDataTab()"/>
       </div>
-      <button class="btn btn-primary" onclick="loadDataTab()" id="btn-tampilkan-data">
-        <span class="btn-text">Tampilkan</span>
-      </button>
+
       <div id="loading-indicator-data" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-data-record"></span>
     </div>
