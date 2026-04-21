@@ -407,8 +407,9 @@ function switchTab(tab) {
   document.getElementById('tab-btn-laporan').classList.toggle('active', tab === 'laporan')
   document.getElementById('toolbar-monitoring').classList.toggle('hidden', tab !== 'monitoring')
   document.getElementById('toolbar-laporan').classList.toggle('hidden', tab !== 'laporan')
-  document.getElementById('header-actions-monitoring').classList.toggle('hidden', tab !== 'monitoring')
-  document.getElementById('header-actions-laporan').classList.toggle('hidden', tab !== 'laporan')
+  // header-actions: pakai display langsung (bukan Tailwind hidden)
+  document.getElementById('header-actions-monitoring').style.display = (tab === 'monitoring') ? 'flex' : 'none'
+  document.getElementById('header-actions-laporan').style.display   = (tab === 'laporan')    ? 'flex' : 'none'
 
   if (tab === 'laporan') {
     document.getElementById('last-update').textContent = 'LAP. OPERASIONAL'
@@ -522,8 +523,13 @@ function setBtnLapEnabled(enabled) {
 }
 
 function showLapState(state) {
-  document.getElementById('lap-state-empty').classList.toggle('hidden', state !== 'empty')
-  document.getElementById('lap-state-pick-unit').classList.toggle('hidden', state !== 'pick-unit')
+  // empty state
+  var elEmpty = document.getElementById('lap-state-empty')
+  elEmpty.style.display = (state === 'empty') ? 'flex' : 'none'
+  // pick-unit state
+  var elPick = document.getElementById('lap-state-pick-unit')
+  elPick.style.display = (state === 'pick-unit') ? 'flex' : 'none'
+  // form & review
   document.getElementById('lap-form-container').classList.toggle('hidden', state !== 'form')
   document.getElementById('lap-review-container').classList.toggle('hidden', state !== 'review')
   var btnSave = document.getElementById('btn-save-lap')

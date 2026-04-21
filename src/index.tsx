@@ -349,86 +349,91 @@ app.get('/', (c) => {
 <body class="bg-slate-100 min-h-screen">
 
 <!-- ===== HEADER ===== -->
-<header class="bg-[#1e3a5f] text-white px-5 py-3 flex items-center gap-4 shadow-lg">
-  <i class="fas fa-gauge-high text-2xl text-blue-300 flex-shrink-0"></i>
-  <div class="flex-1 min-w-0">
-    <div class="flex items-center gap-2 flex-wrap">
+<header class="app-header">
+  <i class="fas fa-gauge-high app-header-icon"></i>
+  <div class="app-header-body">
+    <div class="tab-row">
       <button id="tab-btn-monitoring" class="tab-btn active" onclick="switchTab('monitoring')">
-        <i class="fas fa-table-cells mr-1"></i>MONITORING MESIN
+        <i class="fas fa-table-cells"></i><span class="btn-text"> MONITORING</span>
       </button>
       <button id="tab-btn-laporan" class="tab-btn" onclick="switchTab('laporan')">
-        <i class="fas fa-file-lines mr-1"></i>LAP. OPERASIONAL
+        <i class="fas fa-file-lines"></i><span class="btn-text"> LAP. OPERASIONAL</span>
       </button>
     </div>
-    <p class="text-xs text-blue-300 mt-1" id="last-update">—</p>
+    <p class="app-header-sub" id="last-update">—</p>
   </div>
-  <div class="flex gap-2 items-center flex-wrap flex-shrink-0" id="header-actions-monitoring">
+  <div class="header-actions" id="header-actions-monitoring">
     <button class="btn btn-success" id="btn-simpan-semua" onclick="saveAllData()" disabled style="opacity:0.5;cursor:not-allowed;">
-      <i class="fas fa-save"></i> Simpan Semua
+      <i class="fas fa-save"></i><span class="btn-text"> Simpan Semua</span>
     </button>
   </div>
-  <div class="flex gap-2 items-center hidden" id="header-actions-laporan">
+  <div class="header-actions" id="header-actions-laporan" style="display:none;">
     <button class="btn btn-outline" id="btn-edit-lap" style="color:#fff;border-color:#93c5fd;display:none;" onclick="backToForm()">
-      <i class="fas fa-pen"></i> Edit
+      <i class="fas fa-pen"></i><span class="btn-text"> Edit</span>
     </button>
     <button class="btn btn-success" id="btn-save-lap" onclick="saveLapCurrent()" disabled style="opacity:0.5;cursor:not-allowed;">
-      <i class="fas fa-save"></i> Simpan Data
+      <i class="fas fa-save"></i><span class="btn-text"> Simpan</span>
     </button>
   </div>
 </header>
 
 <!-- ===== TOOLBAR ===== -->
-<div class="px-5 py-2.5 bg-white shadow-sm border-b border-slate-200">
+<div class="toolbar-wrap">
   <!-- Monitoring toolbar -->
   <div id="toolbar-monitoring">
-    <!-- Baris 1: Filter UP3 → Unit -->
-    <div class="toolbar mb-2">
-      <div class="flex items-center gap-2">
-        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-network-wired mr-1 text-blue-500"></i>UP3:</label>
-        <select id="mon-sel-up3" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[180px]" onchange="onMonUp3Change(this.value)">
+    <!-- Baris 1: UP3 + Unit -->
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <label class="toolbar-label"><i class="fas fa-network-wired" style="color:#3b82f6"></i> UP3</label>
+        <select id="mon-sel-up3" class="toolbar-select" onchange="onMonUp3Change(this.value)">
           <option value="">-- Pilih UP3 --</option>
         </select>
       </div>
-      <div class="flex items-center gap-2">
-        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-building mr-1 text-blue-500"></i>Unit:</label>
-        <select id="mon-sel-unit" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[230px]" onchange="onMonUnitChange(this.value)" disabled>
+      <div class="toolbar-group">
+        <label class="toolbar-label"><i class="fas fa-building" style="color:#3b82f6"></i> Unit</label>
+        <select id="mon-sel-unit" class="toolbar-select" onchange="onMonUnitChange(this.value)" disabled>
           <option value="">-- Pilih Unit --</option>
         </select>
       </div>
       <div id="loading-indicator-mesin" class="hidden"><span class="spinner"></span></div>
-      <div class="ml-auto text-xs text-slate-400" id="info-mesin-count"></div>
+      <span class="toolbar-info" id="info-mesin-count"></span>
     </div>
     <!-- Baris 2: Tanggal + Jam + Aksi -->
     <div class="toolbar">
-      <div class="flex items-center gap-2">
-        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-calendar mr-1"></i>Tanggal:</label>
-        <input type="date" id="sel-tanggal" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+      <div class="toolbar-group">
+        <label class="toolbar-label"><i class="fas fa-calendar"></i> Tgl</label>
+        <input type="date" id="sel-tanggal" class="toolbar-input"/>
       </div>
-      <div class="flex items-center gap-2">
-        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-clock mr-1"></i>Jam:</label>
-        <select id="sel-jam" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+      <div class="toolbar-group">
+        <label class="toolbar-label"><i class="fas fa-clock"></i> Jam</label>
+        <select id="sel-jam" class="toolbar-select" style="max-width:100px;">
           ${jamOptions}
         </select>
       </div>
-      <button class="btn btn-primary" onclick="loadData()" id="btn-tampilkan" disabled style="opacity:0.5;cursor:not-allowed;"><i class="fas fa-search"></i> Tampilkan</button>
-      <button class="btn btn-outline" onclick="showRiwayat()" id="btn-riwayat" disabled style="opacity:0.5;cursor:not-allowed;"><i class="fas fa-history"></i> Riwayat</button>
+      <button class="btn btn-primary" onclick="loadData()" id="btn-tampilkan" disabled style="opacity:0.5;cursor:not-allowed;">
+        <i class="fas fa-search"></i><span class="btn-text"> Tampilkan</span>
+      </button>
+      <button class="btn btn-outline" onclick="showRiwayat()" id="btn-riwayat" disabled style="opacity:0.5;cursor:not-allowed;">
+        <i class="fas fa-history"></i><span class="btn-text"> Riwayat</span>
+      </button>
       <div id="loading-indicator" class="hidden"><span class="spinner"></span></div>
-      <div class="ml-auto text-xs text-slate-400" id="info-record"></div>
+      <span class="toolbar-info" id="info-record"></span>
     </div>
   </div>
+
   <!-- Lap operasional toolbar -->
   <div id="toolbar-laporan" class="hidden">
-    <!-- Baris 1: Filter UP3 → Unit -->
-    <div class="toolbar mb-2">
-      <div class="flex items-center gap-2">
-        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-network-wired mr-1 text-blue-500"></i>UP3:</label>
-        <select id="lap-sel-up3" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[180px]" onchange="onLapUp3Change(this.value)">
+    <!-- Baris 1: UP3 + Unit -->
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <label class="toolbar-label"><i class="fas fa-network-wired" style="color:#3b82f6"></i> UP3</label>
+        <select id="lap-sel-up3" class="toolbar-select" onchange="onLapUp3Change(this.value)">
           <option value="">-- Pilih UP3 --</option>
         </select>
       </div>
-      <div class="flex items-center gap-2">
-        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-building mr-1 text-blue-500"></i>Unit (ULD):</label>
-        <select id="lap-sel-unit" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[230px]" onchange="onLapUnitChange(this.value)" disabled>
+      <div class="toolbar-group">
+        <label class="toolbar-label"><i class="fas fa-building" style="color:#3b82f6"></i> Unit</label>
+        <select id="lap-sel-unit" class="toolbar-select" onchange="onLapUnitChange(this.value)" disabled>
           <option value="">-- Pilih Unit --</option>
         </select>
       </div>
@@ -436,27 +441,29 @@ app.get('/', (c) => {
     </div>
     <!-- Baris 2: Tanggal + Aksi -->
     <div class="toolbar">
-      <div class="flex items-center gap-2">
-        <label class="text-sm font-semibold text-slate-600"><i class="fas fa-calendar mr-1"></i>Tanggal:</label>
-        <input type="date" id="lap-tanggal" class="border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+      <div class="toolbar-group">
+        <label class="toolbar-label"><i class="fas fa-calendar"></i> Tgl</label>
+        <input type="date" id="lap-tanggal" class="toolbar-input"/>
       </div>
-      <button class="btn btn-primary" onclick="loadLapData()" id="btn-tampilkan-lap" disabled style="opacity:0.5;cursor:not-allowed;"><i class="fas fa-search"></i> Tampilkan</button>
-      <button class="btn btn-outline" onclick="showRiwayatLap()"><i class="fas fa-history"></i> Riwayat</button>
+      <button class="btn btn-primary" onclick="loadLapData()" id="btn-tampilkan-lap" disabled style="opacity:0.5;cursor:not-allowed;">
+        <i class="fas fa-search"></i><span class="btn-text"> Tampilkan</span>
+      </button>
+      <button class="btn btn-outline" onclick="showRiwayatLap()">
+        <i class="fas fa-history"></i><span class="btn-text"> Riwayat</span>
+      </button>
       <div id="loading-indicator-lap" class="hidden"><span class="spinner"></span></div>
-      <div class="ml-auto text-xs text-slate-400" id="info-lap-record"></div>
+      <span class="toolbar-info" id="info-lap-record"></span>
     </div>
   </div>
 </div>
 
 <!-- ===== TAB: MONITORING MESIN ===== -->
-<div id="tab-monitoring" class="tab-content active px-4 py-3">
-  <!-- State: belum pilih unit -->
-  <div id="mon-state-empty" class="flex flex-col items-center justify-center py-20 text-slate-400">
-    <i class="fas fa-network-wired text-5xl mb-4 text-blue-200"></i>
-    <p class="text-lg font-semibold text-slate-500">Pilih UP3 dan Unit</p>
-    <p class="text-sm mt-1">Silakan pilih <strong>UP3</strong> kemudian <strong>Unit</strong> di toolbar atas</p>
+<div id="tab-monitoring" class="tab-content active" style="padding:10px 12px;">
+  <div id="mon-state-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;color:#94a3b8;text-align:center;">
+    <i class="fas fa-network-wired" style="font-size:3rem;margin-bottom:16px;color:#bfdbfe;"></i>
+    <p style="font-size:1rem;font-weight:600;color:#64748b;">Pilih UP3 dan Unit</p>
+    <p style="font-size:0.82rem;margin-top:4px;">Silakan pilih <strong>UP3</strong> kemudian <strong>Unit</strong> di toolbar atas</p>
   </div>
-  <!-- Tabel monitoring -->
   <div id="mon-table-wrap" class="hidden">
     <div class="table-wrap">
       <table id="main-table">
@@ -468,19 +475,19 @@ app.get('/', (c) => {
 </div>
 
 <!-- ===== TAB: LAP. OPERASIONAL ===== -->
-<div id="tab-laporan" class="tab-content px-4 py-3">
-  <div id="lap-state-empty" class="flex flex-col items-center justify-center py-16 text-slate-400">
-    <i class="fas fa-network-wired text-5xl mb-4 text-blue-200"></i>
-    <p class="text-lg font-semibold text-slate-500">Pilih UP3 dan Unit</p>
-    <p class="text-sm mt-1">Silakan pilih <strong>UP3</strong> kemudian <strong>Unit (ULD)</strong> di toolbar atas</p>
+<div id="tab-laporan" class="tab-content" style="padding:10px 12px;">
+  <div id="lap-state-empty" style="flex-direction:column;align-items:center;justify-content:center;padding:50px 20px;color:#94a3b8;text-align:center;">
+    <i class="fas fa-network-wired" style="font-size:3rem;margin-bottom:16px;color:#bfdbfe;"></i>
+    <p style="font-size:1rem;font-weight:600;color:#64748b;">Pilih UP3 dan Unit</p>
+    <p style="font-size:0.82rem;margin-top:4px;">Silakan pilih <strong>UP3</strong> kemudian <strong>Unit (ULD)</strong> di toolbar atas</p>
   </div>
-  <div id="lap-state-pick-unit" class="hidden flex flex-col items-center justify-center py-16 text-slate-400">
-    <i class="fas fa-building text-5xl mb-4 text-blue-200"></i>
-    <p class="text-lg font-semibold text-slate-500">Pilih Unit (ULD)</p>
-    <p class="text-sm mt-1">UP3 sudah dipilih, sekarang pilih <strong>Unit (ULD)</strong> di dropdown atas</p>
+  <div id="lap-state-pick-unit" style="display:none;flex-direction:column;align-items:center;justify-content:center;padding:50px 20px;color:#94a3b8;text-align:center;">
+    <i class="fas fa-building" style="font-size:3rem;margin-bottom:16px;color:#bfdbfe;"></i>
+    <p style="font-size:1rem;font-weight:600;color:#64748b;">Pilih Unit (ULD)</p>
+    <p style="font-size:0.82rem;margin-top:4px;">UP3 sudah dipilih, sekarang pilih <strong>Unit (ULD)</strong> di dropdown atas</p>
   </div>
-  <div id="lap-form-container" class="hidden max-w-2xl mx-auto"></div>
-  <div id="lap-review-container" class="hidden max-w-2xl mx-auto"></div>
+  <div id="lap-form-container" class="hidden" style="max-width:600px;margin:0 auto;"></div>
+  <div id="lap-review-container" class="hidden" style="max-width:600px;margin:0 auto;"></div>
 </div>
 
 <!-- TOAST -->
