@@ -92,9 +92,14 @@ function lsGet(key) {
 document.addEventListener('DOMContentLoaded', function() {
   var today   = new Date()
   var todayStr = today.toISOString().split('T')[0]
-  document.getElementById('sel-tanggal').value  = todayStr
-  document.getElementById('lap-tanggal').value  = todayStr
-  document.getElementById('data-tanggal').value  = todayStr
+  // H-1 untuk tab DATA
+  var yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  var yesterdayStr = yesterday.toISOString().split('T')[0]
+
+  document.getElementById('sel-tanggal').value   = todayStr
+  document.getElementById('lap-tanggal').value   = todayStr
+  document.getElementById('data-tanggal').value  = yesterdayStr
   var hr = String(today.getHours()).padStart(2,'0') + ':00'
   document.getElementById('sel-jam').value = hr
   // Hapus cache UP3-based lama agar tidak konflik
@@ -104,8 +109,10 @@ document.addEventListener('DOMContentLoaded', function() {
     })
   } catch(e) {}
 
-  // Load semua unit untuk kedua tab
-  loadAllUnits()
+  // Load semua unit untuk kedua tab, lalu otomatis load tab DATA
+  loadAllUnits().then(function() {
+    loadDataTab()
+  })
 })
 
 // =============================================
@@ -400,6 +407,7 @@ function switchTab(tab) {
   document.getElementById('header-actions-data').style.display      = (tab === 'data')       ? 'flex' : 'none'
 
   if (tab === 'laporan' && !lapSelectedKode) showLapState('empty')
+  if (tab === 'data') loadDataTab()
 }
 
 // =============================================
