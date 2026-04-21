@@ -479,53 +479,78 @@ function renderLapForm() {
   var d    = currentLapForm
   var alreadySaved  = !!lapData[lapSelectedKode]
   var kodeFormatted = String(unit.kode_unit).padStart(4, '0')
-  var tglDisplay    = tgl
-  if (tgl && tgl !== '—') {
-    var parts = tgl.split('-')
-    tglDisplay = parts[2] + '/' + parts[1] + '/' + parts[0]
+
+  function fldNum(key) {
+    return (d[key] !== undefined && d[key] !== null) ? d[key] : ''
   }
 
   var html = '<div class="lap-single-card">'
-  html += '<div class="lap-single-header"><div>'
-  html += '<div class="lap-single-title">' + unit.nama_unit + '</div>'
-  html += '</div><div style="display:flex;gap:8px;align-items:center;">'
-  if (alreadySaved) html += '<span class="badge-saved"><i class="fas fa-check-circle"></i> Data Tersimpan</span>'
-  html += '<span class="lap-kode-badge">ID: ' + kodeFormatted + '</span>'
+
+  // ── KOP LAPORAN ──
+  html += '<div class="lap-kop">'
+  html += '<div class="lap-kop-title">LAPORAN OPERASIONAL PLTD</div>'
+  html += '<div class="lap-kop-unit">' + unit.nama_unit + '</div>'
+  html += '<div class="lap-kop-meta">'
+  html += '<span>ID Unit: ' + kodeFormatted + '</span>'
+  html += '<span>Tgl: ' + tgl + '</span>'
+  if (alreadySaved) html += '<span class="badge-saved"><i class="fas fa-check-circle"></i> Tersimpan</span>'
   html += '</div></div>'
-  html += '<div class="lap-single-infobar">'
-  html += '<div class="info-item"><span class="info-label">UNIT</span><span class="info-val">' + unit.nama_unit + '</span></div>'
-  html += '<div class="info-item"><span class="info-label">ID UNIT</span><span class="info-val">' + kodeFormatted + '</span></div>'
-  html += '<div class="info-item"><span class="info-label">TANGGAL</span><span class="info-val">' + tglDisplay + '</span></div>'
-  html += '</div>'
+
+  // ── FORM FIELDS ──
   html += '<div class="lap-single-body">'
 
   // Nama Operator
-  html += '<div class="form-group full"><label class="form-label"><i class="fas fa-user-tie"></i> Nama Operator <span class="wajib">*</span></label>'
-  html += '<input id="field-nama-operator" type="text" class="form-input" placeholder="Masukkan nama operator..." value="' + (d.nama_operator || '') + '" oninput="setLapField(\'nama_operator\', this.value)"/></div>'
-
-  // Saldo Awal + kWh Produksi (sejajar)
-  html += '<div class="form-row">'
-  html += '<div class="form-group"><label class="form-label"><i class="fas fa-gas-pump" style="color:#d97706"></i> Saldo Awal <span class="wajib">*</span></label>'
-  html += '<div class="input-unit-wrap"><input id="field-saldo-awal" type="number" step="any" class="form-input" placeholder="0" value="' + (d.saldo_awal !== undefined && d.saldo_awal !== null ? d.saldo_awal : '') + '" oninput="setLapField(\'saldo_awal\', this.value)"/><span class="input-unit-label">ltr</span></div></div>'
-  html += '<div class="form-group"><label class="form-label"><i class="fas fa-bolt" style="color:#f59e0b"></i> kWh Produksi <span class="wajib">*</span></label>'
-  html += '<div class="input-unit-wrap"><input id="field-kwh-produksi" type="number" step="any" class="form-input" placeholder="0" value="' + (d.kwh_produksi !== undefined && d.kwh_produksi !== null ? d.kwh_produksi : '') + '" oninput="setLapField(\'kwh_produksi\', this.value)"/><span class="input-unit-label">kWh</span></div></div>'
+  html += '<div class="lap-field-row">'
+  html += '<label class="lap-field-label">Nama Operator</label>'
+  html += '<span class="lap-field-sep">:</span>'
+  html += '<input id="field-nama-operator" type="text" class="lap-field-input" placeholder="—" value="' + (d.nama_operator || '') + '" oninput="setLapField(\'nama_operator\', this.value)"/>'
   html += '</div>'
 
-  // Saldo Akhir + Penerimaan BBM (sejajar)
-  html += '<div class="form-row">'
-  html += '<div class="form-group"><label class="form-label"><i class="fas fa-gas-pump" style="color:#16a34a"></i> Saldo Akhir <span class="wajib">*</span></label>'
-  html += '<div class="input-unit-wrap"><input id="field-saldo-akhir" type="number" step="any" class="form-input" placeholder="0" value="' + (d.saldo_akhir !== undefined && d.saldo_akhir !== null ? d.saldo_akhir : '') + '" oninput="setLapField(\'saldo_akhir\', this.value)"/><span class="input-unit-label">ltr</span></div></div>'
-  html += '<div class="form-group"><label class="form-label"><i class="fas fa-truck-ramp-box" style="color:#2563eb"></i> Penerimaan BBM <span class="opsional">(opsional)</span></label>'
-  html += '<div class="input-unit-wrap"><input id="field-penerimaan-bbm" type="number" step="any" class="form-input" placeholder="0" value="' + (d.penerimaan_bbm !== undefined && d.penerimaan_bbm !== null ? d.penerimaan_bbm : '') + '" oninput="setLapField(\'penerimaan_bbm\', this.value)"/><span class="input-unit-label">ltr</span></div></div>'
+  // kWh Produksi
+  html += '<div class="lap-field-row">'
+  html += '<label class="lap-field-label">kWh Produksi</label>'
+  html += '<span class="lap-field-sep">:</span>'
+  html += '<input id="field-kwh-produksi" type="number" step="any" class="lap-field-input" placeholder="0" value="' + fldNum('kwh_produksi') + '" oninput="setLapField(\'kwh_produksi\', this.value)"/>'
+  html += '<span class="lap-field-unit">kWh</span>'
   html += '</div>'
 
-  // Estimasi BBM Maks (full width)
-  html += '<div class="form-group full"><label class="form-label"><i class="fas fa-calculator" style="color:#dc2626"></i> Estimasi Pemakaian BBM Maksimal <span class="wajib">*</span></label>'
-  html += '<div class="input-unit-wrap"><input id="field-estimasi-bbm" type="number" step="any" class="form-input" placeholder="0" value="' + (d.estimasi_bbm_max !== undefined && d.estimasi_bbm_max !== null ? d.estimasi_bbm_max : '') + '" oninput="setLapField(\'estimasi_bbm_max\', this.value)"/><span class="input-unit-label">ltr</span></div></div>'
+  // Saldo Awal
+  html += '<div class="lap-field-row">'
+  html += '<label class="lap-field-label">Saldo Awal</label>'
+  html += '<span class="lap-field-sep">:</span>'
+  html += '<input id="field-saldo-awal" type="number" step="any" class="lap-field-input" placeholder="0" value="' + fldNum('saldo_awal') + '" oninput="setLapField(\'saldo_awal\', this.value)"/>'
+  html += '<span class="lap-field-unit">ltr</span>'
+  html += '</div>'
+
+  // Saldo Akhir
+  html += '<div class="lap-field-row">'
+  html += '<label class="lap-field-label">Saldo Akhir</label>'
+  html += '<span class="lap-field-sep">:</span>'
+  html += '<input id="field-saldo-akhir" type="number" step="any" class="lap-field-input" placeholder="0" value="' + fldNum('saldo_akhir') + '" oninput="setLapField(\'saldo_akhir\', this.value)"/>'
+  html += '<span class="lap-field-unit">ltr</span>'
+  html += '</div>'
+
+  // Penerimaan BBM
+  html += '<div class="lap-field-row">'
+  html += '<label class="lap-field-label">Penerimaan BBM</label>'
+  html += '<span class="lap-field-sep">:</span>'
+  html += '<input id="field-penerimaan-bbm" type="number" step="any" class="lap-field-input" placeholder="0" value="' + fldNum('penerimaan_bbm') + '" oninput="setLapField(\'penerimaan_bbm\', this.value)"/>'
+  html += '<span class="lap-field-unit">ltr</span>'
+  html += '</div>'
+
+  // Estimasi Pemakaian BBM Maksimal
+  html += '<div class="lap-field-row">'
+  html += '<label class="lap-field-label">Estimasi Pemakaian BBM Maksimal</label>'
+  html += '<span class="lap-field-sep">:</span>'
+  html += '<input id="field-estimasi-bbm" type="number" step="any" class="lap-field-input" placeholder="0" value="' + fldNum('estimasi_bbm_max') + '" oninput="setLapField(\'estimasi_bbm_max\', this.value)"/>'
+  html += '<span class="lap-field-unit">ltr</span>'
+  html += '</div>'
 
   html += '</div>'
-  html += '<div class="lap-single-footer"><span class="text-xs text-slate-400" id="lap-save-status"></span>'
-  html += '<button class="btn btn-success" onclick="saveLapCurrent()"><i class="fas fa-save"></i> Simpan Data</button></div>'
+
+  // ── FOOTER ──
+  html += '<div class="lap-single-footer"><span id="lap-save-status"></span>'
+  html += '<button class="btn btn-success" onclick="saveLapCurrent()">Simpan Data</button></div>'
   html += '</div>'
 
   document.getElementById('lap-form-container').innerHTML = html
