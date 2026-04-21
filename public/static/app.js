@@ -26,21 +26,20 @@ var STATUS_OPTIONS = ['Operasi','Standby','Pemeliharaan','Gangguan','Rusak Perma
 // =============================================
 var mesinList       = []      // daftar mesin dari mesin_cache (sesuai unit terpilih)
 var currentData     = {}      // { mesin_id: { field: value } }
-var monSelectedUp3  = ''
+
 var monSelectedUnit = null    // kode_unit (integer)
 
 // =============================================
 // STATE OPERASIONAL
 // =============================================
 var lapData          = {}
-var lapSelectedUp3   = ''
+
 var lapSelectedKode  = null   // kode_unit (integer)
 var lapSelectedUnit  = null   // { kode_unit, nama_unit } object
 var currentLapForm   = {}
 var lastSavedData    = {}
 
-// Shared UP3 list (loaded once)
-var up3List          = []
+
 
 // =============================================
 // LOCALSTORAGE CACHE HELPERS (TTL = hari ini)
@@ -73,45 +72,46 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('sel-jam').value = hr
   document.getElementById('last-update').textContent = 'Digitalisasi Pelaporan'
 
-  // Load UP3 untuk kedua tab
-  loadUp3List()
+  // Load semua unit untuk kedua tab
+  loadAllUnits()
 })
 
 // =============================================
-// SHARED: LOAD UP3
+// SHARED: LOAD SEMUA UNIT (tanpa filter UP3)
 // =============================================
-async function loadUp3List() {
+async function loadAllUnits() {
   showLoading(true, 'loading-indicator-mesin')
   try {
-    // Cek localStorage dulu
-    var cached = lsGet('up3')
+    var units
+    var cached = lsGet('all_units')
     if (cached && Array.isArray(cached) && cached.length > 0) {
-      up3List = cached
+      units = cached
     } else {
-      var res  = await fetch('/api/up3')
+      var res  = await fetch('/api/unit')
       var json = await res.json()
       if (!json.success) throw new Error(json.error)
-      up3List = json.data
-      lsSet('up3', up3List)   // simpan ke cache
+      units = json.data
+      lsSet('all_units', units)
     }
-
-    // Populate monitoring UP3 selector
-    var selMon = document.getElementById('mon-sel-up3')
-    selMon.innerHTML = '<option value="">-- Pilih UP3 --</option>'
-    for (var i = 0; i < up3List.length; i++) {
-      selMon.innerHTML += '<option value="' + up3List[i] + '">' + up3List[i] + '</option>'
-    }
-
-    // Populate laporan UP3 selector
-    var selLap = document.getElementById('lap-sel-up3')
-    selLap.innerHTML = '<option value="">-- Pilih UP3 --</option>'
-    for (var j = 0; j < up3List.length; j++) {
-      selLap.innerHTML += '<option value="' + up3List[j] + '">' + up3List[j] + '</option>'
-    }
+    populateUnitSelect('mon-sel-unit', units)
+    populateUnitSelect('lap-sel-unit', units)
   } catch(e) {
-    showToast('Gagal memuat UP3: ' + e.message, 'error')
+    showToast('Gagal memuat unit: ' + e.message, 'error')
   } finally {
     showLoading(false, 'loading-indicator-mesin')
+  }
+}
+
+function populateUnitSelect(id, units) {
+  var sel = document.getElementById(id)
+  if (!sel) return
+  sel.innerHTML = '<option value="">-- Pilih Unit --</option>'
+  for (var i = 0; i < units.length; i++) {
+    var u = units[i]
+    var opt = document.createElement('option')
+    opt.value = u.kode_unit
+    opt.textContent = u.nama_unit + ' (' + u.kode_unit + ')'
+    sel.appendChild(opt)
   }
 }
 
@@ -119,53 +119,7 @@ async function loadUp3List() {
 // ===== LOG SHEET HARIAN =====
 // =============================================
 
-// UP3 berubah → load unit
-async function onMonUp3Change(up3) {
-  monSelectedUp3  = up3
-  monSelectedUnit = null
-  currentData     = {}
-  mesinList       = []
 
-  var selUnit = document.getElementById('mon-sel-unit')
-  selUnit.innerHTML = '<option value="">-- Pilih Unit --</option>'
-  selUnit.disabled = true
-
-  setBtnMonEnabled(false)
-  document.getElementById('info-mesin-count').textContent = ''
-  document.getElementById('mon-state-empty').classList.remove('hidden')
-  document.getElementById('mon-table-wrap').classList.add('hidden')
-  document.getElementById('table-head').innerHTML = ''
-  document.getElementById('table-body').innerHTML = ''
-
-  if (!up3) return
-
-  showLoading(true, 'loading-indicator-mesin')
-  try {
-    var units
-    var cachedUnits = lsGet('unit_' + up3)
-    if (cachedUnits && Array.isArray(cachedUnits) && cachedUnits.length > 0) {
-      units = cachedUnits
-    } else {
-      var res  = await fetch('/api/unit?up3=' + encodeURIComponent(up3))
-      var json = await res.json()
-      if (!json.success) throw new Error(json.error)
-      units = json.data
-      lsSet('unit_' + up3, units)
-    }
-    for (var i = 0; i < units.length; i++) {
-      var u = units[i]
-      var opt = document.createElement('option')
-      opt.value = u.kode_unit
-      opt.textContent = u.nama_unit + ' (' + u.kode_unit + ')'
-      selUnit.appendChild(opt)
-    }
-    selUnit.disabled = false
-  } catch(e) {
-    showToast('Gagal memuat unit: ' + e.message, 'error')
-  } finally {
-    showLoading(false, 'loading-indicator-mesin')
-  }
-}
 
 // Unit berubah → load mesin & render tabel
 async function onMonUnitChange(kodeUnit) {
@@ -413,10 +367,7 @@ function switchTab(tab) {
 
   if (tab === 'laporan') {
     document.getElementById('last-update').textContent = 'OPERASIONAL'
-    if (!lapSelectedKode) {
-      if (!lapSelectedUp3) showLapState('empty')
-      else showLapState('pick-unit')
-    }
+    if (!lapSelectedKode) showLapState('empty')
   } else {
     document.getElementById('last-update').textContent = 'LOG SHEET HARIAN'
   }
@@ -426,56 +377,7 @@ function switchTab(tab) {
 // ===== OPERASIONAL =====
 // =============================================
 
-// UP3 berubah untuk laporan
-async function onLapUp3Change(up3) {
-  lapSelectedUp3  = up3
-  lapSelectedKode = null
-  lapSelectedUnit = null
-  currentLapForm  = {}
-  lastSavedData   = {}
 
-  var selUnit = document.getElementById('lap-sel-unit')
-  selUnit.innerHTML = '<option value="">-- Pilih Unit --</option>'
-  selUnit.disabled = true
-
-  document.getElementById('lap-form-container').classList.add('hidden')
-  document.getElementById('lap-form-container').innerHTML = ''
-  document.getElementById('lap-review-container').classList.add('hidden')
-  document.getElementById('lap-review-container').innerHTML = ''
-
-  setBtnLapEnabled(false)
-
-  if (!up3) { showLapState('empty'); return }
-
-  showLoading(true, 'loading-indicator-lap-unit')
-  try {
-    // Pakai cache yang sama dengan monitoring (key sama)
-    var units
-    var cachedUnits = lsGet('unit_' + up3)
-    if (cachedUnits && Array.isArray(cachedUnits) && cachedUnits.length > 0) {
-      units = cachedUnits
-    } else {
-      var res  = await fetch('/api/unit?up3=' + encodeURIComponent(up3))
-      var json = await res.json()
-      if (!json.success) throw new Error(json.error)
-      units = json.data
-      lsSet('unit_' + up3, units)
-    }
-    for (var i = 0; i < units.length; i++) {
-      var u = units[i]
-      var opt = document.createElement('option')
-      opt.value = u.kode_unit
-      opt.textContent = u.nama_unit + ' (' + u.kode_unit + ')'
-      selUnit.appendChild(opt)
-    }
-    selUnit.disabled = false
-    showLapState('pick-unit')
-  } catch(e) {
-    showToast('Gagal memuat unit: ' + e.message, 'error')
-  } finally {
-    showLoading(false, 'loading-indicator-lap-unit')
-  }
-}
 
 // Unit berubah untuk laporan
 function onLapUnitChange(kode) {

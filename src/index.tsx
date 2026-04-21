@@ -384,14 +384,8 @@ app.get('/', (c) => {
   <div id="toolbar-monitoring">
     <div class="toolbar">
       <div class="toolbar-group">
-        <label class="toolbar-label">UP3</label>
-        <select id="mon-sel-up3" class="toolbar-select" onchange="onMonUp3Change(this.value)">
-          <option value="">-- Pilih UP3 --</option>
-        </select>
-      </div>
-      <div class="toolbar-group">
         <label class="toolbar-label">Unit</label>
-        <select id="mon-sel-unit" class="toolbar-select" onchange="onMonUnitChange(this.value)" disabled>
+        <select id="mon-sel-unit" class="toolbar-select" onchange="onMonUnitChange(this.value)">
           <option value="">-- Pilih Unit --</option>
         </select>
       </div>
@@ -422,14 +416,8 @@ app.get('/', (c) => {
   <div id="toolbar-laporan" class="hidden">
     <div class="toolbar">
       <div class="toolbar-group">
-        <label class="toolbar-label">UP3</label>
-        <select id="lap-sel-up3" class="toolbar-select" onchange="onLapUp3Change(this.value)">
-          <option value="">-- Pilih UP3 --</option>
-        </select>
-      </div>
-      <div class="toolbar-group">
         <label class="toolbar-label">Unit</label>
-        <select id="lap-sel-unit" class="toolbar-select" onchange="onLapUnitChange(this.value)" disabled>
+        <select id="lap-sel-unit" class="toolbar-select" onchange="onLapUnitChange(this.value)">
           <option value="">-- Pilih Unit --</option>
         </select>
       </div>
