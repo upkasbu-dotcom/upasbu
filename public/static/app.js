@@ -786,8 +786,9 @@ function initDataTable() {
   for (var i = 0; i < cols.length; i++) {
     var stickyStyle = i < 2 ? 'position:sticky;left:' + (i===0?'0':'24px') + ';z-index:2;' : ''
     var thExtra = i === 0 ? 'width:24px;min-width:24px;max-width:24px;padding:8px 4px;border-right:1px solid rgba(255,255,255,0.2);' : 'padding:8px 10px;'
-    var thAlign = i === 1 ? 'text-align:left;' : 'text-align:center;'
-    headHTML += '<th style="background:#1e3a5f;color:#fff;white-space:nowrap;font-size:0.72rem;' + thAlign + thExtra + stickyStyle + '">' + cols[i] + '</th>'
+    var thAlign = i === 1 ? 'text-align:left;' : i === 2 ? 'text-align:left;' : 'text-align:center;'
+    var thWidth  = i === 2 ? 'min-width:220px;' : ''
+    headHTML += '<th style="background:#1e3a5f;color:#fff;white-space:nowrap;font-size:0.72rem;' + thAlign + thWidth + thExtra + stickyStyle + '">' + cols[i] + '</th>'
   }
   headHTML += '</tr>'
   document.getElementById('data-table-head').innerHTML = headHTML
@@ -828,7 +829,7 @@ async function loadDataTab() {
       bodyHTML += '<tr style="background:' + bgRow + ';border-bottom:1px solid #e2e8f0;">'
       bodyHTML += '<td style="width:24px;min-width:24px;max-width:24px;padding:4px;text-align:center;font-size:0.7rem;position:sticky;left:0;background:' + bgRow + ';z-index:1;border-right:1px solid #e2e8f0;">' + d.no + '</td>'
       bodyHTML += '<td style="padding:7px 10px;white-space:nowrap;font-size:0.78rem;font-weight:600;color:#1e3a5f;text-align:left;position:sticky;left:24px;background:' + bgRow + ';z-index:1;">' + d.nama_unit + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;">' + (d.jalur || '—') + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:left;font-size:0.78rem;min-width:220px;white-space:nowrap;">' + (d.jalur || '—') + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.kapasitas_tangki) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.stok_awal_bulan) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.stok_awal) + '</td>'
