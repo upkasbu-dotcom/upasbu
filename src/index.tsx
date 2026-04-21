@@ -350,7 +350,6 @@ app.get('/', (c) => {
 
 <!-- ===== HEADER ===== -->
 <header class="app-header">
-  <i class="fas fa-gauge-high app-header-icon"></i>
   <div class="app-header-body">
     <div class="tab-row">
       <button id="tab-btn-monitoring" class="tab-btn active" onclick="switchTab('monitoring')">
@@ -364,15 +363,15 @@ app.get('/', (c) => {
   </div>
   <div class="header-actions" id="header-actions-monitoring">
     <button class="btn btn-success" id="btn-simpan-semua" onclick="saveAllData()" disabled style="opacity:0.5;cursor:not-allowed;">
-      <i class="fas fa-save"></i><span class="btn-text"> Simpan Semua</span>
+      <span class="btn-text">Simpan Semua</span>
     </button>
   </div>
   <div class="header-actions" id="header-actions-laporan" style="display:none;">
     <button class="btn btn-outline" id="btn-edit-lap" style="color:#fff;border-color:#93c5fd;display:none;" onclick="backToForm()">
-      <i class="fas fa-pen"></i><span class="btn-text"> Edit</span>
+      <span class="btn-text">Edit</span>
     </button>
     <button class="btn btn-success" id="btn-save-lap" onclick="saveLapCurrent()" disabled style="opacity:0.5;cursor:not-allowed;">
-      <i class="fas fa-save"></i><span class="btn-text"> Simpan</span>
+      <span class="btn-text">Simpan</span>
     </button>
   </div>
 </header>
