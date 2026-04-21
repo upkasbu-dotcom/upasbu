@@ -390,7 +390,7 @@ app.get('/', (c) => {
         </select>
       </div>
       <div class="toolbar-group">
-        <label class="toolbar-label">Tgl</label>
+        <label class="toolbar-label">Tanggal</label>
         <input type="date" id="sel-tanggal" class="toolbar-input"/>
       </div>
       <div class="toolbar-group">
@@ -422,7 +422,7 @@ app.get('/', (c) => {
         </select>
       </div>
       <div class="toolbar-group">
-        <label class="toolbar-label">Tgl</label>
+        <label class="toolbar-label">Tanggal</label>
         <input type="date" id="lap-tanggal" class="toolbar-input"/>
       </div>
       <button class="btn btn-primary" onclick="loadLapData()" id="btn-tampilkan-lap" disabled style="opacity:0.5;cursor:not-allowed;">
