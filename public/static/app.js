@@ -1,4 +1,29 @@
 // =============================================
+// DATA UNIT STATIS (fallback / seed awal)
+// =============================================
+var UNIT_DATA = [
+  { kode_unit: 366, nama_unit: "ULD BABAI",            area: "AREA KUALA KAPUAS" },
+  { kode_unit: 372, nama_unit: "ULD GUNUNG PUREI",     area: "AREA KUALA KAPUAS" },
+  { kode_unit: 373, nama_unit: "ULD KENAMBUI",         area: "AREA PANGKALAN BUN" },
+  { kode_unit: 375, nama_unit: "ULD KUDANGAN",         area: "AREA PANGKALAN BUN" },
+  { kode_unit: 376, nama_unit: "ULD MENDAWAI",         area: "AREA PANGKALAN BUN" },
+  { kode_unit: 382, nama_unit: "ULD PAGATAN",          area: "AREA PANGKALAN BUN" },
+  { kode_unit: 385, nama_unit: "ULD RANGGA ILUNG",     area: "AREA KUALA KAPUAS" },
+  { kode_unit: 390, nama_unit: "ULD TELAGA",           area: "AREA PALANGKARAYA" },
+  { kode_unit: 391, nama_unit: "ULD TELAGA PULANG",    area: "AREA PANGKALAN BUN" },
+  { kode_unit: 395, nama_unit: "ULD TUMBANG MANJUL",   area: "AREA PANGKALAN BUN" },
+  { kode_unit: 399, nama_unit: "ULD TUMBANG SENAMANG", area: "AREA PALANGKARAYA" },
+  { kode_unit: 910, nama_unit: "ULD MANGKATIP",        area: "AREA KUALA KAPUAS" },
+  { kode_unit: 911, nama_unit: "ULD TELUK BETUNG",     area: "AREA KUALA KAPUAS" },
+  { kode_unit: 913, nama_unit: "ULD TUMPUNG LAUNG",    area: "AREA KUALA KAPUAS" },
+  { kode_unit: 915, nama_unit: "ULD SUNGAI BALI",      area: "AREA TANAH BUMBU" },
+  { kode_unit: 917, nama_unit: "ULD KERASIAN",         area: "AREA TANAH BUMBU" },
+  { kode_unit: 918, nama_unit: "ULD KERAYAAN",         area: "AREA TANAH BUMBU" },
+  { kode_unit: 919, nama_unit: "ULD KERUMPUTAN",       area: "AREA TANAH BUMBU" },
+  { kode_unit: 920, nama_unit: "ULD MARABATUAN",       area: "AREA TANAH BUMBU" },
+]
+
+// =============================================
 // CONSTANTS
 // =============================================
 var PARAMS = [
@@ -85,20 +110,26 @@ document.addEventListener('DOMContentLoaded', function() {
 // SHARED: LOAD SEMUA UNIT (tanpa filter UP3)
 // =============================================
 async function loadAllUnits() {
+  // Tampilkan data statis dulu agar dropdown langsung tersedia
+  populateUnitSelect('mon-sel-unit', UNIT_DATA)
+  populateUnitSelect('lap-sel-unit', UNIT_DATA)
+
+  // Kemudian fetch dari API untuk update data terbaru di background
   showLoading(true, 'loading-indicator-mesin')
   try {
-    // Selalu fetch dari server — tidak pakai cache untuk memastikan data terbaru
     var res  = await fetch('/api/unit')
     if (!res.ok) throw new Error('HTTP ' + res.status)
     var json = await res.json()
     if (!json.success) throw new Error(json.error || 'Gagal memuat unit')
     var units = json.data || []
-    if (units.length === 0) throw new Error('Data unit kosong')
-    lsSet('all_units', units)
-    populateUnitSelect('mon-sel-unit', units)
-    populateUnitSelect('lap-sel-unit', units)
+    if (units.length > 0) {
+      lsSet('all_units', units)
+      populateUnitSelect('mon-sel-unit', units)
+      populateUnitSelect('lap-sel-unit', units)
+    }
   } catch(e) {
-    showToast('Gagal memuat unit: ' + e.message, 'error')
+    // Data statis sudah tampil, tidak perlu toast error
+    console.warn('Gagal update unit dari server:', e.message)
   } finally {
     showLoading(false, 'loading-indicator-mesin')
   }
