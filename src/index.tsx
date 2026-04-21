@@ -329,6 +329,30 @@ app.post('/api/lap-operasional', async (c) => {
 // ============================================================
 // API: DATA STOK (tabel rekap semua unit per tanggal)
 // ============================================================
+// Data statis per unit: jalur, kapasitas tangki (liter), stock mati (liter)
+// NO di sini sesuai urutan dari dokumen resmi
+const UNIT_META: Record<number, { no: number, jalur: string, kapasitas_tangki: number, stock_mati: number }> = {
+  366: { no:  1, jalur: 'SUNGAI',               kapasitas_tangki: 45000, stock_mati: 1500 }, // BABAI
+  910: { no:  2, jalur: 'SUNGAI',               kapasitas_tangki: 60000, stock_mati: 3500 }, // MANGKATIP
+  385: { no:  3, jalur: 'SUNGAI',               kapasitas_tangki: 47000, stock_mati: 1500 }, // RANGGA ILUNG
+  911: { no:  4, jalur: 'SUNGAI',               kapasitas_tangki: 28000, stock_mati: 1500 }, // TELUK BETUNG
+  913: { no:  5, jalur: 'SUNGAI',               kapasitas_tangki: 62000, stock_mati: 5000 }, // TUMPUNG LAUNG
+  372: { no:  6, jalur: 'DARAT',                kapasitas_tangki: 40000, stock_mati: 1000 }, // GUNUNG PUREI
+  915: { no:  7, jalur: 'DARAT - LAUT',         kapasitas_tangki: 54000, stock_mati: 1000 }, // SUNGAI BALI
+  918: { no: 10, jalur: 'DARAT - LAUT',         kapasitas_tangki: 41000, stock_mati:    0 }, // KERAYAAN
+  919: { no: 11, jalur: 'DARAT - LAUT',         kapasitas_tangki: 21000, stock_mati: 1000 }, // KERUMPUTAN
+  917: { no: 12, jalur: 'DARAT - LAUT',         kapasitas_tangki: 34000, stock_mati:    0 }, // KERASIAN
+  920: { no: 13, jalur: 'DARAT - LAUT (MT)',    kapasitas_tangki: 28000, stock_mati:    0 }, // MARABATUAN
+  399: { no: 14, jalur: 'DARAT - SUNGAI - DARAT', kapasitas_tangki: 38000, stock_mati: 10000 }, // TUMBANG SENAMANG
+  390: { no: 15, jalur: 'DARAT - SUNGAI',       kapasitas_tangki: 20000, stock_mati: 1000 }, // TELAGA
+  382: { no: 16, jalur: 'DARAT - LAUT - SUNGAI', kapasitas_tangki: 49000, stock_mati: 4500 }, // PAGATAN
+  391: { no: 17, jalur: 'DARAT',                kapasitas_tangki: 20000, stock_mati: 1000 }, // TELAGA PULANG
+  376: { no: 18, jalur: 'DARAT - LAUT - SUNGAI', kapasitas_tangki: 83000, stock_mati: 5000 }, // MENDAWAI
+  373: { no: 19, jalur: 'DARAT',                kapasitas_tangki: 20000, stock_mati: 2000 }, // KENAMBUI
+  395: { no: 20, jalur: 'DARAT - SUNGAI',       kapasitas_tangki: 26000, stock_mati: 1000 }, // TUMBANG MANJUL
+  375: { no: 21, jalur: 'DARAT',                kapasitas_tangki: 46000, stock_mati: 1000 }, // KUDANGAN
+}
+
 app.get('/api/data-stok', async (c) => {
   try {
     const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
@@ -367,25 +391,35 @@ app.get('/api/data-stok', async (c) => {
     const stokAwalBulanMap: Record<number, number> = {}
     for (const row of stokAwalBulan.results) stokAwalBulanMap[row.kode_unit] = row.saldo_awal
 
-    const STOCK_MATI = 200  // liter - nilai konstanta minimum
     const SAFETY_STOCK_HARI = 3  // hari safety stock
 
-    const rows = units.results.map((u, idx) => {
+    // Urutkan unit sesuai nomor di UNIT_META, sisanya di akhir
+    const sortedUnits = [...units.results].sort((a, b) => {
+      const na = UNIT_META[a.kode_unit]?.no ?? 999
+      const nb = UNIT_META[b.kode_unit]?.no ?? 999
+      return na - nb
+    })
+
+    const rows = sortedUnits.map((u) => {
+      const meta      = UNIT_META[u.kode_unit]
       const lap       = lapMap[u.kode_unit]
       const avgPakai  = avgMap[u.kode_unit] || null
 
       const stokAwalBln  = stokAwalBulanMap[u.kode_unit] ?? null
       const stokAwal     = lap?.saldo_awal ?? null
       const stokAkhir    = lap?.saldo_akhir ?? null
-      const estimasiBbm  = lap?.estimasi_bbm_max ?? null
       const penerimaanBbm = lap?.penerimaan_bbm ?? null
 
-      const stockMati    = STOCK_MATI
+      const jalur        = meta?.jalur ?? '-'
+      const kapasitasTangki = meta?.kapasitas_tangki ?? null
+      const stockMati    = meta?.stock_mati ?? 0
+      const noUrut       = meta?.no ?? '-'
+
       const stockBersih  = stokAkhir !== null ? Math.max(0, stokAkhir - stockMati) : null
       const safetyStock  = avgPakai !== null ? Math.round(avgPakai * SAFETY_STOCK_HARI) : null
       const bbmSiapKirim = (stockBersih !== null && safetyStock !== null)
                            ? Math.max(0, stockBersih - safetyStock) : null
-      const dayaTampung  = estimasiBbm ?? null
+      const dayaTampung  = kapasitasTangki
 
       // Estimasi BBM habis: stockBersih / avgPakai
       let estimasiBbmHabis: string | null = null
@@ -406,11 +440,11 @@ app.get('/api/data-stok', async (c) => {
       }
 
       return {
-        no: idx + 1,
+        no: noUrut,
         kode_unit: u.kode_unit,
         nama_unit: u.nama_unit,
-        jalur: lap?.nama_operator ?? '-',
-        kapasitas_tangki: dayaTampung,
+        jalur,
+        kapasitas_tangki: kapasitasTangki,
         stok_awal_bulan: stokAwalBln,
         stok_awal: stokAwal,
         stock_mati: stockMati,
