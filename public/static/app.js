@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('lap-tanggal').value  = todayStr
   var hr = String(today.getHours()).padStart(2,'0') + ':00'
   document.getElementById('sel-jam').value = hr
-  document.getElementById('last-update').textContent = 'Sistem Operasional Mesin'
+  document.getElementById('last-update').textContent = 'Digitalisasi Pelaporan'
 
   // Load UP3 untuk kedua tab
   loadUp3List()

@@ -340,7 +340,7 @@ app.get('/', (c) => {
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Sistem Operasional Mesin</title>
+  <title>Digitalisasi Pelaporan</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
