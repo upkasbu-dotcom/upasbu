@@ -360,12 +360,16 @@ app.get('/', (c) => {
         <button id="tab-btn-laporan" class="tab-btn" onclick="switchTab('laporan')">
           <span class="btn-text">OPERASIONAL</span>
         </button>
+        <button id="tab-btn-data" class="tab-btn" onclick="switchTab('data')">
+          <span class="btn-text">DATA</span>
+        </button>
       </div>
       <div class="header-actions" id="header-actions-monitoring">
         <button class="btn btn-success" id="btn-simpan-semua" onclick="saveAllData()" disabled style="opacity:0.5;cursor:not-allowed;">
           <span class="btn-text">Simpan Semua</span>
         </button>
       </div>
+      <div class="header-actions" id="header-actions-data" style="display:none;"></div>
       <div class="header-actions" id="header-actions-laporan" style="display:none;">
         <button class="btn btn-outline" id="btn-edit-lap" style="color:#fff;border-color:#93c5fd;display:none;" onclick="backToForm()">
           <span class="btn-text">Edit</span>
@@ -409,6 +413,27 @@ app.get('/', (c) => {
       <div id="loading-indicator" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-mesin-count"></span>
       <span class="toolbar-info" id="info-record"></span>
+    </div>
+  </div>
+
+  <!-- Data toolbar -->
+  <div id="toolbar-data" class="hidden">
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <label class="toolbar-label">Unit</label>
+        <select id="data-sel-unit" class="toolbar-select" onchange="onDataUnitChange(this.value)">
+          <option value="">-- Pilih Unit --</option>
+        </select>
+      </div>
+      <div class="toolbar-group">
+        <label class="toolbar-label">Tanggal</label>
+        <input type="date" id="data-tanggal" class="toolbar-input"/>
+      </div>
+      <button class="btn btn-primary" onclick="loadDataTab()" id="btn-tampilkan-data">
+        <span class="btn-text">Tampilkan</span>
+      </button>
+      <div id="loading-indicator-data" class="hidden"><span class="spinner"></span></div>
+      <span class="toolbar-info" id="info-data-record"></span>
     </div>
   </div>
 
@@ -457,6 +482,19 @@ app.get('/', (c) => {
   <div id="lap-state-pick-unit" style="display:none;flex-direction:column;"></div>
   <div id="lap-form-container" class="hidden" style="max-width:600px;margin:0 auto;"></div>
   <div id="lap-review-container" class="hidden" style="max-width:600px;margin:0 auto;"></div>
+</div>
+
+<!-- ===== TAB: DATA ===== -->
+<div id="tab-data" class="tab-content" style="padding:10px 12px;">
+  <div id="data-state-empty" style="display:flex;"></div>
+  <div id="data-table-wrap" class="hidden">
+    <div class="table-wrap">
+      <table id="data-table" style="width:100%;border-collapse:collapse;">
+        <thead id="data-table-head"></thead>
+        <tbody id="data-table-body"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <!-- TOAST -->

@@ -94,6 +94,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var todayStr = today.toISOString().split('T')[0]
   document.getElementById('sel-tanggal').value  = todayStr
   document.getElementById('lap-tanggal').value  = todayStr
+  document.getElementById('data-tanggal').value = todayStr
   var hr = String(today.getHours()).padStart(2,'0') + ':00'
   document.getElementById('sel-jam').value = hr
   // Hapus cache UP3-based lama agar tidak konflik
@@ -114,6 +115,7 @@ async function loadAllUnits() {
   // Tampilkan data statis dulu agar dropdown langsung tersedia
   populateUnitSelect('mon-sel-unit', UNIT_DATA)
   populateUnitSelect('lap-sel-unit', UNIT_DATA)
+  populateUnitSelect('data-sel-unit', UNIT_DATA)
 
   // Kemudian fetch dari API untuk update data terbaru di background
   showLoading(true, 'loading-indicator-mesin')
@@ -127,6 +129,7 @@ async function loadAllUnits() {
       lsSet('all_units', units)
       populateUnitSelect('mon-sel-unit', units)
       populateUnitSelect('lap-sel-unit', units)
+      populateUnitSelect('data-sel-unit', units)
     }
   } catch(e) {
     // Data statis sudah tampil, tidak perlu toast error
@@ -387,20 +390,18 @@ async function selectRiwayat(tanggal) {
 // TAB SWITCHING
 // =============================================
 function switchTab(tab) {
-  document.getElementById('tab-monitoring').classList.toggle('active', tab === 'monitoring')
-  document.getElementById('tab-laporan').classList.toggle('active', tab === 'laporan')
-  document.getElementById('tab-btn-monitoring').classList.toggle('active', tab === 'monitoring')
-  document.getElementById('tab-btn-laporan').classList.toggle('active', tab === 'laporan')
+  ['monitoring','laporan','data'].forEach(function(t) {
+    document.getElementById('tab-' + t).classList.toggle('active', tab === t)
+    document.getElementById('tab-btn-' + t).classList.toggle('active', tab === t)
+  })
   document.getElementById('toolbar-monitoring').classList.toggle('hidden', tab !== 'monitoring')
   document.getElementById('toolbar-laporan').classList.toggle('hidden', tab !== 'laporan')
-  // header-actions: pakai display langsung (bukan Tailwind hidden)
+  document.getElementById('toolbar-data').classList.toggle('hidden', tab !== 'data')
   document.getElementById('header-actions-monitoring').style.display = (tab === 'monitoring') ? 'flex' : 'none'
   document.getElementById('header-actions-laporan').style.display   = (tab === 'laporan')    ? 'flex' : 'none'
+  document.getElementById('header-actions-data').style.display      = (tab === 'data')       ? 'flex' : 'none'
 
-  if (tab === 'laporan') {
-    if (!lapSelectedKode) showLapState('empty')
-  } else {
-  }
+  if (tab === 'laporan' && !lapSelectedKode) showLapState('empty')
 }
 
 // =============================================
@@ -763,6 +764,110 @@ async function selectRiwayatLap(tanggal) {
 // =============================================
 // UTILS
 // =============================================
+// =============================================
+// ===== TAB: DATA =====
+// =============================================
+var dataSelectedUnit = null
+
+function onDataUnitChange(kode) {
+  dataSelectedUnit = kode || null
+}
+
+async function loadDataTab() {
+  var kode    = dataSelectedUnit
+  var tanggal = document.getElementById('data-tanggal').value
+  if (!kode)    { showToast('Pilih unit terlebih dahulu', 'info'); return }
+  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu', 'info'); return }
+
+  showLoading(true, 'loading-indicator-data')
+  document.getElementById('data-state-empty').style.display  = 'none'
+  document.getElementById('data-table-wrap').classList.add('hidden')
+
+  try {
+    // Ambil semua jam yang ada untuk unit+tanggal ini
+    var resJam  = await fetch('/api/monitoring/jam?tanggal=' + tanggal + '&kode_unit=' + kode)
+    var jsonJam = await resJam.json()
+    if (!jsonJam.success) throw new Error(jsonJam.error)
+    var jamList = (jsonJam.data || []).map(function(r) { return r.jam })
+
+    // Ambil daftar mesin untuk unit ini
+    var resMesin  = await fetch('/api/mesin-unit?kode_unit=' + kode)
+    var jsonMesin = await resMesin.json()
+    if (!jsonMesin.success) throw new Error(jsonMesin.error)
+    var mesinData = jsonMesin.data || []
+
+    if (jamList.length === 0 || mesinData.length === 0) {
+      document.getElementById('info-data-record').textContent = 'Belum ada data'
+      document.getElementById('data-state-empty').style.display = 'flex'
+      return
+    }
+
+    // Fetch data semua jam sekaligus
+    var allRows = {}
+    for (var j = 0; j < jamList.length; j++) {
+      var jam = jamList[j]
+      var res  = await fetch('/api/monitoring?tanggal=' + tanggal + '&jam=' + jam + '&kode_unit=' + kode)
+      var json = await res.json()
+      if (json.success) {
+        for (var r = 0; r < json.data.length; r++) {
+          var row = json.data[r]
+          if (!allRows[row.mesin_id]) allRows[row.mesin_id] = {}
+          allRows[row.mesin_id][jam] = row
+        }
+      }
+    }
+
+    // Render tabel: baris = mesin, kolom = jam
+    var thead = document.getElementById('data-table-head')
+    var tbody = document.getElementById('data-table-body')
+
+    var headHTML = '<tr><th style="position:sticky;left:0;background:#1e3a5f;color:#fff;padding:8px 12px;white-space:nowrap;z-index:2;">Mesin</th>'
+    for (var j = 0; j < jamList.length; j++) {
+      headHTML += '<th style="background:#1e3a5f;color:#fff;padding:8px 12px;white-space:nowrap;text-align:center;">' + jamList[j] + '</th>'
+    }
+    headHTML += '</tr>'
+    thead.innerHTML = headHTML
+
+    var PARAM_LABELS = PARAMS.map(function(p) { return p.label + (p.unit ? ' (' + p.unit + ')' : '') })
+    var PARAM_KEYS   = PARAMS.map(function(p) { return p.key })
+
+    var bodyHTML = ''
+    for (var m = 0; m < mesinData.length; m++) {
+      var mesin = mesinData[m]
+      var rowData = allRows[mesin.id_mesin] || {}
+
+      // Baris nama mesin (spanning header)
+      bodyHTML += '<tr style="background:#e8f0fe;">'
+      bodyHTML += '<td colspan="' + (jamList.length + 1) + '" style="padding:6px 12px;font-weight:700;font-size:0.8rem;color:#1e3a5f;position:sticky;left:0;background:#e8f0fe;">'
+      bodyHTML += mesin.mesin + ' <span style="font-weight:400;color:#64748b;font-size:0.72rem;">ID:' + mesin.id_mesin + ' | S/N:' + (mesin.s_n || '-') + '</span>'
+      bodyHTML += '</td></tr>'
+
+      // Baris per parameter
+      for (var pi = 0; pi < PARAM_KEYS.length; pi++) {
+        bodyHTML += '<tr style="border-bottom:1px solid #f1f5f9;">'
+        bodyHTML += '<td style="position:sticky;left:0;background:#fff;padding:5px 12px;font-size:0.75rem;color:#475569;white-space:nowrap;">' + PARAM_LABELS[pi] + '</td>'
+        for (var j = 0; j < jamList.length; j++) {
+          var jam = jamList[j]
+          var val = rowData[jam] ? rowData[jam][PARAM_KEYS[pi]] : null
+          var display = (val === null || val === undefined) ? '<span style="color:#cbd5e1">—</span>' : val
+          bodyHTML += '<td style="padding:5px 10px;text-align:center;font-size:0.8rem;">' + display + '</td>'
+        }
+        bodyHTML += '</tr>'
+      }
+    }
+    tbody.innerHTML = bodyHTML
+
+    document.getElementById('info-data-record').textContent = mesinData.length + ' mesin, ' + jamList.length + ' jam'
+    document.getElementById('data-table-wrap').classList.remove('hidden')
+
+  } catch(e) {
+    showToast('Gagal memuat data: ' + e.message, 'error')
+    document.getElementById('data-state-empty').style.display = 'flex'
+  } finally {
+    showLoading(false, 'loading-indicator-data')
+  }
+}
+
 function closeModal(id) { document.getElementById(id).classList.add('hidden') }
 
 function showLoading(show, id) {
