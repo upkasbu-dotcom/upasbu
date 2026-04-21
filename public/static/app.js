@@ -667,15 +667,16 @@ function renderReview(unit, tanggal, d) {
 
   var savedAt = new Date().toLocaleString('id-ID', { dateStyle:'long', timeStyle:'short' })
   var teksLaporan =
-    'LAPORAN OPERASIONAL PLTD\n' + unit.nama_unit + '\n' +
-    'ID Unit  : ' + kodeFormatted + '\n' +
-    'Tgl      : ' + tglFormatted + '\n\n' +
-    'Nama Operator          : ' + fmtStr(d.nama_operator) + '\n' +
-    'kWh Produksi           : ' + fmtNum(d.kwh_produksi) + ' kWh\n' +
-    'Saldo Awal             : ' + fmtNum(d.saldo_awal) + ' ltr\n' +
-    'Saldo Akhir            : ' + fmtNum(d.saldo_akhir) + ' ltr\n' +
-    'Penerimaan BBM         : ' + fmtNum(d.penerimaan_bbm) + ' ltr\n' +
-    'Estimasi Pemakaian BBM : ' + fmtNum(d.estimasi_bbm_max) + ' ltr'
+    'LAPORAN OPERASIONAL PLTD\n' +
+    unit.nama_unit + '\n' +
+    'ID Unit: ' + kodeFormatted + '\n' +
+    'Tgl : ' + tanggal + '\n' +
+    'Nama Operator: ' + fmtStr(d.nama_operator) + '\n\n' +
+    'kWh Produksi : ' + fmtNum(d.kwh_produksi) + ' kWh\n' +
+    'Saldo Awal : ' + fmtNum(d.saldo_awal) + ' ltr\n' +
+    'Saldo Akhir : ' + fmtNum(d.saldo_akhir) + ' ltr\n' +
+    'Penerimaan BBM : ' + fmtNum(d.penerimaan_bbm) + ' ltr\n' +
+    'Estimasi Pemakaian BBM Maksimal : ' + fmtNum(d.estimasi_bbm_max) + ' ltr'
 
   var html = '<div class="review-wrap">'
   html += '<div class="review-kop"><div class="review-kop-left"><div class="review-kop-icon"><i class="fas fa-file-invoice"></i></div>'
