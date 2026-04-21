@@ -351,28 +351,30 @@ app.get('/', (c) => {
 <!-- ===== HEADER ===== -->
 <header class="app-header">
   <div class="app-header-body">
-    <div class="tab-row">
-      <button id="tab-btn-monitoring" class="tab-btn active" onclick="switchTab('monitoring')">
-        <span class="btn-text">LOG SHEET</span>
-      </button>
-      <button id="tab-btn-laporan" class="tab-btn" onclick="switchTab('laporan')">
-        <span class="btn-text">OPERASIONAL</span>
-      </button>
+    <div class="app-name">Digitalisasi Pelaporan</div>
+    <div class="app-header-nav">
+      <div class="tab-row">
+        <button id="tab-btn-monitoring" class="tab-btn active" onclick="switchTab('monitoring')">
+          <span class="btn-text">LOG SHEET</span>
+        </button>
+        <button id="tab-btn-laporan" class="tab-btn" onclick="switchTab('laporan')">
+          <span class="btn-text">OPERASIONAL</span>
+        </button>
+      </div>
+      <div class="header-actions" id="header-actions-monitoring">
+        <button class="btn btn-success" id="btn-simpan-semua" onclick="saveAllData()" disabled style="opacity:0.5;cursor:not-allowed;">
+          <span class="btn-text">Simpan Semua</span>
+        </button>
+      </div>
+      <div class="header-actions" id="header-actions-laporan" style="display:none;">
+        <button class="btn btn-outline" id="btn-edit-lap" style="color:#fff;border-color:#93c5fd;display:none;" onclick="backToForm()">
+          <span class="btn-text">Edit</span>
+        </button>
+        <button class="btn btn-success" id="btn-save-lap" onclick="saveLapCurrent()" disabled style="opacity:0.5;cursor:not-allowed;">
+          <span class="btn-text">Simpan</span>
+        </button>
+      </div>
     </div>
-    <p class="app-header-sub" id="last-update">—</p>
-  </div>
-  <div class="header-actions" id="header-actions-monitoring">
-    <button class="btn btn-success" id="btn-simpan-semua" onclick="saveAllData()" disabled style="opacity:0.5;cursor:not-allowed;">
-      <span class="btn-text">Simpan Semua</span>
-    </button>
-  </div>
-  <div class="header-actions" id="header-actions-laporan" style="display:none;">
-    <button class="btn btn-outline" id="btn-edit-lap" style="color:#fff;border-color:#93c5fd;display:none;" onclick="backToForm()">
-      <span class="btn-text">Edit</span>
-    </button>
-    <button class="btn btn-success" id="btn-save-lap" onclick="saveLapCurrent()" disabled style="opacity:0.5;cursor:not-allowed;">
-      <span class="btn-text">Simpan</span>
-    </button>
   </div>
 </header>
 
