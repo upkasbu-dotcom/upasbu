@@ -459,9 +459,7 @@ app.get('/', (c) => {
 
 <!-- ===== TAB: MONITORING MESIN ===== -->
 <div id="tab-monitoring" class="tab-content active" style="padding:10px 12px;">
-  <div id="mon-state-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;color:#94a3b8;text-align:center;">
-    <i class="fas fa-network-wired" style="font-size:3rem;color:#bfdbfe;"></i>
-  </div>
+  <div id="mon-state-empty" style="display:flex;"></div>
   <div id="mon-table-wrap" class="hidden">
     <div class="table-wrap">
       <table id="main-table">
@@ -474,12 +472,8 @@ app.get('/', (c) => {
 
 <!-- ===== TAB: LAP. OPERASIONAL ===== -->
 <div id="tab-laporan" class="tab-content" style="padding:10px 12px;">
-  <div id="lap-state-empty" style="flex-direction:column;align-items:center;justify-content:center;padding:50px 20px;color:#94a3b8;text-align:center;">
-    <i class="fas fa-network-wired" style="font-size:3rem;color:#bfdbfe;"></i>
-  </div>
-  <div id="lap-state-pick-unit" style="display:none;flex-direction:column;align-items:center;justify-content:center;padding:50px 20px;color:#94a3b8;text-align:center;">
-    <i class="fas fa-building" style="font-size:3rem;color:#bfdbfe;"></i>
-  </div>
+  <div id="lap-state-empty" style="flex-direction:column;"></div>
+  <div id="lap-state-pick-unit" style="display:none;flex-direction:column;"></div>
   <div id="lap-form-container" class="hidden" style="max-width:600px;margin:0 auto;"></div>
   <div id="lap-review-container" class="hidden" style="max-width:600px;margin:0 auto;"></div>
 </div>
