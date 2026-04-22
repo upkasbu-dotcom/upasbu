@@ -445,7 +445,7 @@ function switchTab(tab) {
 
 
 // Unit berubah untuk laporan
-function onLapUnitChange(kode) {
+async function onLapUnitChange(kode) {
   if (!kode) {
     lapSelectedKode = null
     lapSelectedUnit = null
@@ -463,12 +463,18 @@ function onLapUnitChange(kode) {
   var sel = document.getElementById('lap-sel-unit')
   var selectedOpt = sel.options[sel.selectedIndex]
   var optText = selectedOpt ? selectedOpt.textContent : ''
-  // Ambil nama_unit dari teks option (format: "nama_unit (kode)")
   var namaUnit = optText.replace(/\s*\(\d+\)\s*$/, '').trim()
   lapSelectedUnit = { kode_unit: lapSelectedKode, nama_unit: namaUnit }
 
   currentLapForm = lapData[lapSelectedKode] ? JSON.parse(JSON.stringify(lapData[lapSelectedKode])) : {}
   lastSavedData  = {}
+
+  // Auto-fill Saldo Awal dari STOCK AWAL HOP BBM H-1 tanggal terpilih (jika belum ada data)
+  if (currentLapForm.saldo_awal === undefined || currentLapForm.saldo_awal === null) {
+    var tglTerpilih = document.getElementById('lap-tanggal').value
+    if (tglTerpilih) await autoFillSaldoAwal(tglTerpilih)
+  }
+
   renderLapForm()
   setBtnLapEnabled(true)
   showLapState('form')
@@ -720,16 +726,12 @@ async function autoFillSaldoAwal(tanggal) {
   } catch(e2) { /* gagal fetch, biarkan kosong */ }
 }
 
-// Saat tanggal berubah, auto-fill Saldo Awal dari STOCK AWAL H-1 (jika form belum punya data tersimpan)
+// Saat tanggal berubah, selalu auto-fill Saldo Awal dari STOCK AWAL HOP BBM H-1
 async function onLapTanggalChange() {
   var tanggal = document.getElementById('lap-tanggal').value
   if (!lapSelectedKode || !tanggal) return
-  // Hanya auto-fill jika belum ada data tersimpan untuk tanggal ini
-  var sudahAda = lapData[lapSelectedKode] !== undefined
-  if (!sudahAda) {
-    currentLapForm.saldo_awal = null  // reset dulu agar diisi ulang
-    await autoFillSaldoAwal(tanggal)
-  }
+  currentLapForm.saldo_awal = null  // reset agar diisi ulang
+  await autoFillSaldoAwal(tanggal)
 }
 
 async function loadLapData() {
