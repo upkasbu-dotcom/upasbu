@@ -671,6 +671,10 @@ function renderReview(unit, tanggal, d) {
     if (val === null || val === undefined || val === '') return '-'
     return Number(val).toLocaleString('id-ID')
   }
+  function fmtNumPlain(val) {
+    if (val === null || val === undefined || val === '') return '-'
+    return String(Number(val))
+  }
   function fmtStr(val) { return (!val || val.trim() === '') ? '-' : val }
 
   var savedAt = new Date().toLocaleString('id-ID', { dateStyle:'long', timeStyle:'short' })
@@ -680,11 +684,11 @@ function renderReview(unit, tanggal, d) {
     'ID Unit: ' + kodeFormatted + '\n' +
     'Tgl : ' + tanggal + '\n' +
     'Nama Operator: ' + fmtStr(d.nama_operator) + '\n\n' +
-    'kWh Produksi : ' + fmtNum(d.kwh_produksi) + '\n' +
-    'Saldo Awal : ' + fmtNum(d.saldo_awal) + '\n' +
-    'Saldo Akhir : ' + fmtNum(d.saldo_akhir) + '\n' +
-    'Penerimaan BBM : ' + fmtNum(d.penerimaan_bbm) + '\n' +
-    'Estimasi Pemakaian BBM Maksimal : ' + fmtNum(d.estimasi_bbm_max)
+    'kWh Produksi : ' + fmtNumPlain(d.kwh_produksi) + '\n' +
+    'Saldo Awal : ' + fmtNumPlain(d.saldo_awal) + '\n' +
+    'Saldo Akhir : ' + fmtNumPlain(d.saldo_akhir) + '\n' +
+    'Penerimaan BBM : ' + fmtNumPlain(d.penerimaan_bbm) + '\n' +
+    'Estimasi Pemakaian BBM Maksimal : ' + fmtNumPlain(d.estimasi_bbm_max)
 
   var html = '<div class="review-wrap">'
   html += '<div class="review-kop"><div class="review-kop-left"><div class="review-kop-icon"><i class="fas fa-file-invoice"></i></div>'
