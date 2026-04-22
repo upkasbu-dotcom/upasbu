@@ -358,9 +358,9 @@ app.get('/api/stock-oli', async (c) => {
         no: idx + 1,
         kode_unit: kode,
         nama_unit: row?.nama_unit ?? (Object.values({366:'ULD BABAI',910:'ULD MANGKATIP',385:'ULD RANGGA ILUNG',911:'ULD TELUK BETUNG',913:'ULD TUMPUNG LAUNG',372:'ULD GUNUNG PUREI',915:'ULD SUNGAI BALI',918:'ULD KERAYAAN',919:'ULD KERUMPUTAN',917:'ULD KERASIAN',920:'ULD MARABATUAN',399:'ULD TUMBANG SENAMANG',390:'ULD TELAGA',382:'ULD PAGATAN',391:'ULD TELAGA PULANG',376:'ULD MENDAWAI',373:'ULD KENAMBUI',395:'ULD TUMBANG MANJUL',375:'ULD KUDANGAN'} as Record<number,string>)[kode] ?? '-'),
-        sae40: row?.stock_oli_sae40 ?? null,
-        sx: row?.stock_oli_sx ?? null,
-        sx_plus: row?.stock_oli_sx_plus ?? null
+        sae40: row?.stock_oli_sae40 ?? 'tidak menggunakan',
+        sx: row?.stock_oli_sx ?? 'tidak menggunakan',
+        sx_plus: row?.stock_oli_sx_plus ?? 'tidak menggunakan'
       }
     })
     return c.json({ success: true, data: rows })
