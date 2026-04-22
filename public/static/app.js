@@ -111,7 +111,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Load semua unit untuk kedua tab, lalu otomatis load tab DATA
   loadAllUnits().then(function() {
-    loadDataTab()
+    switchDataView(currentDataView)
   })
 })
 
@@ -408,11 +408,8 @@ function switchTab(tab) {
 
   if (tab === 'laporan' && !lapSelectedKode) showLapState('empty')
   if (tab === 'data') {
-    // Sync dropdown to currentDataView
-    var sel = document.getElementById('data-view-sel')
-    if (sel) sel.value = currentDataView
-    if (currentDataView === 'hop-bbm') loadDataTab()
-    else loadStockOliTab()
+    // Sync sub-tab button active state
+    switchDataView(currentDataView)
   }
 }
 
@@ -857,6 +854,9 @@ var oliTableInited  = false
 
 function switchDataView(view) {
   currentDataView = view
+  // Update active state of sub-tab buttons
+  document.getElementById('subtab-btn-hop-bbm').classList.toggle('active', view === 'hop-bbm')
+  document.getElementById('subtab-btn-stock-oli').classList.toggle('active', view === 'stock-oli')
   var tanggal = document.getElementById('data-tanggal').value
   if (view === 'hop-bbm') {
     document.getElementById('data-table-wrap').classList.remove('hidden')

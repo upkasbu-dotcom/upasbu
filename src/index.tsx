@@ -652,14 +652,17 @@ app.get('/', (c) => {
 
   <!-- Data toolbar -->
   <div id="toolbar-data" class="hidden">
-    <div class="toolbar">
-      <div class="toolbar-group">
-        <label class="toolbar-label">Menu</label>
-        <select id="data-view-sel" class="toolbar-select" onchange="switchDataView(this.value)" style="min-width:120px;">
-          <option value="hop-bbm">HOP BBM</option>
-          <option value="stock-oli">STOCK OLI</option>
-        </select>
-      </div>
+    <!-- Sub-tab row: HOP BBM | STOCK OLI -->
+    <div class="data-subtab-row">
+      <button id="subtab-btn-hop-bbm" class="data-subtab-btn active" onclick="switchDataView('hop-bbm')">
+        <i class="fas fa-gas-pump"></i> HOP BBM
+      </button>
+      <button id="subtab-btn-stock-oli" class="data-subtab-btn" onclick="switchDataView('stock-oli')">
+        <i class="fas fa-oil-can"></i> STOCK OLI
+      </button>
+    </div>
+    <!-- Toolbar row: Tanggal + info -->
+    <div class="toolbar" style="padding-top:6px;">
       <div class="toolbar-group">
         <label class="toolbar-label">Tanggal</label>
         <input type="date" id="data-tanggal" class="toolbar-input" onchange="onDataTanggalChange()"/>

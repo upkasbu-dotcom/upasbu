@@ -58,6 +58,44 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .tab-content.active { display: block; }
 
 /* =============================================
+   DATA SUB-TAB (HOP BBM / STOCK OLI)
+   ============================================= */
+.data-subtab-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0 4px;
+  border-bottom: 2px solid #e2e8f0;
+  margin-bottom: 2px;
+}
+.data-subtab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 18px;
+  border-radius: 6px 6px 0 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1.5px solid #e2e8f0;
+  border-bottom: none;
+  background: #f8fafc;
+  color: #64748b;
+  letter-spacing: 0.03em;
+  transition: all 0.15s;
+  position: relative;
+  bottom: -2px;
+}
+.data-subtab-btn.active {
+  background: #1e3a5f;
+  color: #fff;
+  border-color: #1e3a5f;
+}
+.data-subtab-btn:not(.active):hover {
+  background: #e2e8f0;
+  color: #1e3a5f;
+}
+
+/* =============================================
    TOOLBAR
    ============================================= */
 .toolbar-wrap {
