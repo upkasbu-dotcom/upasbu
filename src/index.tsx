@@ -680,7 +680,7 @@ app.get('/', (c) => {
       </div>
       <div class="toolbar-group">
         <label class="toolbar-label">Tanggal</label>
-        <input type="date" id="lap-tanggal" class="toolbar-input"/>
+        <input type="date" id="lap-tanggal" class="toolbar-input" onchange="onLapTanggalChange()"/>
       </div>
       <button class="btn btn-primary" onclick="loadLapData()" id="btn-tampilkan-lap" disabled style="opacity:0.5;cursor:not-allowed;">
         <i class="fas fa-search"></i><span class="btn-text"> Tampilkan</span>

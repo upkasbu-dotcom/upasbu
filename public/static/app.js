@@ -609,6 +609,39 @@ function setLapField(field, value) {
   }
 }
 
+// Auto-fill Saldo Awal dari STOCK AWAL tab HOP BBM tanggal H-1
+async function autoFillSaldoAwal(tanggal) {
+  if (!lapSelectedKode || !tanggal) return
+  try {
+    var tglH1 = new Date(tanggal)
+    tglH1.setDate(tglH1.getDate() - 1)
+    var tanggalH1 = tglH1.toISOString().split('T')[0]
+    var resStok = await fetch('/api/data-stok?tanggal=' + tanggalH1)
+    var jsonStok = await resStok.json()
+    if (jsonStok.success && jsonStok.data) {
+      var unitRow = jsonStok.data.find(function(r) { return r.kode_unit === lapSelectedKode })
+      if (unitRow && unitRow.stok_awal !== null && unitRow.stok_awal !== undefined) {
+        currentLapForm.saldo_awal = unitRow.stok_awal
+        // Update field jika form sudah dirender
+        var el = document.getElementById('field-saldo-awal')
+        if (el) el.value = unitRow.stok_awal
+      }
+    }
+  } catch(e2) { /* gagal fetch, biarkan kosong */ }
+}
+
+// Saat tanggal berubah, auto-fill Saldo Awal dari STOCK AWAL H-1 (jika form belum punya data tersimpan)
+async function onLapTanggalChange() {
+  var tanggal = document.getElementById('lap-tanggal').value
+  if (!lapSelectedKode || !tanggal) return
+  // Hanya auto-fill jika belum ada data tersimpan untuk tanggal ini
+  var sudahAda = lapData[lapSelectedKode] !== undefined
+  if (!sudahAda) {
+    currentLapForm.saldo_awal = null  // reset dulu agar diisi ulang
+    await autoFillSaldoAwal(tanggal)
+  }
+}
+
 async function loadLapData() {
   if (!lapSelectedKode) { showToast('Pilih unit terlebih dahulu','info'); return }
   var tanggal = document.getElementById('lap-tanggal').value
@@ -638,18 +671,9 @@ async function loadLapData() {
     if (lapSelectedKode) {
       currentLapForm = lapData[lapSelectedKode] ? JSON.parse(JSON.stringify(lapData[lapSelectedKode])) : {}
 
-      // Jika saldo_awal belum ada (form kosong), auto-isi dari STOCK AWAL tab HOP BBM (= saldo_akhir H-1)
+      // Jika saldo_awal belum ada (form kosong), auto-isi dari STOCK AWAL HOP BBM tanggal H-1
       if (currentLapForm.saldo_awal === undefined || currentLapForm.saldo_awal === null) {
-        try {
-          var resStok = await fetch('/api/data-stok?tanggal=' + tanggal)
-          var jsonStok = await resStok.json()
-          if (jsonStok.success && jsonStok.data) {
-            var unitRow = jsonStok.data.find(function(r) { return r.kode_unit === lapSelectedKode })
-            if (unitRow && unitRow.stok_awal !== null && unitRow.stok_awal !== undefined) {
-              currentLapForm.saldo_awal = unitRow.stok_awal
-            }
-          }
-        } catch(e2) { /* gagal fetch data-stok, biarkan kosong */ }
+        await autoFillSaldoAwal(tanggal)
       }
 
       renderLapForm()
