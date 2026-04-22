@@ -905,7 +905,8 @@ async function loadStockOliTab() {
     var rows = json.data || []
 
     function fmtOliVal(val) {
-      if (val === null || val === undefined || val === '') return '<span style="color:#94a3b8;font-style:italic;">tidak menggunakan</span>'
+      if (val === null || val === undefined) return '<span style="color:#cbd5e1">\u2014</span>'
+      if (val === '' || val === 'tidak menggunakan') return '<span style="color:#94a3b8;font-style:italic;">tidak menggunakan</span>'
       if (!isNaN(Number(val))) return Number(val).toLocaleString('id-ID') + ' ltr'
       return val
     }
