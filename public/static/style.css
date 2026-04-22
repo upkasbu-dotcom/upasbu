@@ -94,6 +94,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   background: #e2e8f0;
   color: #1e3a5f;
 }
+.data-subtab-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+}
+.data-subtab-date .toolbar-label {
+  margin-bottom: 0;
+}
 
 /* =============================================
    TOOLBAR
