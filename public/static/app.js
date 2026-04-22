@@ -537,8 +537,6 @@ function renderLapForm() {
   html += '<div class="lap-kop-title">LAPORAN OPERASIONAL PLTD</div>'
   html += '<div class="lap-kop-unit">' + unit.nama_unit + '</div>'
   html += '<div class="lap-kop-meta">'
-  html += '<span>ID Unit: ' + kodeFormatted + '</span>'
-  html += '<span>Tgl: ' + tgl + '</span>'
   if (alreadySaved) html += '<span class="badge-saved"><i class="fas fa-check-circle"></i> Tersimpan</span>'
   html += '</div></div>'
 
