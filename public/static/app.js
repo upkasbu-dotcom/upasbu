@@ -492,8 +492,7 @@ function renderLapForm() {
     return (d[key] !== undefined && d[key] !== null) ? d[key] : ''
   }
   function fldOli(key) {
-    // Default 'tidak menggunakan' jika belum pernah diisi
-    return (d[key] !== undefined && d[key] !== null && d[key] !== '') ? d[key] : 'tidak menggunakan'
+    return (d[key] !== undefined && d[key] !== null) ? d[key] : ''
   }
 
   var html = '<div class="lap-single-card">'
@@ -562,21 +561,24 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Stock Oli SAE 40</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-stock-oli-sae40" type="text" class="lap-field-input" value="' + fldOli('stock_oli_sae40') + '" oninput="setLapField(\'stock_oli_sae40\',this.value)"/>'
+  html += '<input id="field-stock-oli-sae40" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldOli('stock_oli_sae40') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'stock_oli_sae40\',this.value)"/>'
+  html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
   // Stock Oli SX
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Stock Oli SX</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-stock-oli-sx" type="text" class="lap-field-input" value="' + fldOli('stock_oli_sx') + '" oninput="setLapField(\'stock_oli_sx\',this.value)"/>'
+  html += '<input id="field-stock-oli-sx" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldOli('stock_oli_sx') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'stock_oli_sx\',this.value)"/>'
+  html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
   // Stock Oli SX Plus
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Stock Oli SX Plus</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-stock-oli-sx-plus" type="text" class="lap-field-input" value="' + fldOli('stock_oli_sx_plus') + '" oninput="setLapField(\'stock_oli_sx_plus\',this.value)"/>'
+  html += '<input id="field-stock-oli-sx-plus" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldOli('stock_oli_sx_plus') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'stock_oli_sx_plus\',this.value)"/>'
+  html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
   html += '</div>'
@@ -589,14 +591,10 @@ function renderLapForm() {
   document.getElementById('lap-form-container').innerHTML = html
 }
 
-var OLI_FIELDS = ['stock_oli_sae40', 'stock_oli_sx', 'stock_oli_sx_plus']
-
 function setLapField(field, value) {
-  if (field === 'nama_operator' || OLI_FIELDS.indexOf(field) !== -1) {
-    // Field teks bebas: simpan apa adanya
+  if (field === 'nama_operator') {
     currentLapForm[field] = value
   } else {
-    // Field angka: strip non-angka
     var clean = value.replace(/[^0-9]/g, '')
     currentLapForm[field] = clean === '' ? null : parseInt(clean, 10)
   }
@@ -766,9 +764,9 @@ function renderReview(unit, tanggal, d) {
   html += '<tr><td class="rdt-label">Saldo Akhir</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.saldo_akhir) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
   html += '<tr><td class="rdt-label">Penerimaan BBM</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.penerimaan_bbm) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
   html += '<tr><td class="rdt-label">Estimasi Pemakaian BBM Maks</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.estimasi_bbm_max) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
-  html += '<tr><td class="rdt-label">Stock Oli SAE 40</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + (d.stock_oli_sae40 || 'tidak menggunakan') + '</strong></td></tr>'
-  html += '<tr><td class="rdt-label">Stock Oli SX</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + (d.stock_oli_sx || 'tidak menggunakan') + '</strong></td></tr>'
-  html += '<tr class="rdt-last"><td class="rdt-label">Stock Oli SX Plus</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + (d.stock_oli_sx_plus || 'tidak menggunakan') + '</strong></td></tr>'
+  html += '<tr><td class="rdt-label">Stock Oli SAE 40</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.stock_oli_sae40) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
+  html += '<tr><td class="rdt-label">Stock Oli SX</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.stock_oli_sx) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
+  html += '<tr class="rdt-last"><td class="rdt-label">Stock Oli SX Plus</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.stock_oli_sx_plus) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
   html += '</table></div>'
   html += '<div class="review-divider"></div>'
   html += '<div class="review-footer"><div class="review-save-info"><i class="fas fa-clock"></i> Disimpan: ' + savedAt + '</div>'
