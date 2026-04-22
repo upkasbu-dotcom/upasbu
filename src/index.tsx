@@ -463,7 +463,7 @@ app.get('/api/data-stok', async (c) => {
       const avgPakai  = avgMap[u.kode_unit] || null
 
       const stokAwalBln  = stokAwalBulanMap[u.kode_unit] ?? null
-      const stokAwal     = lap?.saldo_awal ?? null
+      const stokAwal     = lap?.saldo_akhir ?? null   // STOCK AWAL = Saldo Akhir dari lap. operasional
       const stokAkhir    = lap?.saldo_akhir ?? null
       const penerimaanBbm = lap?.penerimaan_bbm ?? null
 
