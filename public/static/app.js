@@ -598,8 +598,10 @@ function renderLapForm() {
 var OLI_FIELDS = ['stock_oli_sae40', 'stock_oli_sx', 'stock_oli_sx_plus']
 
 function setLapField(field, value) {
-  if (field === 'nama_operator' || OLI_FIELDS.indexOf(field) !== -1) {
-    // Simpan apa adanya (teks atau angka)
+  if (OLI_FIELDS.indexOf(field) !== -1) {
+    // Kosong → simpan "tidak menggunakan", ada isi → simpan apa adanya
+    currentLapForm[field] = (value === '' || value === null || value === undefined) ? 'tidak menggunakan' : value
+  } else if (field === 'nama_operator') {
     currentLapForm[field] = value === '' ? null : value
   } else {
     var clean = value.replace(/[^0-9]/g, '')
@@ -703,9 +705,9 @@ async function saveLapCurrent() {
     saldo_akhir: d.saldo_akhir !== undefined ? d.saldo_akhir : null,
     penerimaan_bbm: d.penerimaan_bbm !== undefined ? d.penerimaan_bbm : null,
     estimasi_bbm_max: d.estimasi_bbm_max !== undefined ? d.estimasi_bbm_max : null,
-    stock_oli_sae40: d.stock_oli_sae40 !== undefined ? d.stock_oli_sae40 : null,
-    stock_oli_sx: d.stock_oli_sx !== undefined ? d.stock_oli_sx : null,
-    stock_oli_sx_plus: d.stock_oli_sx_plus !== undefined ? d.stock_oli_sx_plus : null
+    stock_oli_sae40: (d.stock_oli_sae40 !== undefined && d.stock_oli_sae40 !== null && d.stock_oli_sae40 !== '') ? d.stock_oli_sae40 : 'tidak menggunakan',
+    stock_oli_sx: (d.stock_oli_sx !== undefined && d.stock_oli_sx !== null && d.stock_oli_sx !== '') ? d.stock_oli_sx : 'tidak menggunakan',
+    stock_oli_sx_plus: (d.stock_oli_sx_plus !== undefined && d.stock_oli_sx_plus !== null && d.stock_oli_sx_plus !== '') ? d.stock_oli_sx_plus : 'tidak menggunakan'
   }
 
   try {
