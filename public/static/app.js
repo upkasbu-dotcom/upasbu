@@ -518,7 +518,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">kWh Produksi</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-kwh-produksi" type="number" step="any" class="lap-field-input" placeholder="0" value="' + fldNum('kwh_produksi') + '" oninput="setLapField(\'kwh_produksi\', this.value)"/>'
+  html += '<input id="field-kwh-produksi" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('kwh_produksi') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'kwh_produksi\',this.value)"/>'
   html += '<span class="lap-field-unit">kWh</span>'
   html += '</div>'
 
@@ -526,7 +526,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Saldo Awal</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-saldo-awal" type="number" step="any" class="lap-field-input" placeholder="0" value="' + fldNum('saldo_awal') + '" oninput="setLapField(\'saldo_awal\', this.value)"/>'
+  html += '<input id="field-saldo-awal" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('saldo_awal') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'saldo_awal\',this.value)"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -534,7 +534,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Saldo Akhir</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-saldo-akhir" type="number" step="any" class="lap-field-input" placeholder="0" value="' + fldNum('saldo_akhir') + '" oninput="setLapField(\'saldo_akhir\', this.value)"/>'
+  html += '<input id="field-saldo-akhir" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('saldo_akhir') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'saldo_akhir\',this.value)"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -542,7 +542,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Penerimaan BBM</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-penerimaan-bbm" type="number" step="any" class="lap-field-input" placeholder="0" value="' + fldNum('penerimaan_bbm') + '" oninput="setLapField(\'penerimaan_bbm\', this.value)"/>'
+  html += '<input id="field-penerimaan-bbm" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('penerimaan_bbm') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'penerimaan_bbm\',this.value)"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -550,7 +550,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Estimasi Pemakaian BBM Maksimal</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-estimasi-bbm" type="number" step="any" class="lap-field-input" placeholder="0" value="' + fldNum('estimasi_bbm_max') + '" oninput="setLapField(\'estimasi_bbm_max\', this.value)"/>'
+  html += '<input id="field-estimasi-bbm" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('estimasi_bbm_max') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'estimasi_bbm_max\',this.value)"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -566,7 +566,11 @@ function renderLapForm() {
 
 function setLapField(field, value) {
   if (field === 'nama_operator') currentLapForm[field] = value
-  else currentLapForm[field] = value === '' ? null : parseFloat(value)
+  else {
+    // Strip semua karakter non-angka sebelum parse (blok titik, koma, dll)
+    var clean = value.replace(/[^0-9]/g, '')
+    currentLapForm[field] = clean === '' ? null : parseInt(clean, 10)
+  }
 }
 
 async function loadLapData() {
