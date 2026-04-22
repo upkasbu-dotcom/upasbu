@@ -345,6 +345,37 @@ select.cell-input { width: 112px; cursor: pointer; }
 .lap-field-input.input-error { border-color: #dc2626 !important; background: #fff5f5; }
 .lap-field-unit  { font-size: 0.72rem; color: #94a3b8; font-weight: 600; white-space: nowrap; flex-shrink: 0; min-width: 28px; }
 
+/* Operator dropdown */
+.op-input-wrap { position: relative; flex: 1; min-width: 0; }
+.op-input-wrap .lap-field-input { width: 100%; }
+.op-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  z-index: 200;
+  padding: 6px 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.op-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 0.83rem;
+  color: #1e3a5f;
+  transition: background 0.12s;
+}
+.op-item:hover { background: #f0f7ff; }
+.op-item input[type="radio"] { accent-color: #2563eb; width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; }
+.op-item span { flex: 1; }
+
 /* Wajib & opsional */
 .wajib   { color: #dc2626; font-weight: 700; margin-left: 2px; }
 .opsional { color: #94a3b8; font-weight: 400; font-size: 0.65rem; margin-left: 3px; }

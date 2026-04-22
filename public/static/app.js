@@ -24,6 +24,31 @@ var UNIT_DATA = [
 ]
 
 // =============================================
+// DATA OPERATOR PER ULD
+// =============================================
+var OPERATOR_DATA = {
+  366: ["Edy Susanto", "Heriansyah", "Suriansyah"],                          // ULD BABAI
+  372: ["Ahmad Fauzi", "Darmansyah", "Suharto"],                             // ULD GUNUNG PUREI
+  373: ["Agus Salim", "Bambang Irawan", "Wahyudi"],                          // ULD KENAMBUI
+  375: ["Andi Saputra", "Firmansyah", "Rudi Hartono"],                       // ULD KUDANGAN
+  376: ["Dedi Kurniawan", "Hendra Gunawan", "Supriyanto"],                   // ULD MENDAWAI
+  382: ["Budi Santoso", "Mujiono", "Wahyu Hidayat"],                         // ULD PAGATAN
+  385: ["Agus Mulyadi", "Hasan Basri", "Sarwono"],                           // ULD RANGGA ILUNG
+  390: ["Antonius", "Dwi Prasetyo", "Yusuf Hidayat"],                        // ULD TELAGA
+  391: ["Eko Prasetyo", "Mulyadi", "Tri Wahyono"],                           // ULD TELAGA PULANG
+  395: ["Cahyono", "Nanang Setiawan", "Supriadi"],                           // ULD TUMBANG MANJUL
+  399: ["Ardiansyah", "Mardianto", "Sugiyono"],                              // ULD TUMBANG SENAMANG
+  910: ["Gunawan", "Ridwan Effendi", "Slamet Riyadi"],                       // ULD MANGKATIP
+  911: ["Fauzan", "Hermanto", "Syarifudin"],                                 // ULD TELUK BETUNG
+  913: ["Iwan Setiawan", "Joko Susilo", "Teguh Santoso"],                    // ULD TUMPUNG LAUNG
+  915: ["Deny Setiawan", "Kusuma Wijaya", "Rudi Setiawan"],                  // ULD SUNGAI BALI
+  917: ["Amin Saputra", "Hasanuddin", "Purnomo"],                            // ULD KERASIAN
+  918: ["Arianto", "Hendri Kurniawan", "Yudi Prasetyo"],                     // ULD KERAYAAN
+  919: ["Asep Nurdin", "Imam Santoso", "Wawan Kurniawan"],                   // ULD KERUMPUTAN
+  920: ["Bayu Saputro", "Khoirul Anwar", "Rizky Pratama"],                   // ULD MARABATUAN
+}
+
+// =============================================
 // CONSTANTS
 // =============================================
 var PARAMS = [
@@ -514,11 +539,26 @@ function renderLapForm() {
   // ── FORM FIELDS ──
   html += '<div class="lap-single-body">'
 
-  // Nama Operator
-  html += '<div class="lap-field-row">'
+  // Nama Operator — input + dropdown pilih operator
+  var opList = (lapSelectedKode && OPERATOR_DATA[lapSelectedKode]) ? OPERATOR_DATA[lapSelectedKode] : []
+  html += '<div class="lap-field-row" style="flex-wrap:wrap;gap:4px;">'
   html += '<label class="lap-field-label">Nama Operator</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-nama-operator" type="text" class="lap-field-input" placeholder="—" value="' + (d.nama_operator || '') + '" oninput="setLapField(\'nama_operator\', this.value)"/>'
+  html += '<div class="op-input-wrap" id="op-input-wrap">'
+  html += '<input id="field-nama-operator" type="text" class="lap-field-input" placeholder="Ketik atau pilih..." value="' + (d.nama_operator || '') + '" oninput="setLapField(\'nama_operator\', this.value)" autocomplete="off"/>'
+  if (opList.length > 0) {
+    html += '<div class="op-dropdown" id="op-dropdown">'
+    for (var oi = 0; oi < opList.length; oi++) {
+      var opName = opList[oi]
+      var opChecked = (d.nama_operator === opName) ? 'checked' : ''
+      html += '<label class="op-item">'
+      html += '<input type="radio" name="op-radio" value="' + opName + '" ' + opChecked + ' onchange="selectOperator(\'' + opName.replace(/'/g,"\\'") + '\')">'
+      html += '<span>' + opName + '</span>'
+      html += '</label>'
+    }
+    html += '</div>'
+  }
+  html += '</div>'
   html += '</div>'
 
   // kWh Produksi
@@ -607,6 +647,13 @@ function setLapField(field, value) {
     var clean = value.replace(/[^0-9]/g, '')
     currentLapForm[field] = clean === '' ? null : parseInt(clean, 10)
   }
+}
+
+// Pilih operator dari dropdown checkbox
+function selectOperator(nama) {
+  var el = document.getElementById('field-nama-operator')
+  if (el) el.value = nama
+  setLapField('nama_operator', nama)
 }
 
 // Hitung Estimasi Pemakaian BBM = Saldo Awal - Saldo Akhir (auto, bisa ditimpa manual)
