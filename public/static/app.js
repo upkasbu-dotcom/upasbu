@@ -27,25 +27,25 @@ var UNIT_DATA = [
 // DATA OPERATOR PER ULD
 // =============================================
 var OPERATOR_DATA = {
-  366: ["Edy Susanto", "Heriansyah", "Suriansyah"],                          // ULD BABAI
-  372: ["Ahmad Fauzi", "Darmansyah", "Suharto"],                             // ULD GUNUNG PUREI
-  373: ["Agus Salim", "Bambang Irawan", "Wahyudi"],                          // ULD KENAMBUI
-  375: ["Andi Saputra", "Firmansyah", "Rudi Hartono"],                       // ULD KUDANGAN
-  376: ["Dedi Kurniawan", "Hendra Gunawan", "Supriyanto"],                   // ULD MENDAWAI
-  382: ["Budi Santoso", "Mujiono", "Wahyu Hidayat"],                         // ULD PAGATAN
-  385: ["Agus Mulyadi", "Hasan Basri", "Sarwono"],                           // ULD RANGGA ILUNG
-  390: ["Antonius", "Dwi Prasetyo", "Yusuf Hidayat"],                        // ULD TELAGA
-  391: ["Eko Prasetyo", "Mulyadi", "Tri Wahyono"],                           // ULD TELAGA PULANG
-  395: ["Cahyono", "Nanang Setiawan", "Supriadi"],                           // ULD TUMBANG MANJUL
-  399: ["Ardiansyah", "Mardianto", "Sugiyono"],                              // ULD TUMBANG SENAMANG
-  910: ["Gunawan", "Ridwan Effendi", "Slamet Riyadi"],                       // ULD MANGKATIP
-  911: ["Fauzan", "Hermanto", "Syarifudin"],                                 // ULD TELUK BETUNG
-  913: ["Iwan Setiawan", "Joko Susilo", "Teguh Santoso"],                    // ULD TUMPUNG LAUNG
-  915: ["Deny Setiawan", "Kusuma Wijaya", "Rudi Setiawan"],                  // ULD SUNGAI BALI
-  917: ["Amin Saputra", "Hasanuddin", "Purnomo"],                            // ULD KERASIAN
-  918: ["Arianto", "Hendri Kurniawan", "Yudi Prasetyo"],                     // ULD KERAYAAN
-  919: ["Asep Nurdin", "Imam Santoso", "Wawan Kurniawan"],                   // ULD KERUMPUTAN
-  920: ["Bayu Saputro", "Khoirul Anwar", "Rizky Pratama"],                   // ULD MARABATUAN
+  366: ["Eko Setiawan", "Syamsuri", "Dolarman", "Hasim", "Fahrija Rahman", "Ramadhani", "Randa Yudistira"],                          // ULD BABAI
+  372: ["Ahmat Rida", "Supiansyah", "Fahmi", "Minghuandy", "Nurahman", "Eko Setiawan", "Husliansyah"],                             // ULD GUNUNG PUREI
+  373: ["Aryuni", "Muliyarta", "Erwansyah", "Gusti Gustira", "M Arbani", "Sandi", "Suhaimi", "Amriansyah", "Rusdiansyah", "Junika Cucu Andika"],                          // ULD KENAMBUI
+  375: ["Alex Sanderia", "Timbun Radiyanto", "Hery Optianus", "Sabriansyah", "Donny Prayogo", "Yosuarius YB", "Anto", "Basilius Yoga"],                       // ULD KUDANGAN
+  376: ["Aripin", "Tomi Kuswoyo", "Mujianor", "Didin Wahono", "Zulkifli", "Hendri Purwanto", "Moh Taufiq", "M Ardianor", "Yoga Syahbandi", "Azkia El Murthada", "Rafdianor"],                   // ULD MENDAWAI
+  382: ["Hidayat Saputra", "Abdul Haris", "Muhammad Pauzan", "Tedy Heriady", "Murdiansyah", "Ridy", "Megi", "Muhammad Hidayat", "Muhammad Ikhsan"],                         // ULD PAGATAN
+  385: ["M Ilman", "Muhammad Abidin", "Hendra Prianto", "M Ilham", "Hendri Irawan", "Ahmad Jainudin", "Muhammad Ari Sutarinda", "Alvyus Advent Bagaskara"],                           // ULD RANGGA ILUNG
+  390: ["Murjoko", "Adi Rahmad", "Irawan"],                        // ULD TELAGA
+  391: ["Eko Prasetyo", "Mulyadi", "Tri Wahyono", "Adi Susanto", "Karnadie", "Didie", "Yesto", "Ahmad Boby Erlangga"],                           // ULD TELAGA PULANG
+  395: ["Effendi", "A Rafiq", "Mulyadi", "Supian", "Alpian", "Gusna Nubin", "M Ipan Ali", "Wardani", "Alpianor", "Juljalali Wal Ikram"],                           // ULD TUMBANG MANJUL
+  399: ["Naneng Ermadi", "Ahmad Budi Santoso", "Yudi Setiono", "Burhan", "Sutrisman", "Purwanto", "Muhammad Nudie", "Benny Rahmadani", "Dodi Kurniawan"],                              // ULD TUMBANG SENAMANG
+  910: ["M Kamawijaya", "Deniasyah", "Sukardiono", "Riduan", "Tajudin"],                       // ULD MANGKATIP
+  911: ["Hendri Aprius", "Kanserto", "Gupinda Ramadan", "M Indra Saputra", "Achrian Noor", "Rizki Permana"],                                 // ULD TELUK BETUNG
+  913: ["Herianor", "Yatno Eka Nugraha", "Murjani", "Masrawan", "Yuspida", "Agus Salim", "Lambri"],                    // ULD TUMPUNG LAUNG
+  915: ["Operator"],                  // ULD SUNGAI BALI
+  917: ["Operator"],                            // ULD KERASIAN
+  918: ["Operator"],                     // ULD KERAYAAN
+  919: ["Operator"],                   // ULD KERUMPUTAN
+  920: ["Operator"],                   // ULD MARABATUAN
 }
 
 // =============================================
@@ -545,9 +545,9 @@ function renderLapForm() {
   html += '<label class="lap-field-label">Nama Operator</label>'
   html += '<span class="lap-field-sep">:</span>'
   html += '<div class="op-input-wrap" id="op-input-wrap">'
-  html += '<input id="field-nama-operator" type="text" class="lap-field-input" placeholder="Ketik atau pilih..." value="' + (d.nama_operator || '') + '" oninput="setLapField(\'nama_operator\', this.value)" autocomplete="off"/>'
+  html += '<input id="field-nama-operator" type="text" class="lap-field-input" placeholder="Ketik atau pilih..." value="' + (d.nama_operator || '') + '" oninput="setLapField(\'nama_operator\', this.value);filterOpDropdown(this.value)" onfocus="showOpDropdown()" autocomplete="off"/>'
   if (opList.length > 0) {
-    html += '<div class="op-dropdown" id="op-dropdown">'
+    html += '<div class="op-dropdown hidden" id="op-dropdown">'
     for (var oi = 0; oi < opList.length; oi++) {
       var opName = opList[oi]
       var opChecked = (d.nama_operator === opName) ? 'checked' : ''
@@ -649,11 +649,32 @@ function setLapField(field, value) {
   }
 }
 
-// Pilih operator dari dropdown checkbox
+// Tampilkan dropdown operator
+function showOpDropdown() {
+  var dd = document.getElementById('op-dropdown')
+  if (dd) dd.classList.remove('hidden')
+}
+
+// Filter item dropdown saat user mengetik
+function filterOpDropdown(val) {
+  var dd = document.getElementById('op-dropdown')
+  if (!dd) return
+  dd.classList.remove('hidden')
+  var items = dd.querySelectorAll('.op-item')
+  var q = val.toLowerCase()
+  items.forEach(function(item) {
+    var name = item.querySelector('span').textContent.toLowerCase()
+    item.style.display = name.includes(q) ? '' : 'none'
+  })
+}
+
+// Pilih operator dari dropdown
 function selectOperator(nama) {
   var el = document.getElementById('field-nama-operator')
   if (el) el.value = nama
   setLapField('nama_operator', nama)
+  var dd = document.getElementById('op-dropdown')
+  if (dd) dd.classList.add('hidden')
 }
 
 // Hitung Estimasi Pemakaian BBM = Saldo Awal - Saldo Akhir (auto, bisa ditimpa manual)
@@ -1108,8 +1129,15 @@ function showToast(msg, type) {
 }
 
 document.addEventListener('click', function(e) {
+  // Tutup modal jika klik di luar
   var modals = document.querySelectorAll('.modal-overlay')
   modals.forEach(function(modal) {
     if (e.target === modal) modal.classList.add('hidden')
   })
+  // Tutup dropdown operator jika klik di luar op-input-wrap
+  var wrap = document.getElementById('op-input-wrap')
+  var dd   = document.getElementById('op-dropdown')
+  if (dd && wrap && !wrap.contains(e.target)) {
+    dd.classList.add('hidden')
+  }
 })

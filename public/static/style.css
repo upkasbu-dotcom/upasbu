@@ -354,14 +354,15 @@ select.cell-input { width: 112px; cursor: pointer; }
   left: 0;
   right: 0;
   background: #fff;
-  border: 1.5px solid #e2e8f0;
+  border: 1.5px solid #cbd5e1;
   border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-  z-index: 200;
-  padding: 6px 0;
-  max-height: 180px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.14);
+  z-index: 300;
+  padding: 4px 0;
+  max-height: 200px;
   overflow-y: auto;
 }
+.op-dropdown.hidden { display: none; }
 .op-item {
   display: flex;
   align-items: center;
