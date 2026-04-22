@@ -655,10 +655,10 @@ app.get('/', (c) => {
     <!-- Sub-tab row: HOP BBM | STOCK OLI | Tanggal | info -->
     <div class="data-subtab-row">
       <button id="subtab-btn-hop-bbm" class="data-subtab-btn active" onclick="switchDataView('hop-bbm')">
-        <i class="fas fa-gas-pump"></i> HOP BBM
+        HOP BBM
       </button>
       <button id="subtab-btn-stock-oli" class="data-subtab-btn" onclick="switchDataView('stock-oli')">
-        <i class="fas fa-oil-can"></i> STOCK OLI
+        STOCK OLI
       </button>
       <div class="data-subtab-date">
         <label class="toolbar-label">Tanggal</label>
