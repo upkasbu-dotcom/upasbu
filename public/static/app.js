@@ -554,6 +554,30 @@ function renderLapForm() {
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
+  // Stock Oli SAE 40
+  html += '<div class="lap-field-row">'
+  html += '<label class="lap-field-label">Stock Oli SAE 40</label>'
+  html += '<span class="lap-field-sep">:</span>'
+  html += '<input id="field-stock-oli-sae40" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('stock_oli_sae40') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'stock_oli_sae40\',this.value)"/>'
+  html += '<span class="lap-field-unit">ltr</span>'
+  html += '</div>'
+
+  // Stock Oli SX
+  html += '<div class="lap-field-row">'
+  html += '<label class="lap-field-label">Stock Oli SX</label>'
+  html += '<span class="lap-field-sep">:</span>'
+  html += '<input id="field-stock-oli-sx" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('stock_oli_sx') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'stock_oli_sx\',this.value)"/>'
+  html += '<span class="lap-field-unit">ltr</span>'
+  html += '</div>'
+
+  // Stock Oli SX Plus
+  html += '<div class="lap-field-row">'
+  html += '<label class="lap-field-label">Stock Oli SX Plus</label>'
+  html += '<span class="lap-field-sep">:</span>'
+  html += '<input id="field-stock-oli-sx-plus" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('stock_oli_sx_plus') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'stock_oli_sx_plus\',this.value)"/>'
+  html += '<span class="lap-field-unit">ltr</span>'
+  html += '</div>'
+
   html += '</div>'
 
   // ── FOOTER ──
@@ -591,7 +615,10 @@ async function loadLapData() {
         saldo_awal: row.saldo_awal,
         saldo_akhir: row.saldo_akhir,
         penerimaan_bbm: row.penerimaan_bbm,
-        estimasi_bbm_max: row.estimasi_bbm_max
+        estimasi_bbm_max: row.estimasi_bbm_max,
+        stock_oli_sae40: row.stock_oli_sae40,
+        stock_oli_sx: row.stock_oli_sx,
+        stock_oli_sx_plus: row.stock_oli_sx_plus
       }
     }
     var cnt = json.data.length
@@ -665,7 +692,10 @@ async function saveLapCurrent() {
     saldo_awal: d.saldo_awal !== undefined ? d.saldo_awal : null,
     saldo_akhir: d.saldo_akhir !== undefined ? d.saldo_akhir : null,
     penerimaan_bbm: d.penerimaan_bbm !== undefined ? d.penerimaan_bbm : null,
-    estimasi_bbm_max: d.estimasi_bbm_max !== undefined ? d.estimasi_bbm_max : null
+    estimasi_bbm_max: d.estimasi_bbm_max !== undefined ? d.estimasi_bbm_max : null,
+    stock_oli_sae40: d.stock_oli_sae40 !== undefined ? d.stock_oli_sae40 : null,
+    stock_oli_sx: d.stock_oli_sx !== undefined ? d.stock_oli_sx : null,
+    stock_oli_sx_plus: d.stock_oli_sx_plus !== undefined ? d.stock_oli_sx_plus : null
   }
 
   try {
@@ -710,7 +740,10 @@ function renderReview(unit, tanggal, d) {
     'Saldo Awal : ' + fmtNumPlain(d.saldo_awal) + '\n' +
     'Saldo Akhir : ' + fmtNumPlain(d.saldo_akhir) + '\n' +
     'Penerimaan BBM : ' + fmtNumPlain(d.penerimaan_bbm) + '\n' +
-    'Estimasi Pemakaian BBM Maksimal : ' + fmtNumPlain(d.estimasi_bbm_max)
+    'Estimasi Pemakaian BBM Maksimal : ' + fmtNumPlain(d.estimasi_bbm_max) + '\n' +
+    'Stock Oli SAE 40 : ' + fmtNumPlain(d.stock_oli_sae40) + '\n' +
+    'Stock Oli SX : ' + fmtNumPlain(d.stock_oli_sx) + '\n' +
+    'Stock Oli SX Plus : ' + fmtNumPlain(d.stock_oli_sx_plus)
 
   var html = '<div class="review-wrap">'
   html += '<div class="review-kop"><div class="review-kop-left"><div class="review-kop-icon"><i class="fas fa-file-invoice"></i></div>'
@@ -730,7 +763,10 @@ function renderReview(unit, tanggal, d) {
   html += '<tr><td class="rdt-label">Saldo Awal</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.saldo_awal) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
   html += '<tr><td class="rdt-label">Saldo Akhir</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.saldo_akhir) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
   html += '<tr><td class="rdt-label">Penerimaan BBM</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.penerimaan_bbm) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
-  html += '<tr class="rdt-last"><td class="rdt-label">Estimasi Pemakaian BBM Maks</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.estimasi_bbm_max) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
+  html += '<tr><td class="rdt-label">Estimasi Pemakaian BBM Maks</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.estimasi_bbm_max) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
+  html += '<tr><td class="rdt-label">Stock Oli SAE 40</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.stock_oli_sae40) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
+  html += '<tr><td class="rdt-label">Stock Oli SX</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.stock_oli_sx) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
+  html += '<tr class="rdt-last"><td class="rdt-label">Stock Oli SX Plus</td><td class="rdt-sep">:</td><td class="rdt-val"><strong>' + fmtNum(d.stock_oli_sx_plus) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
   html += '</table></div>'
   html += '<div class="review-divider"></div>'
   html += '<div class="review-footer"><div class="review-save-info"><i class="fas fa-clock"></i> Disimpan: ' + savedAt + '</div>'

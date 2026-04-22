@@ -67,6 +67,9 @@ async function initDB(db: D1Database) {
     saldo_akhir REAL,
     penerimaan_bbm REAL,
     estimasi_bbm_max REAL,
+    stock_oli_sae40 REAL,
+    stock_oli_sx REAL,
+    stock_oli_sx_plus REAL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`).run()
@@ -307,20 +310,27 @@ app.get('/api/lap-operasional/tanggal', async (c) => {
 app.post('/api/lap-operasional', async (c) => {
   try {
     const body = await c.req.json()
-    const { kode_unit, nama_unit, tanggal, nama_operator, kwh_produksi, saldo_awal, saldo_akhir, penerimaan_bbm, estimasi_bbm_max } = body
+    const { kode_unit, nama_unit, tanggal, nama_operator, kwh_produksi, saldo_awal, saldo_akhir, penerimaan_bbm, estimasi_bbm_max, stock_oli_sae40, stock_oli_sx, stock_oli_sx_plus } = body
     if (!kode_unit || !tanggal) return c.json({ success: false, error: 'kode_unit dan tanggal wajib diisi' }, 400)
+    // Tambah kolom oli jika belum ada (ALTER TABLE idempotent)
+    try { await c.env.DB.prepare(`ALTER TABLE lap_operasional ADD COLUMN stock_oli_sae40 REAL`).run() } catch(e){}
+    try { await c.env.DB.prepare(`ALTER TABLE lap_operasional ADD COLUMN stock_oli_sx REAL`).run() } catch(e){}
+    try { await c.env.DB.prepare(`ALTER TABLE lap_operasional ADD COLUMN stock_oli_sx_plus REAL`).run() } catch(e){}
     await c.env.DB.prepare(`
-      INSERT INTO lap_operasional (kode_unit,nama_unit,tanggal,nama_operator,kwh_produksi,saldo_awal,saldo_akhir,penerimaan_bbm,estimasi_bbm_max,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+      INSERT INTO lap_operasional (kode_unit,nama_unit,tanggal,nama_operator,kwh_produksi,saldo_awal,saldo_akhir,penerimaan_bbm,estimasi_bbm_max,stock_oli_sae40,stock_oli_sx,stock_oli_sx_plus,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
       ON CONFLICT(kode_unit,tanggal) DO UPDATE SET
         nama_unit=excluded.nama_unit, nama_operator=excluded.nama_operator,
         kwh_produksi=excluded.kwh_produksi, saldo_awal=excluded.saldo_awal,
         saldo_akhir=excluded.saldo_akhir, penerimaan_bbm=excluded.penerimaan_bbm,
-        estimasi_bbm_max=excluded.estimasi_bbm_max, updated_at=CURRENT_TIMESTAMP
+        estimasi_bbm_max=excluded.estimasi_bbm_max,
+        stock_oli_sae40=excluded.stock_oli_sae40, stock_oli_sx=excluded.stock_oli_sx,
+        stock_oli_sx_plus=excluded.stock_oli_sx_plus, updated_at=CURRENT_TIMESTAMP
     `).bind(
       kode_unit, nama_unit||'', tanggal, nama_operator||'',
       kwh_produksi??null, saldo_awal??null, saldo_akhir??null,
-      penerimaan_bbm??null, estimasi_bbm_max??null
+      penerimaan_bbm??null, estimasi_bbm_max??null,
+      stock_oli_sae40??null, stock_oli_sx??null, stock_oli_sx_plus??null
     ).run()
     return c.json({ success: true })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
