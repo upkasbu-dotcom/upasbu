@@ -533,7 +533,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Saldo Awal</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-saldo-awal" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('saldo_awal') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'saldo_awal\',this.value)"/>'
+  html += '<input id="field-saldo-awal" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('saldo_awal') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'saldo_awal\',this.value);calcEstimasiBbm()"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -541,7 +541,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Saldo Akhir</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-saldo-akhir" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('saldo_akhir') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'saldo_akhir\',this.value)"/>'
+  html += '<input id="field-saldo-akhir" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('saldo_akhir') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'saldo_akhir\',this.value);calcEstimasiBbm()"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -557,7 +557,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Estimasi Pemakaian BBM Maksimal</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-estimasi-bbm" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('estimasi_bbm_max') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'estimasi_bbm_max\',this.value)"/>'
+  html += '<input id="field-estimasi-bbm" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="auto" value="' + fldNum('estimasi_bbm_max') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'estimasi_bbm_max\',this.value)"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -606,6 +606,18 @@ function setLapField(field, value) {
   } else {
     var clean = value.replace(/[^0-9]/g, '')
     currentLapForm[field] = clean === '' ? null : parseInt(clean, 10)
+  }
+}
+
+// Hitung Estimasi Pemakaian BBM = Saldo Awal - Saldo Akhir (auto, bisa ditimpa manual)
+function calcEstimasiBbm() {
+  var awal  = parseInt(document.getElementById('field-saldo-awal')?.value  || '', 10)
+  var akhir = parseInt(document.getElementById('field-saldo-akhir')?.value || '', 10)
+  if (!isNaN(awal) && !isNaN(akhir)) {
+    var hasil = Math.max(0, awal - akhir)
+    var elEstimasi = document.getElementById('field-estimasi-bbm')
+    if (elEstimasi) elEstimasi.value = hasil
+    currentLapForm.estimasi_bbm_max = hasil
   }
 }
 
