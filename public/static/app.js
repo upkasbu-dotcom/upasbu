@@ -547,12 +547,14 @@ function renderLapForm() {
   html += '<div class="op-input-wrap" id="op-input-wrap">'
   html += '<input id="field-nama-operator" type="text" class="lap-field-input" placeholder="Ketik atau pilih..." value="' + (d.nama_operator || '') + '" oninput="setLapField(\'nama_operator\', this.value);filterOpDropdown(this.value)" onfocus="showOpDropdown()" autocomplete="off"/>'
   if (opList.length > 0) {
+    // Nama operator yg sudah dipilih (bisa lebih dari 1, dipisah ", ")
+    var selectedOps = (d.nama_operator || '').split(',').map(function(s){ return s.trim() }).filter(Boolean)
     html += '<div class="op-dropdown hidden" id="op-dropdown">'
     for (var oi = 0; oi < opList.length; oi++) {
       var opName = opList[oi]
-      var opChecked = (d.nama_operator === opName) ? 'checked' : ''
+      var opChecked = selectedOps.indexOf(opName) !== -1 ? 'checked' : ''
       html += '<label class="op-item">'
-      html += '<input type="radio" name="op-radio" value="' + opName + '" ' + opChecked + ' onchange="selectOperator(\'' + opName.replace(/'/g,"\\'") + '\')">'
+      html += '<input type="checkbox" name="op-check" value="' + opName + '" ' + opChecked + ' onchange="toggleOperator(\'' + opName.replace(/'/g,"\\'") + '\', this.checked)">'
       html += '<span>' + opName + '</span>'
       html += '</label>'
     }
@@ -661,20 +663,28 @@ function filterOpDropdown(val) {
   if (!dd) return
   dd.classList.remove('hidden')
   var items = dd.querySelectorAll('.op-item')
-  var q = val.toLowerCase()
+  // Cari berdasarkan teks terakhir (setelah koma terakhir)
+  var parts = val.split(',')
+  var q = parts[parts.length - 1].trim().toLowerCase()
   items.forEach(function(item) {
     var name = item.querySelector('span').textContent.toLowerCase()
-    item.style.display = name.includes(q) ? '' : 'none'
+    item.style.display = (q === '' || name.includes(q)) ? '' : 'none'
   })
 }
 
-// Pilih operator dari dropdown
-function selectOperator(nama) {
+// Toggle pilih/batal operator (multi-select checkbox)
+function toggleOperator(nama, checked) {
   var el = document.getElementById('field-nama-operator')
-  if (el) el.value = nama
-  setLapField('nama_operator', nama)
-  var dd = document.getElementById('op-dropdown')
-  if (dd) dd.classList.add('hidden')
+  if (!el) return
+  var current = el.value.split(',').map(function(s){ return s.trim() }).filter(Boolean)
+  if (checked) {
+    if (current.indexOf(nama) === -1) current.push(nama)
+  } else {
+    current = current.filter(function(n){ return n !== nama })
+  }
+  var joined = current.join(', ')
+  el.value = joined
+  setLapField('nama_operator', joined)
 }
 
 // Hitung Estimasi Pemakaian BBM = Saldo Awal - Saldo Akhir (auto, bisa ditimpa manual)

@@ -374,7 +374,7 @@ select.cell-input { width: 112px; cursor: pointer; }
   transition: background 0.12s;
 }
 .op-item:hover { background: #f0f7ff; }
-.op-item input[type="radio"] { accent-color: #2563eb; width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; }
+.op-item input[type="checkbox"] { accent-color: #2563eb; width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; }
 .op-item span { flex: 1; }
 
 /* Wajib & opsional */
