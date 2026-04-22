@@ -740,10 +740,7 @@ function renderReview(unit, tanggal, d) {
     'Saldo Awal : ' + fmtNumPlain(d.saldo_awal) + '\n' +
     'Saldo Akhir : ' + fmtNumPlain(d.saldo_akhir) + '\n' +
     'Penerimaan BBM : ' + fmtNumPlain(d.penerimaan_bbm) + '\n' +
-    'Estimasi Pemakaian BBM Maksimal : ' + fmtNumPlain(d.estimasi_bbm_max) + '\n' +
-    'Stock Oli SAE 40 : ' + fmtNumPlain(d.stock_oli_sae40) + '\n' +
-    'Stock Oli SX : ' + fmtNumPlain(d.stock_oli_sx) + '\n' +
-    'Stock Oli SX Plus : ' + fmtNumPlain(d.stock_oli_sx_plus)
+    'Estimasi Pemakaian BBM Maksimal : ' + fmtNumPlain(d.estimasi_bbm_max)
 
   var html = '<div class="review-wrap">'
   html += '<div class="review-kop"><div class="review-kop-left"><div class="review-kop-icon"><i class="fas fa-file-invoice"></i></div>'
