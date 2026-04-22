@@ -407,7 +407,13 @@ function switchTab(tab) {
   document.getElementById('header-actions-data').style.display      = (tab === 'data')       ? 'flex' : 'none'
 
   if (tab === 'laporan' && !lapSelectedKode) showLapState('empty')
-  if (tab === 'data') loadDataTab()
+  if (tab === 'data') {
+    // Sync dropdown to currentDataView
+    var sel = document.getElementById('data-view-sel')
+    if (sel) sel.value = currentDataView
+    if (currentDataView === 'hop-bbm') loadDataTab()
+    else loadStockOliTab()
+  }
 }
 
 // =============================================
@@ -846,6 +852,81 @@ async function selectRiwayatLap(tanggal) {
 // =============================================
 
 var dataTableInited = false
+var currentDataView = 'hop-bbm'  // 'hop-bbm' atau 'stock-oli'
+var oliTableInited  = false
+
+function switchDataView(view) {
+  currentDataView = view
+  var tanggal = document.getElementById('data-tanggal').value
+  if (view === 'hop-bbm') {
+    document.getElementById('data-table-wrap').classList.remove('hidden')
+    document.getElementById('oli-table-wrap').classList.add('hidden')
+    if (tanggal) loadDataTab()
+  } else {
+    document.getElementById('data-table-wrap').classList.add('hidden')
+    document.getElementById('oli-table-wrap').classList.remove('hidden')
+    if (tanggal) loadStockOliTab()
+  }
+}
+
+function onDataTanggalChange() {
+  if (currentDataView === 'hop-bbm') loadDataTab()
+  else loadStockOliTab()
+}
+
+async function loadStockOliTab() {
+  var tanggal = document.getElementById('data-tanggal').value
+  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu', 'info'); return }
+
+  // Render header sekali saja
+  if (!oliTableInited) {
+    var cols = ['NO', 'ULD', 'OLI SAE 40', 'OLI SX', 'OLI SX PLUS']
+    var headHTML = '<tr>'
+    for (var i = 0; i < cols.length; i++) {
+      var sticky = i < 2 ? 'position:sticky;left:' + (i===0?'0':'24px') + ';z-index:2;' : ''
+      var align  = i === 1 ? 'text-align:left;' : 'text-align:center;'
+      var w      = i === 0 ? 'width:24px;min-width:24px;max-width:24px;padding:8px 4px;border-right:1px solid rgba(255,255,255,0.2);' : 'padding:8px 14px;'
+      headHTML += '<th style="background:#1e3a5f;color:#fff;white-space:nowrap;font-size:0.72rem;' + align + w + sticky + '">' + cols[i] + '</th>'
+    }
+    headHTML += '</tr>'
+    document.getElementById('oli-table-head').innerHTML = headHTML
+    document.getElementById('data-state-empty').style.display = 'none'
+    document.getElementById('oli-table-wrap').classList.remove('hidden')
+    oliTableInited = true
+  }
+
+  showLoading(true, 'loading-indicator-data')
+  try {
+    var res  = await fetch('/api/stock-oli?tanggal=' + tanggal)
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error)
+    var rows = json.data || []
+
+    function fmtOliVal(val) {
+      if (val === null || val === undefined) return '<span style="color:#cbd5e1">—</span>'
+      return isNaN(Number(val)) ? val : Number(val).toLocaleString('id-ID') + ' ltr'
+    }
+
+    var bodyHTML = ''
+    for (var r = 0; r < rows.length; r++) {
+      var d   = rows[r]
+      var bg  = r % 2 === 0 ? '#fff' : '#f8fafc'
+      bodyHTML += '<tr style="background:' + bg + ';border-bottom:1px solid #e2e8f0;">'
+      bodyHTML += '<td style="width:24px;min-width:24px;max-width:24px;padding:4px;text-align:center;font-size:0.7rem;position:sticky;left:0;background:' + bg + ';z-index:1;border-right:1px solid #e2e8f0;">' + d.no + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;white-space:nowrap;font-size:0.78rem;font-weight:600;color:#1e3a5f;text-align:left;position:sticky;left:24px;background:' + bg + ';z-index:1;">' + d.nama_unit + '</td>'
+      bodyHTML += '<td style="padding:7px 14px;text-align:center;font-size:0.78rem;">' + fmtOliVal(d.sae40) + '</td>'
+      bodyHTML += '<td style="padding:7px 14px;text-align:center;font-size:0.78rem;">' + fmtOliVal(d.sx) + '</td>'
+      bodyHTML += '<td style="padding:7px 14px;text-align:center;font-size:0.78rem;">' + fmtOliVal(d.sx_plus) + '</td>'
+      bodyHTML += '</tr>'
+    }
+    document.getElementById('oli-table-body').innerHTML = bodyHTML
+    document.getElementById('info-data-record').textContent = rows.length + ' unit'
+  } catch(e) {
+    showToast('Gagal memuat data: ' + e.message, 'error')
+  } finally {
+    showLoading(false, 'loading-indicator-data')
+  }
+}
 
 function initDataTable() {
   if (dataTableInited) return

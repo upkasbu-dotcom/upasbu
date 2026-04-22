@@ -337,6 +337,37 @@ app.post('/api/lap-operasional', async (c) => {
 })
 
 // ============================================================
+// API: STOCK OLI (rekap stock oli per unit per tanggal)
+// ============================================================
+app.get('/api/stock-oli', async (c) => {
+  try {
+    const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
+    const result = await c.env.DB.prepare(`
+      SELECT kode_unit, nama_unit, tanggal, stock_oli_sae40, stock_oli_sx, stock_oli_sx_plus
+      FROM lap_operasional WHERE tanggal = ? ORDER BY kode_unit
+    `).bind(tanggal).all<any>()
+
+    // Gabungkan dengan UNIT_META untuk urutan dan nomor
+    const unitMetaKeys = [366,910,385,911,913,372,915,918,919,917,920,399,390,382,391,376,373,395,375]
+    const dataMap: Record<number, any> = {}
+    for (const row of result.results) dataMap[row.kode_unit] = row
+
+    const rows = unitMetaKeys.map((kode, idx) => {
+      const row = dataMap[kode]
+      return {
+        no: idx + 1,
+        kode_unit: kode,
+        nama_unit: row?.nama_unit ?? (Object.values({366:'ULD BABAI',910:'ULD MANGKATIP',385:'ULD RANGGA ILUNG',911:'ULD TELUK BETUNG',913:'ULD TUMPUNG LAUNG',372:'ULD GUNUNG PUREI',915:'ULD SUNGAI BALI',918:'ULD KERAYAAN',919:'ULD KERUMPUTAN',917:'ULD KERASIAN',920:'ULD MARABATUAN',399:'ULD TUMBANG SENAMANG',390:'ULD TELAGA',382:'ULD PAGATAN',391:'ULD TELAGA PULANG',376:'ULD MENDAWAI',373:'ULD KENAMBUI',395:'ULD TUMBANG MANJUL',375:'ULD KUDANGAN'} as Record<number,string>)[kode] ?? '-'),
+        sae40: row?.stock_oli_sae40 ?? null,
+        sx: row?.stock_oli_sx ?? null,
+        sx_plus: row?.stock_oli_sx_plus ?? null
+      }
+    })
+    return c.json({ success: true, data: rows })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ============================================================
 // API: DATA STOK (tabel rekap semua unit per tanggal)
 // ============================================================
 // Data statis per unit: jalur, kapasitas tangki (liter), stock mati (liter)
@@ -623,10 +654,16 @@ app.get('/', (c) => {
   <div id="toolbar-data" class="hidden">
     <div class="toolbar">
       <div class="toolbar-group">
-        <label class="toolbar-label">Tanggal</label>
-        <input type="date" id="data-tanggal" class="toolbar-input" onchange="loadDataTab()"/>
+        <label class="toolbar-label">Menu</label>
+        <select id="data-view-sel" class="toolbar-select" onchange="switchDataView(this.value)" style="min-width:120px;">
+          <option value="hop-bbm">HOP BBM</option>
+          <option value="stock-oli">STOCK OLI</option>
+        </select>
       </div>
-
+      <div class="toolbar-group">
+        <label class="toolbar-label">Tanggal</label>
+        <input type="date" id="data-tanggal" class="toolbar-input" onchange="onDataTanggalChange()"/>
+      </div>
       <div id="loading-indicator-data" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-data-record"></span>
     </div>
@@ -682,11 +719,21 @@ app.get('/', (c) => {
 <!-- ===== TAB: DATA ===== -->
 <div id="tab-data" class="tab-content" style="padding:10px 12px;">
   <div id="data-state-empty" style="display:flex;"></div>
+  <!-- HOP BBM -->
   <div id="data-table-wrap" class="hidden">
     <div class="table-wrap">
       <table id="data-table" style="width:100%;border-collapse:collapse;">
         <thead id="data-table-head"></thead>
         <tbody id="data-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <!-- STOCK OLI -->
+  <div id="oli-table-wrap" class="hidden">
+    <div class="table-wrap">
+      <table id="oli-table" style="width:100%;border-collapse:collapse;">
+        <thead id="oli-table-head"></thead>
+        <tbody id="oli-table-body"></tbody>
       </table>
     </div>
   </div>
