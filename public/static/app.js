@@ -598,6 +598,24 @@ async function loadLapData() {
     document.getElementById('info-lap-record').textContent = cnt > 0 ? cnt + ' unit sudah ada data' : 'Belum ada data untuk ' + tanggal
     if (lapSelectedKode) {
       currentLapForm = lapData[lapSelectedKode] ? JSON.parse(JSON.stringify(lapData[lapSelectedKode])) : {}
+
+      // Jika saldo_awal belum ada (form kosong), auto-isi dari saldo_akhir H-1
+      if (currentLapForm.saldo_awal === undefined || currentLapForm.saldo_awal === null) {
+        try {
+          var tglH1 = new Date(tanggal)
+          tglH1.setDate(tglH1.getDate() - 1)
+          var tanggalH1 = tglH1.toISOString().split('T')[0]
+          var resH1 = await fetch('/api/lap-operasional?tanggal=' + tanggalH1 + '&kode_unit=' + lapSelectedKode)
+          var jsonH1 = await resH1.json()
+          if (jsonH1.success && jsonH1.data.length > 0) {
+            var rowH1 = jsonH1.data[0]
+            if (rowH1.saldo_akhir !== null && rowH1.saldo_akhir !== undefined) {
+              currentLapForm.saldo_awal = rowH1.saldo_akhir
+            }
+          }
+        } catch(e2) { /* gagal fetch H-1, biarkan kosong */ }
+      }
+
       renderLapForm()
     }
     showToast('Data ' + tanggal + ' dimuat','info')
