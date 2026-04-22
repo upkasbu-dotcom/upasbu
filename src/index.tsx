@@ -67,9 +67,9 @@ async function initDB(db: D1Database) {
     saldo_akhir REAL,
     penerimaan_bbm REAL,
     estimasi_bbm_max REAL,
-    stock_oli_sae40 REAL,
-    stock_oli_sx REAL,
-    stock_oli_sx_plus REAL,
+    stock_oli_sae40 TEXT,
+    stock_oli_sx TEXT,
+    stock_oli_sx_plus TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`).run()
@@ -313,9 +313,9 @@ app.post('/api/lap-operasional', async (c) => {
     const { kode_unit, nama_unit, tanggal, nama_operator, kwh_produksi, saldo_awal, saldo_akhir, penerimaan_bbm, estimasi_bbm_max, stock_oli_sae40, stock_oli_sx, stock_oli_sx_plus } = body
     if (!kode_unit || !tanggal) return c.json({ success: false, error: 'kode_unit dan tanggal wajib diisi' }, 400)
     // Tambah kolom oli jika belum ada (ALTER TABLE idempotent)
-    try { await c.env.DB.prepare(`ALTER TABLE lap_operasional ADD COLUMN stock_oli_sae40 REAL`).run() } catch(e){}
-    try { await c.env.DB.prepare(`ALTER TABLE lap_operasional ADD COLUMN stock_oli_sx REAL`).run() } catch(e){}
-    try { await c.env.DB.prepare(`ALTER TABLE lap_operasional ADD COLUMN stock_oli_sx_plus REAL`).run() } catch(e){}
+    try { await c.env.DB.prepare(`ALTER TABLE lap_operasional ADD COLUMN stock_oli_sae40 TEXT`).run() } catch(e){}
+    try { await c.env.DB.prepare(`ALTER TABLE lap_operasional ADD COLUMN stock_oli_sx TEXT`).run() } catch(e){}
+    try { await c.env.DB.prepare(`ALTER TABLE lap_operasional ADD COLUMN stock_oli_sx_plus TEXT`).run() } catch(e){}
     await c.env.DB.prepare(`
       INSERT INTO lap_operasional (kode_unit,nama_unit,tanggal,nama_operator,kwh_produksi,saldo_awal,saldo_akhir,penerimaan_bbm,estimasi_bbm_max,stock_oli_sae40,stock_oli_sx,stock_oli_sx_plus,updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
