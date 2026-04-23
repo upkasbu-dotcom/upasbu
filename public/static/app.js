@@ -137,9 +137,9 @@ document.addEventListener('DOMContentLoaded', function() {
     })
   } catch(e) {}
 
-  // Load semua unit untuk kedua tab, lalu otomatis load tab DATA
+  // Load semua unit, lalu buka tab OPERASIONAL sebagai landing page
   loadAllUnits().then(function() {
-    switchDataView(currentDataView)
+    switchTab('laporan')
   })
 })
 

@@ -588,10 +588,10 @@ app.get('/', (c) => {
     <div class="app-name">Digitalisasi Pelaporan</div>
     <div class="app-header-nav">
       <div class="tab-row">
-        <button id="tab-btn-laporan" class="tab-btn" onclick="switchTab('laporan')">
+        <button id="tab-btn-laporan" class="tab-btn active" onclick="switchTab('laporan')">
           <span class="btn-text">OPERASIONAL</span>
         </button>
-        <button id="tab-btn-monitoring" class="tab-btn active" onclick="switchTab('monitoring')">
+        <button id="tab-btn-monitoring" class="tab-btn" onclick="switchTab('monitoring')">
           <span class="btn-text">LOG SHEET</span>
         </button>
         <button id="tab-btn-data" class="tab-btn" onclick="switchTab('data')">
