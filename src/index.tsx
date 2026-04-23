@@ -506,10 +506,9 @@ app.get('/api/data-stok', async (c) => {
       const stokAwalBln   = stokAwalBulanMap[u.kode_unit] ?? null
       const stokAkhir     = lap?.saldo_akhir ?? null
       const penerimaanBbm = lap?.penerimaan_bbm ?? null
-      const saldoAwal     = lap?.saldo_awal ?? null
-      // STOCK AWAL: jika Penerimaan BBM terisi → Saldo Awal + Penerimaan BBM, jika tidak → Saldo Akhir
-      const stokAwal = (penerimaanBbm !== null && penerimaanBbm > 0 && saldoAwal !== null)
-                       ? saldoAwal + penerimaanBbm
+      // STOCK AWAL: jika Penerimaan BBM terisi → Saldo Akhir + Penerimaan BBM, jika tidak → Saldo Akhir
+      const stokAwal = (penerimaanBbm !== null && penerimaanBbm > 0 && stokAkhir !== null)
+                       ? stokAkhir + penerimaanBbm
                        : stokAkhir
 
       const jalur        = meta?.jalur ?? '-'
