@@ -465,10 +465,22 @@ select.cell-input { width: 112px; cursor: pointer; }
   /* Form single col on mobile */
   .form-row { grid-template-columns: 1fr; }
   .form-group.full { grid-column: 1; }
-  .lap-single-body { padding: 12px 14px; }
+  .lap-single-body { padding: 12px 10px; }
   .lap-single-header { padding: 12px 14px; }
   .lap-single-infobar { padding: 8px 14px; gap: 14px; }
   .lap-single-footer { padding: 10px 14px; }
+
+  /* Form laporan operasional mobile: 100% lebar */
+  #lap-form-container,
+  #lap-review-container { max-width: 100% !important; padding: 0 2px; }
+  .lap-field-row { flex-wrap: wrap; gap: 4px 8px; }
+  .lap-field-label { min-width: 0; width: 100%; font-size: 0.8rem; padding-bottom: 2px; }
+  .lap-field-sep { display: none; }
+  .lap-field-input { width: 100%; flex: 1 1 100%; font-size: 0.9rem; padding: 8px 10px; }
+  .lap-field-unit { align-self: center; }
+  .op-input-wrap { width: 100%; flex: 1 1 100%; }
+  .op-dropdown { font-size: 0.85rem; }
+  .op-item { padding: 10px 12px; }
 
   /* Review */
   .review-identity { padding: 12px 14px; }

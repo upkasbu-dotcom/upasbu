@@ -712,8 +712,8 @@ app.get('/', (c) => {
 <div id="tab-laporan" class="tab-content" style="padding:10px 12px;">
   <div id="lap-state-empty" style="flex-direction:column;"></div>
   <div id="lap-state-pick-unit" style="display:none;flex-direction:column;"></div>
-  <div id="lap-form-container" class="hidden" style="max-width:600px;margin:0 auto;"></div>
-  <div id="lap-review-container" class="hidden" style="max-width:600px;margin:0 auto;"></div>
+  <div id="lap-form-container" class="hidden" style="max-width:600px;margin:0 auto;width:100%;"></div>
+  <div id="lap-review-container" class="hidden" style="max-width:600px;margin:0 auto;width:100%;"></div>
 </div>
 
 <!-- ===== TAB: DATA ===== -->
