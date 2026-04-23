@@ -319,6 +319,7 @@ app.post('/api/lap-operasional', async (c) => {
     try { await c.env.DB.prepare(`ALTER TABLE lap_operasional ADD COLUMN dokumen_base64 TEXT`).run() } catch(e){}
     try { await c.env.DB.prepare(`ALTER TABLE lap_operasional ADD COLUMN dokumen_nama TEXT`).run() } catch(e){}
     try { await c.env.DB.prepare(`ALTER TABLE lap_operasional ADD COLUMN dokumen_type TEXT`).run() } catch(e){}
+    try { await c.env.DB.prepare(`ALTER TABLE lap_operasional ADD COLUMN dokumen_url TEXT`).run() } catch(e){}
     await c.env.DB.prepare(`
       INSERT INTO lap_operasional (kode_unit,nama_unit,tanggal,nama_operator,kwh_produksi,saldo_awal,saldo_akhir,penerimaan_bbm,estimasi_bbm_max,stock_oli_sae40,stock_oli_sx,stock_oli_sx_plus,updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
@@ -341,34 +342,18 @@ app.post('/api/lap-operasional', async (c) => {
 
 // ============================================================
 // ============================================================
-// API: UPLOAD DOKUMEN (base64 ke D1)
+// API: SIMPAN URL DOKUMEN (dari Google Drive via Apps Script)
 // ============================================================
 app.post('/api/lap-operasional/dokumen', async (c) => {
   try {
     const body = await c.req.json()
-    const { kode_unit, tanggal, dokumen_base64, dokumen_nama, dokumen_type } = body
-    if (!kode_unit || !tanggal || !dokumen_base64) return c.json({ success: false, error: 'Parameter tidak lengkap' }, 400)
-    // Batas ukuran ~2MB base64
-    if (dokumen_base64.length > 2_800_000) return c.json({ success: false, error: 'Ukuran file terlalu besar (maks 2MB)' }, 400)
+    const { kode_unit, tanggal, dokumen_url, dokumen_nama } = body
+    if (!kode_unit || !tanggal || !dokumen_url) return c.json({ success: false, error: 'Parameter tidak lengkap' }, 400)
     await c.env.DB.prepare(`
-      UPDATE lap_operasional SET dokumen_base64=?, dokumen_nama=?, dokumen_type=?, updated_at=CURRENT_TIMESTAMP
+      UPDATE lap_operasional SET dokumen_url=?, dokumen_nama=?, updated_at=CURRENT_TIMESTAMP
       WHERE kode_unit=? AND tanggal=?
-    `).bind(dokumen_base64, dokumen_nama||'dokumen', dokumen_type||'application/octet-stream', kode_unit, tanggal).run()
+    `).bind(dokumen_url, dokumen_nama||'dokumen', kode_unit, tanggal).run()
     return c.json({ success: true })
-  } catch(e: any) { return c.json({ success: false, error: e.message }, 500) }
-})
-
-// API: GET DOKUMEN
-app.get('/api/lap-operasional/dokumen', async (c) => {
-  try {
-    const kode_unit = c.req.query('kode_unit')
-    const tanggal   = c.req.query('tanggal')
-    if (!kode_unit || !tanggal) return c.json({ success: false, error: 'Parameter tidak lengkap' }, 400)
-    const row = await c.env.DB.prepare(`
-      SELECT dokumen_base64, dokumen_nama, dokumen_type FROM lap_operasional WHERE kode_unit=? AND tanggal=?
-    `).bind(kode_unit, tanggal).first<any>()
-    if (!row || !row.dokumen_base64) return c.json({ success: true, data: null })
-    return c.json({ success: true, data: { base64: row.dokumen_base64, nama: row.dokumen_nama, type: row.dokumen_type } })
   } catch(e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 

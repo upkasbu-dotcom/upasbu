@@ -646,15 +646,16 @@ function renderLapForm() {
 
   // ── UPLOAD DOKUMEN ──
   var docPreview = ''
-  if (currentLapForm.dokumen_base64 && currentLapForm.dokumen_type) {
-    if (currentLapForm.dokumen_type.startsWith('image/')) {
-      docPreview = '<div id="doc-preview-wrap" style="margin-top:6px;"><img src="' + currentLapForm.dokumen_base64 + '" style="max-width:100%;max-height:180px;border-radius:6px;border:1px solid #e2e8f0;" alt="dokumen"/></div>'
+  if (currentLapForm.dokumen_url) {
+    var isImg = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(currentLapForm.dokumen_nama||'')
+    if (isImg) {
+      docPreview = '<div id="doc-preview-wrap" style="margin-top:6px;"><img src="' + currentLapForm.dokumen_url + '" style="max-width:100%;max-height:180px;border-radius:6px;border:1px solid #e2e8f0;" alt="dokumen"/></div>'
     } else {
-      docPreview = '<div id="doc-preview-wrap" style="margin-top:6px;"><a href="' + currentLapForm.dokumen_base64 + '" download="' + (currentLapForm.dokumen_nama||'dokumen.pdf') + '" style="color:#1d4ed8;font-size:0.82rem;"><i class="fas fa-file-pdf"></i> ' + (currentLapForm.dokumen_nama||'dokumen.pdf') + '</a></div>'
+      docPreview = '<div id="doc-preview-wrap" style="margin-top:6px;"><a href="' + currentLapForm.dokumen_url + '" target="_blank" rel="noopener" style="color:#1d4ed8;font-size:0.82rem;"><i class="fas fa-file-pdf"></i> ' + (currentLapForm.dokumen_nama||'dokumen') + '</a></div>'
     }
   }
   html += '<div class="lap-field-row" style="flex-direction:column;align-items:flex-start;gap:4px;">'
-  html += '<label class="lap-field-label" style="min-width:unset;">Upload Dokumen <span style="font-size:0.72rem;color:#94a3b8;">(foto/pdf, maks 2MB)</span></label>'
+  html += '<label class="lap-field-label" style="min-width:unset;">Upload Dokumen <span style="font-size:0.72rem;color:#94a3b8;">(foto/pdf, maks 10MB)</span></label>'
   html += '<input id="field-dokumen" type="file" accept="image/*,.pdf" class="lap-field-input" style="padding:4px;cursor:pointer;"/>'
   html += docPreview
   html += '<span id="doc-upload-status" style="font-size:0.75rem;color:#64748b;"></span>'
@@ -728,38 +729,66 @@ function renderLapForm() {
   attachOliField('field-stock-oli-sx',      'stock_oli_sx')
   attachOliField('field-stock-oli-sx-plus', 'stock_oli_sx_plus')
 
-  // Attach file upload listener
+  // Attach file upload listener — kirim ke Google Drive via Apps Script
+  var GAS_URL = 'https://script.google.com/macros/s/AKfycbxOtWFCAgXJr-EQ-_xsiirgSYTFnClJTKXO2grYLlrOdU9YDFw8gxiCo2eEY5ltnmp4/exec'
   var elFile = document.getElementById('field-dokumen')
   if (elFile) {
     elFile.addEventListener('change', function() {
       var file = this.files[0]
       if (!file) return
-      if (file.size > 2 * 1024 * 1024) {
-        document.getElementById('doc-upload-status').textContent = '⚠ File terlalu besar (maks 2MB)'
+      if (file.size > 10 * 1024 * 1024) {
+        document.getElementById('doc-upload-status').textContent = '⚠ File terlalu besar (maks 10MB)'
         this.value = ''
         return
       }
       var statusEl = document.getElementById('doc-upload-status')
-      statusEl.textContent = 'Membaca file...'
+      statusEl.textContent = 'Mengupload ke Google Drive...'
       var reader = new FileReader()
-      reader.onload = function(e) {
-        currentLapForm.dokumen_base64 = e.target.result
-        currentLapForm.dokumen_nama   = file.name
-        currentLapForm.dokumen_type   = file.type
-        // Preview langsung
-        var wrap = document.getElementById('doc-preview-wrap')
-        if (!wrap) {
-          wrap = document.createElement('div')
-          wrap.id = 'doc-preview-wrap'
-          wrap.style.marginTop = '6px'
-          elFile.parentNode.insertBefore(wrap, elFile.nextSibling)
+      reader.onload = function(ev) {
+        // base64 tanpa prefix "data:...;base64,"
+        var b64 = ev.target.result.split(',')[1]
+        var tanggal = document.getElementById('lap-tanggal').value
+        var unit = lapSelectedUnit || lapSelectedKode || 'unknown'
+        var payload = {
+          fileName: unit + '_' + tanggal + '_' + file.name,
+          mimeType: file.type,
+          base64: b64,
+          kode_unit: lapSelectedKode,
+          tanggal: tanggal,
+          nama_unit: lapSelectedUnit
         }
-        if (file.type.startsWith('image/')) {
-          wrap.innerHTML = '<img src="' + e.target.result + '" style="max-width:100%;max-height:180px;border-radius:6px;border:1px solid #e2e8f0;" alt="dokumen"/>'
-        } else {
-          wrap.innerHTML = '<span style="color:#1d4ed8;font-size:0.82rem;"><i class="fas fa-file-pdf"></i> ' + file.name + '</span>'
-        }
-        statusEl.textContent = '✓ ' + file.name + ' siap diupload saat Simpan'
+        fetch(GAS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(payload)
+        })
+        .then(function(r){ return r.json() })
+        .then(function(j) {
+          if (j.success && j.url) {
+            currentLapForm.dokumen_url  = j.url
+            currentLapForm.dokumen_nama = file.name
+            // Preview
+            var wrap = document.getElementById('doc-preview-wrap')
+            if (!wrap) {
+              wrap = document.createElement('div')
+              wrap.id = 'doc-preview-wrap'
+              wrap.style.marginTop = '6px'
+              var statusParent = statusEl.parentNode
+              statusParent.insertBefore(wrap, statusEl)
+            }
+            if (file.type.startsWith('image/')) {
+              wrap.innerHTML = '<img src="' + j.url + '" style="max-width:100%;max-height:180px;border-radius:6px;border:1px solid #e2e8f0;" alt="dokumen"/>'
+            } else {
+              wrap.innerHTML = '<a href="' + j.url + '" target="_blank" rel="noopener" style="color:#1d4ed8;font-size:0.82rem;"><i class="fas fa-file-pdf"></i> ' + file.name + '</a>'
+            }
+            statusEl.textContent = '✓ ' + file.name + ' berhasil diupload ke Google Drive'
+          } else {
+            statusEl.textContent = '⚠ Gagal upload: ' + (j.error||'unknown error')
+          }
+        })
+        .catch(function(err) {
+          statusEl.textContent = '⚠ Gagal upload: ' + err.message
+        })
       }
       reader.readAsDataURL(file)
     })
@@ -881,9 +910,8 @@ async function onLapTanggalChange() {
         stock_oli_sae40: row.stock_oli_sae40,
         stock_oli_sx: row.stock_oli_sx,
         stock_oli_sx_plus: row.stock_oli_sx_plus,
-        dokumen_base64: row.dokumen_base64 || null,
-        dokumen_nama:   row.dokumen_nama   || null,
-        dokumen_type:   row.dokumen_type   || null
+        dokumen_url:  row.dokumen_url  || null,
+        dokumen_nama: row.dokumen_nama || null
       }
     }
     if (lapData[lapSelectedKode]) {
@@ -932,9 +960,8 @@ async function loadLapData() {
         stock_oli_sae40: row.stock_oli_sae40,
         stock_oli_sx: row.stock_oli_sx,
         stock_oli_sx_plus: row.stock_oli_sx_plus,
-        dokumen_base64: row.dokumen_base64 || null,
-        dokumen_nama:   row.dokumen_nama   || null,
-        dokumen_type:   row.dokumen_type   || null
+        dokumen_url:  row.dokumen_url  || null,
+        dokumen_nama: row.dokumen_nama || null
       }
     }
     var cnt = json.data.length
@@ -1016,21 +1043,20 @@ async function saveLapCurrent() {
     var res  = await fetch('/api/lap-operasional', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
-    // Upload dokumen jika ada
-    if (currentLapForm.dokumen_base64) {
+    // Simpan URL dokumen Drive ke DB (jika sudah diupload ke GAS)
+    if (currentLapForm.dokumen_url) {
       try {
         await fetch('/api/lap-operasional/dokumen', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            kode_unit: unit.kode_unit,
-            tanggal: tanggal,
-            dokumen_base64: currentLapForm.dokumen_base64,
-            dokumen_nama:   currentLapForm.dokumen_nama,
-            dokumen_type:   currentLapForm.dokumen_type
+            kode_unit:    unit.kode_unit,
+            tanggal:      tanggal,
+            dokumen_url:  currentLapForm.dokumen_url,
+            dokumen_nama: currentLapForm.dokumen_nama
           })
         })
-      } catch(e2) { /* gagal upload dokumen, abaikan */ }
+      } catch(e2) { /* gagal simpan url dokumen, abaikan */ }
     }
     lapData[lapSelectedKode] = JSON.parse(JSON.stringify(currentLapForm))
     lastSavedData = JSON.parse(JSON.stringify(currentLapForm))
@@ -1103,16 +1129,17 @@ function renderReview(unit, tanggal, d) {
   html += '<tr><td class="rdt-label">Stock Oli SX</td><td class="rdt-val">' + fmtOli(d.stock_oli_sx) + '</td></tr>'
   html += '<tr class="rdt-last"><td class="rdt-label">Stock Oli SX Plus</td><td class="rdt-val">' + fmtOli(d.stock_oli_sx_plus) + '</td></tr>'
   html += '</table></div>'
-  // Tampilkan dokumen jika ada
-  if (d.dokumen_base64 && d.dokumen_type) {
+  // Tampilkan dokumen jika ada (dari Google Drive URL)
+  if (d.dokumen_url) {
+    var isImg = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(d.dokumen_nama||'')
     html += '<div class="review-divider"></div>'
     html += '<div style="padding:12px 20px;">'
     html += '<div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:8px;">DOKUMEN</div>'
-    if (d.dokumen_type.startsWith('image/')) {
-      html += '<img src="' + d.dokumen_base64 + '" style="max-width:100%;max-height:260px;border-radius:8px;border:1px solid #e2e8f0;" alt="dokumen"/>'
+    if (isImg) {
+      html += '<img src="' + d.dokumen_url + '" style="max-width:100%;max-height:260px;border-radius:8px;border:1px solid #e2e8f0;" alt="dokumen"/>'
     } else {
-      html += '<a href="' + d.dokumen_base64 + '" download="' + (d.dokumen_nama||'dokumen.pdf') + '" style="display:inline-flex;align-items:center;gap:6px;color:#1d4ed8;font-size:0.85rem;text-decoration:none;padding:8px 12px;border:1px solid #bfdbfe;border-radius:6px;background:#eff6ff;">'
-      html += '<i class="fas fa-file-pdf"></i>' + (d.dokumen_nama||'dokumen.pdf') + '</a>'
+      html += '<a href="' + d.dokumen_url + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;color:#1d4ed8;font-size:0.85rem;text-decoration:none;padding:8px 12px;border:1px solid #bfdbfe;border-radius:6px;background:#eff6ff;">'
+      html += '<i class="fas fa-file-pdf"></i>' + (d.dokumen_nama||'dokumen') + '</a>'
     }
     html += '</div>'
   }
