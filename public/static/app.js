@@ -928,7 +928,8 @@ async function saveLapCurrent() {
 
 function renderReview(unit, tanggal, d) {
   var tglParts      = tanggal.split('-')
-  var tglFormatted  = tglParts[2] + '/' + tglParts[1] + '/' + tglParts[0]
+  var tglDate       = new Date(tglParts[0], tglParts[1] - 1, tglParts[2])
+  var tglFormatted  = tglDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
   var kodeFormatted = String(unit.kode_unit).padStart(4,'0')
 
   function fmtNum(val) {
