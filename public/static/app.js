@@ -598,7 +598,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Penerimaan BBM</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-penerimaan-bbm" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('penerimaan_bbm') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'penerimaan_bbm\',this.value)"/>'
+  html += '<input id="field-penerimaan-bbm" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('penerimaan_bbm') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'penerimaan_bbm\',this.value);calcEstimasiBbm()"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -694,12 +694,16 @@ function toggleOperator(nama, checked) {
   setLapField('nama_operator', joined)
 }
 
-// Hitung Estimasi Pemakaian BBM = Saldo Awal - Saldo Akhir (auto, bisa ditimpa manual)
+// Hitung Pemakaian BBM:
+// Jika Penerimaan BBM terisi → Saldo Awal + Penerimaan BBM - Saldo Akhir
+// Jika tidak              → Saldo Awal - Saldo Akhir
 function calcEstimasiBbm() {
-  var awal  = parseInt(document.getElementById('field-saldo-awal')?.value  || '', 10)
-  var akhir = parseInt(document.getElementById('field-saldo-akhir')?.value || '', 10)
+  var awal       = parseInt(document.getElementById('field-saldo-awal')?.value       || '', 10)
+  var akhir      = parseInt(document.getElementById('field-saldo-akhir')?.value      || '', 10)
+  var penerimaan = parseInt(document.getElementById('field-penerimaan-bbm')?.value   || '', 10)
   if (!isNaN(awal) && !isNaN(akhir)) {
-    var hasil = Math.max(0, awal - akhir)
+    var pen    = isNaN(penerimaan) ? 0 : penerimaan
+    var hasil  = Math.max(0, awal + pen - akhir)
     var elEstimasi = document.getElementById('field-estimasi-bbm')
     if (elEstimasi) elEstimasi.value = hasil
     currentLapForm.estimasi_bbm_max = hasil
