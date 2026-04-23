@@ -972,7 +972,7 @@ function renderReview(unit, tanggal, d) {
   html += '<tr><td class="rid-label">Nama Operator</td><td class="rid-val">' + fmtStr(d.nama_operator) + '</td></tr>'
   html += '</table></div>'
   html += '<div class="review-divider"></div>'
-  html += '<div class="review-data-section"><div class="review-section-label"><i class="fas fa-table-list"></i> Data Operasional</div>'
+  html += '<div class="review-data-section">'
   html += '<table class="review-data-table">'
   html += '<tr><td class="rdt-label">kWh Produksi</td><td class="rdt-val">' + fmtNum(d.kwh_produksi) + ' <span class="rdt-unit">kWh</span></td></tr>'
   html += '<tr><td class="rdt-label">Saldo Awal</td><td class="rdt-val">' + fmtNum(d.saldo_awal) + ' <span class="rdt-unit">ltr</span></td></tr>'
