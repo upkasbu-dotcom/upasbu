@@ -574,7 +574,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">kWh Produksi</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-kwh-produksi" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('kwh_produksi') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'kwh_produksi\',this.value)"/>'
+  html += '<input id="field-kwh-produksi" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('kwh_produksi') + '"/>'
   html += '<span class="lap-field-unit">kWh</span>'
   html += '</div>'
 
@@ -582,7 +582,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Saldo Awal</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-saldo-awal" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('saldo_awal') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'saldo_awal\',this.value);calcEstimasiBbm()"/>'
+  html += '<input id="field-saldo-awal" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('saldo_awal') + '"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -590,7 +590,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Saldo Akhir</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-saldo-akhir" type="text" inputmode="numeric" pattern="[1-9][0-9]*" class="lap-field-input" placeholder="—" value="' + fldNum('saldo_akhir') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');if(this.value===\'0\')this.value=\'\';setLapField(\'saldo_akhir\',this.value);calcEstimasiBbm()" onblur="if(this.value===\'0\')this.value=\'\'"/>'
+  html += '<input id="field-saldo-akhir" type="text" inputmode="numeric" pattern="[1-9][0-9]*" class="lap-field-input" placeholder="—" value="' + fldNum('saldo_akhir') + '"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -598,7 +598,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Penerimaan BBM</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-penerimaan-bbm" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('penerimaan_bbm') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'penerimaan_bbm\',this.value);calcEstimasiBbm()"/>'
+  html += '<input id="field-penerimaan-bbm" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('penerimaan_bbm') + '"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -606,7 +606,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Pemakaian BBM</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-estimasi-bbm" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="auto" value="' + fldNum('estimasi_bbm_max') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'estimasi_bbm_max\',this.value)"/>'
+  html += '<input id="field-estimasi-bbm" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="auto" value="' + fldNum('estimasi_bbm_max') + '"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -614,7 +614,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Stock Oli SAE 40</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-stock-oli-sae40" type="text" class="lap-field-input" value="' + fldOli('stock_oli_sae40') + '" onfocus="if(this.value===\'tidak menggunakan\')this.value=\'\';" onblur="if(this.value.trim()===\'\')this.value=\'tidak menggunakan\';setLapField(\'stock_oli_sae40\',this.value)" oninput="setLapField(\'stock_oli_sae40\',this.value)"/>'
+  html += '<input id="field-stock-oli-sae40" type="text" class="lap-field-input" placeholder="tidak menggunakan" value="' + fldOli('stock_oli_sae40') + '"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -622,7 +622,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Stock Oli SX</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-stock-oli-sx" type="text" class="lap-field-input" value="' + fldOli('stock_oli_sx') + '" onfocus="if(this.value===\'tidak menggunakan\')this.value=\'\';" onblur="if(this.value.trim()===\'\')this.value=\'tidak menggunakan\';setLapField(\'stock_oli_sx\',this.value)" oninput="setLapField(\'stock_oli_sx\',this.value)"/>'
+  html += '<input id="field-stock-oli-sx" type="text" class="lap-field-input" placeholder="tidak menggunakan" value="' + fldOli('stock_oli_sx') + '"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -630,7 +630,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Stock Oli SX Plus</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-stock-oli-sx-plus" type="text" class="lap-field-input" value="' + fldOli('stock_oli_sx_plus') + '" onfocus="if(this.value===\'tidak menggunakan\')this.value=\'\';" onblur="if(this.value.trim()===\'\')this.value=\'tidak menggunakan\';setLapField(\'stock_oli_sx_plus\',this.value)" oninput="setLapField(\'stock_oli_sx_plus\',this.value)"/>'
+  html += '<input id="field-stock-oli-sx-plus" type="text" class="lap-field-input" placeholder="tidak menggunakan" value="' + fldOli('stock_oli_sx_plus') + '"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
@@ -642,6 +642,55 @@ function renderLapForm() {
   html += '</div>'
 
   document.getElementById('lap-form-container').innerHTML = html
+
+  // Attach event listeners via addEventListener (mobile-safe, tidak bergantung inline oninput)
+  function attachNumericField(id, fieldKey, extraFn) {
+    var el = document.getElementById(id)
+    if (!el) return
+    el.addEventListener('input', function() {
+      this.value = this.value.replace(/[^0-9]/g, '')
+      if (fieldKey === 'saldo_akhir' && this.value === '0') this.value = ''
+      setLapField(fieldKey, this.value)
+      if (extraFn) extraFn()
+    })
+    // 'change' event tambahan untuk beberapa browser HP yang hanya fire change
+    el.addEventListener('change', function() {
+      this.value = this.value.replace(/[^0-9]/g, '')
+      if (fieldKey === 'saldo_akhir' && this.value === '0') this.value = ''
+      setLapField(fieldKey, this.value)
+      if (extraFn) extraFn()
+    })
+  }
+
+  attachNumericField('field-saldo-awal',     'saldo_awal',      calcEstimasiBbm)
+  attachNumericField('field-saldo-akhir',    'saldo_akhir',     calcEstimasiBbm)
+  attachNumericField('field-penerimaan-bbm', 'penerimaan_bbm',  calcEstimasiBbm)
+  attachNumericField('field-kwh-produksi',   'kwh_produksi',    null)
+  attachNumericField('field-estimasi-bbm',   'estimasi_bbm_max',null)
+
+  // Oil fields — text input with "tidak menggunakan" default
+  function attachOliField(id, fieldKey) {
+    var el = document.getElementById(id)
+    if (!el) return
+    el.addEventListener('focus', function() {
+      if (this.value === 'tidak menggunakan') this.value = ''
+    })
+    el.addEventListener('blur', function() {
+      if (this.value.trim() === '') this.value = 'tidak menggunakan'
+      setLapField(fieldKey, this.value)
+    })
+    el.addEventListener('input', function() {
+      setLapField(fieldKey, this.value)
+    })
+    el.addEventListener('change', function() {
+      setLapField(fieldKey, this.value)
+    })
+  }
+
+  attachOliField('field-stock-oli-sae40',   'stock_oli_sae40')
+  attachOliField('field-stock-oli-sx',      'stock_oli_sx')
+  attachOliField('field-stock-oli-sx-plus', 'stock_oli_sx_plus')
+
   // Recalculate after render so Pemakaian BBM always reflects current values
   setTimeout(calcEstimasiBbm, 0)
 }
