@@ -8,11 +8,20 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>()
 app.use('/api/*', cors())
+// Static files: cache 7 hari di browser, 1 jam di edge
+app.use('/static/*', async (c, next) => {
+  await next()
+  c.res.headers.set('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400')
+})
 app.use('/static/*', serveStatic({ root: './public' }))
 
-// Auto-init DB tables on every API request (idempotent CREATE IF NOT EXISTS)
+// Auto-init DB tables — hanya sekali per Worker instance (in-memory flag)
+let _dbInited = false
 app.use('/api/*', async (c, next) => {
-  await initDB(c.env.DB)
+  if (!_dbInited) {
+    await initDB(c.env.DB)
+    _dbInited = true
+  }
   return next()
 })
 
@@ -202,14 +211,14 @@ app.get('/api/up3', async (c) => {
 // ============================================================
 app.get('/api/unit', async (c) => {
   try {
-    // Sync harian — entry point utama sejak filter UP3 dihapus
-    await syncMesinIfNeeded(c.env.DB)
     const up3 = c.req.query('up3') || ''
     let query = `SELECT DISTINCT kode_unit, nama_unit FROM mesin_cache`
     const params: any[] = []
     if (up3) { query += ` WHERE up3 = ?`; params.push(up3) }
     query += ` ORDER BY nama_unit`
     const result = await c.env.DB.prepare(query).bind(...params).all()
+    // Sync di background (non-blocking) — tidak tunda response
+    c.executionCtx.waitUntil(syncMesinIfNeeded(c.env.DB).catch(() => {}))
     return c.json({ success: true, data: result.results })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
@@ -851,9 +860,10 @@ app.get('/', (c) => {
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Digitalisasi Pelaporan</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet"/>
+  <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
+  <link rel="preload" href="/static/style.css" as="style"/>
+  <link rel="preload" href="/static/app.js" as="script"/>
   <link href="/static/style.css" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
@@ -1089,10 +1099,12 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<script src="/static/app.js"></script>
+<script src="/static/app.js" defer></script>
 </body>
 </html>`
-  return c.html(html)
+  const resp = c.html(html)
+  resp.headers.set('Cache-Control', 'no-cache, must-revalidate')
+  return resp
 })
 
 export default app

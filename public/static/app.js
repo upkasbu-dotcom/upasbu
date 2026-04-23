@@ -137,22 +137,28 @@ document.addEventListener('DOMContentLoaded', function() {
     })
   } catch(e) {}
 
-  // Load semua unit, lalu buka tab OPERASIONAL sebagai landing page
-  loadAllUnits().then(function() {
-    switchTab('laporan')
-  })
+  // Render tab langsung — tidak tunggu API
+  switchTab('laporan')
+  // Load unit di background setelah tab sudah tampil
+  loadAllUnits()
 })
 
 // =============================================
 // SHARED: LOAD SEMUA UNIT (tanpa filter UP3)
 // =============================================
 async function loadAllUnits() {
-  // Tampilkan data statis dulu agar dropdown langsung tersedia
-  populateUnitSelect('mon-sel-unit', UNIT_DATA)
-  populateUnitSelect('lap-sel-unit', UNIT_DATA)
+  // Pakai localStorage cache jika ada (instant)
+  var cached = lsGet('all_units')
+  if (cached && cached.length > 0) {
+    populateUnitSelect('mon-sel-unit', cached)
+    populateUnitSelect('lap-sel-unit', cached)
+  } else {
+    // Fallback ke data statis
+    populateUnitSelect('mon-sel-unit', UNIT_DATA)
+    populateUnitSelect('lap-sel-unit', UNIT_DATA)
+  }
 
-  // Kemudian fetch dari API untuk update data terbaru di background
-  showLoading(true, 'loading-indicator-mesin')
+  // Fetch dari API di background untuk refresh data terbaru
   try {
     var res  = await fetch('/api/unit')
     if (!res.ok) throw new Error('HTTP ' + res.status)
@@ -165,10 +171,7 @@ async function loadAllUnits() {
       populateUnitSelect('lap-sel-unit', units)
     }
   } catch(e) {
-    // Data statis sudah tampil, tidak perlu toast error
     console.warn('Gagal update unit dari server:', e.message)
-  } finally {
-    showLoading(false, 'loading-indicator-mesin')
   }
 }
 
