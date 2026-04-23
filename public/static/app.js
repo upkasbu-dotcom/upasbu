@@ -599,9 +599,9 @@ function renderLapForm() {
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
-  // Estimasi Pemakaian BBM Maksimal
+  // Pemakaian BBM
   html += '<div class="lap-field-row">'
-  html += '<label class="lap-field-label">Estimasi Pemakaian BBM Maksimal</label>'
+  html += '<label class="lap-field-label">Pemakaian BBM</label>'
   html += '<span class="lap-field-sep">:</span>'
   html += '<input id="field-estimasi-bbm" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="auto" value="' + fldNum('estimasi_bbm_max') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'estimasi_bbm_max\',this.value)"/>'
   html += '<span class="lap-field-unit">ltr</span>'
@@ -780,7 +780,7 @@ function validateLapForm() {
   if (d.saldo_awal === null || d.saldo_awal === undefined || d.saldo_awal === '') { errors.push('Saldo Awal'); highlightError('field-saldo-awal') }
   if (d.kwh_produksi === null || d.kwh_produksi === undefined || d.kwh_produksi === '') { errors.push('kWh Produksi'); highlightError('field-kwh-produksi') }
   if (d.saldo_akhir === null || d.saldo_akhir === undefined || d.saldo_akhir === '') { errors.push('Saldo Akhir'); highlightError('field-saldo-akhir') }
-  if (d.estimasi_bbm_max === null || d.estimasi_bbm_max === undefined || d.estimasi_bbm_max === '') { errors.push('Estimasi Pemakaian BBM Maksimal'); highlightError('field-estimasi-bbm') }
+  if (d.estimasi_bbm_max === null || d.estimasi_bbm_max === undefined || d.estimasi_bbm_max === '') { errors.push('Pemakaian BBM'); highlightError('field-estimasi-bbm') }
   return errors
 }
 
