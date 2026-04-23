@@ -960,7 +960,7 @@ function renderReview(unit, tanggal, d) {
     'Estimasi Pemakaian BBM Maksimal : ' + fmtNumPlain(d.estimasi_bbm_max)
 
   var html = '<div class="review-wrap">'
-  html += '<div class="review-kop"><div class="review-kop-left"><div class="review-kop-icon"><i class="fas fa-file-invoice"></i></div>'
+  html += '<div class="review-kop"><div class="review-kop-left">'
   html += '<div><div class="review-kop-title">LAPORAN OPERASIONAL PLTD</div><div class="review-kop-sub">Dokumen Operasional Harian</div></div></div>'
   html += '<div class="review-kop-stamp"><i class="fas fa-check-circle"></i><br/>TERSIMPAN</div></div>'
   html += '<div class="review-divider"></div>'
