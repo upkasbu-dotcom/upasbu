@@ -817,7 +817,7 @@ function renderLapForm() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               kode_unit: lapSelectedKode,
-              nama_unit: lapSelectedUnit,
+              nama_unit: lapSelectedUnit && lapSelectedUnit.nama_unit ? lapSelectedUnit.nama_unit : String(lapSelectedUnit || ''),
               tanggal:   tanggal,
               fileName:  imgName,
               imgUrl:    imgUrl
