@@ -365,178 +365,47 @@ app.post('/api/lap-operasional', async (c) => {
 })
 
 // ============================================================
-// SERVICE ACCOUNT CONFIG (Google Drive + Sheets)
 // ============================================================
-const SA_EMAIL      = 'pltd-service@pltd-upload.iam.gserviceaccount.com'
-const SA_KEY_ID     = 'd924253a34a279f108e0aec4fc7c83c661548e97'
-const DRIVE_FOLDER  = '1lTLoelRorRd9vxN1xZsV1kgJ1bEE5Utx'
-const SHEETS_ID     = '17QuFT3vK9uQZ7iQtY8iEA5LPiVt2tuTtBxu7Ekdgdac'
-const SA_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
-MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC8/Bx6mn54ezEO
-fzs4hcDDpOWabZM71Ei5XL+QIqwXbaOqbAPj1Yj/O8mwforbC0Kwu7A0iCrHPOYv
-mRP/KYt3+Vs4tP/j478rCrm9amuDWbwF/SQ+OqRowanl8QCzAdpfSdjKz/AkXTu8
-pb29EfMKVMGVSXjRxD18bMBa4Re4sq6Yjutr4f833ZkXXFHpOtucSYpQit/vyBSq
-zR/BEzw8HDl0kA/aAty82LJAMPbZC2Dumxp/BtXd9wSaV3peKYUmboa81qK2ZlJc
-+zqzUC2faFMkq6/P1cNIY0iRvbjBxMWhj77PENpmZQcQJBBJrdEkSAXn3w1JJ+BE
-9NRfFDrfAgMBAAECgf9mEIBHfeZeDtT97GOnIxoxOhYu+5Z/WqIlCCGvme22IcLj
-uUxzfVr7AilKFbg9sRARII7jhEgH/R5BQUVJF3wx3YzraK+IIfM5QjxQZX57x0ax
-vG26EZLyaOfBZDgPa93P94PSKscL0yifbcdgqqZVjzfhACKCouspzHWkn0HbHpsv
-ehgveRBW7EWygZCi98fdHedwUkMj+EPlU9aKOF16YX4RBdCaP0xAHXWBIM/nBQO8
-A5XX8LPAXRbrW6QRrL4xR7C82iQGdFhLcYF1Iwkiwg9ipplyNVqk7zUvEDzXwB2o
-NUq/SyFD1mMxDO9A4Oqk9p5wFaIPY0Rgj+snw2ECgYEA4rr+kwJg2Sad+veF59Vh
-bpwBFNRqmxpzFOQnARkSG3gB398Z+ut95EH7tjgHCwj4laY03Suumkh02BE77xlB
-TXDpAn2Zmg55G/LB1M3zFJ/IqJ5SsZEkfYreKahr6VaygKCvURuOe7FcYCBMMr8p
-0pswhBBKLJGYSDECXE+Q/jECgYEA1WGyLzR43oudiIozQ0XQ1dM2Ks3LyUr+Lt0B
-RaXoaP0DObCfynbxO7l23KRkuSVaRLWFmslI9VB3W+DzJKQOjsYksjrOGD6WMCil
-Bd10DKE7P7CT/4Fub7VOHwkMhVKK585rvDyKWLxLeRLC2k3CSnFP3thElFQEL+6u
-yK6nNg8CgYEAnKSQiUSVYLF7aA5mpxsW63JAlQGEfZAyffZ6tBl8Fxo8QU1EB8V2
-/qJPoz7mLsuN4uYnk75ALTtt7nFJtRD/ut8NPLlFy9e/+H0pSTrYfCFAYq6vdxpN
-2aZ9gs5nb5iETrW1KhYdxHtu1MK7ojvMS0MIq9UNSel1CjtB5EDcbaECgYEAqLKd
-ce6VJLTSrhE86BG5QmPCrmKXm6P7g0dc6xh4vxBRTXnTSvlwTNybGWOq8imSzUGJ
-yE8crD2ar/wPnsdJbx0+A96z87z/dkGb/iAP0LBjrD3JNDa6/fwkMCsyR/FzOkMb
-L+3ZHsB3Fth7TqYtVjdxgugOiApIaTDV5HkYX4cCgYBupxmjD6GE16UGNP09IWmX
-kMycQktjZXca5fyoW7Km+v9pQlw1vAaLR1MBJTPG2Iyz3wKvxsUul4VztHxHnB47
-bPcCohqhI6DzDPtpMS90MNOGwNwkrvI9UOPJe3/NulwNs3BWN6CYXW2ZRieWEPuj
-6vKIyNBEsPIOrVa81hESfQ==
------END PRIVATE KEY-----`
-
-// Helper: base64url encode
-function b64url(data: ArrayBuffer): string {
-  const bytes = new Uint8Array(data)
-  let str = ''
-  for (const b of bytes) str += String.fromCharCode(b)
-  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
-}
-
-// Helper: generate Google OAuth2 access token dari Service Account
-async function getGoogleAccessToken(): Promise<string> {
-  const now = Math.floor(Date.now() / 1000)
-  const header = { alg: 'RS256', typ: 'JWT', kid: SA_KEY_ID }
-  const claim  = {
-    iss: SA_EMAIL,
-    scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets',
-    aud: 'https://oauth2.googleapis.com/token',
-    exp: now + 3600,
-    iat: now
-  }
-  const enc = new TextEncoder()
-  const headerB64  = b64url(enc.encode(JSON.stringify(header)).buffer as ArrayBuffer)
-  const claimB64   = b64url(enc.encode(JSON.stringify(claim)).buffer as ArrayBuffer)
-  const sigInput   = `${headerB64}.${claimB64}`
-
-  // Import private key
-  const pemBody = SA_PRIVATE_KEY
-    .replace('-----BEGIN PRIVATE KEY-----', '')
-    .replace('-----END PRIVATE KEY-----', '')
-    .replace(/\s/g, '')
-  const keyBytes = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0))
-  const cryptoKey = await crypto.subtle.importKey(
-    'pkcs8', keyBytes.buffer,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false, ['sign']
-  )
-  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, enc.encode(sigInput))
-  const jwt = `${sigInput}.${b64url(sig)}`
-
-  // Exchange JWT for access token
-  const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`
-  })
-  const tokenJson: any = await tokenResp.json()
-  if (!tokenJson.access_token) throw new Error('Token error: ' + JSON.stringify(tokenJson))
-  return tokenJson.access_token
-}
-
+// API: UPLOAD GAMBAR ke ImgBB (proxy — API key aman di server)
 // ============================================================
-// API: CATAT KE GOOGLE SHEETS (dipanggil setelah upload dari browser)
-// ============================================================
-// ============================================================
-// API: UPLOAD FILE (simpan ke D1, sajikan via /api/file/:id)
-// Tidak butuh Google OAuth / R2 — langsung dari browser
-// Limit: 4 MB per file
-// ============================================================
+const IMGBB_API_KEY = 'bb2f97ad9b31b5ae4967eeead61e03de'
+
 app.post('/api/upload', async (c) => {
   try {
     const body = await c.req.json()
-    const { base64, mimeType, fileName, kode_unit, tanggal } = body
-    if (!base64 || !fileName) return c.json({ success: false, error: 'base64 dan fileName wajib' }, 400)
+    const { base64, fileName, kode_unit, tanggal } = body
+    if (!base64) return c.json({ success: false, error: 'base64 wajib diisi' }, 400)
 
-    // Cek ukuran (~75% dari base64 length = byte asli)
-    const estimatedBytes = Math.ceil(base64.length * 0.75)
-    if (estimatedBytes > 4 * 1024 * 1024) {
-      return c.json({ success: false, error: 'File terlalu besar (maks 4 MB)' }, 413)
+    // Kirim ke ImgBB
+    const form = new URLSearchParams()
+    form.append('key', IMGBB_API_KEY)
+    form.append('image', base64)
+    if (fileName) form.append('name', fileName)
+
+    const resp = await fetch('https://api.imgbb.com/1/upload', {
+      method: 'POST',
+      body: form
+    })
+    const json: any = await resp.json()
+
+    if (!json.success) {
+      return c.json({ success: false, error: 'ImgBB error: ' + JSON.stringify(json.error || json) }, 500)
     }
 
-    // Generate ID unik
-    const id = `doc_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
-    const mime = mimeType || 'application/octet-stream'
+    const fileUrl  = json.data.url        // URL gambar langsung
+    const viewUrl  = json.data.url_viewer // URL halaman viewer
+    const imgName  = json.data.title || fileName || 'dokumen'
 
-    await c.env.DB.prepare(`
-      INSERT INTO dokumen_file (id, kode_unit, tanggal, nama_file, mime_type, file_data, ukuran)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(id, kode_unit || null, tanggal || null, fileName, mime, base64, estimatedBytes).run()
-
-    // Update URL dokumen di lap_operasional jika ada kode_unit & tanggal
-    const fileUrl = `/api/file/${id}`
+    // Simpan URL ke lap_operasional jika ada kode_unit & tanggal
     if (kode_unit && tanggal) {
       await c.env.DB.prepare(`
-        UPDATE lap_operasional SET dokumen_url=?, dokumen_nama=?, updated_at=CURRENT_TIMESTAMP
+        UPDATE lap_operasional
+        SET dokumen_url=?, dokumen_nama=?, updated_at=CURRENT_TIMESTAMP
         WHERE kode_unit=? AND tanggal=?
-      `).bind(fileUrl, fileName, kode_unit, tanggal).run()
+      `).bind(fileUrl, imgName, Number(kode_unit), tanggal).run()
     }
 
-    return c.json({ success: true, id, url: fileUrl, fileName })
-  } catch(e: any) { return c.json({ success: false, error: e.message }, 500) }
-})
-
-// ============================================================
-// API: SERVE FILE (ambil file dari D1 dan kembalikan sebagai binary)
-// ============================================================
-app.get('/api/file/:id', async (c) => {
-  try {
-    const id  = c.req.param('id')
-    const row = await c.env.DB.prepare(
-      `SELECT nama_file, mime_type, file_data FROM dokumen_file WHERE id = ?`
-    ).bind(id).first<{ nama_file: string, mime_type: string, file_data: string }>()
-
-    if (!row) return c.json({ error: 'File tidak ditemukan' }, 404)
-
-    // Decode base64 → binary
-    const binary = atob(row.file_data)
-    const bytes  = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-
-    return new Response(bytes, {
-      headers: {
-        'Content-Type': row.mime_type,
-        'Content-Disposition': `inline; filename="${encodeURIComponent(row.nama_file)}"`,
-        'Cache-Control': 'public, max-age=86400'
-      }
-    })
-  } catch(e: any) { return c.json({ error: e.message }, 500) }
-})
-
-app.post('/api/upload-drive', async (c) => {
-  try {
-    const body = await c.req.json()
-    const { fileId, fileName, fileUrl, kode_unit, tanggal, nama_unit } = body
-    if (!fileUrl || !fileName) return c.json({ success: false, error: 'fileUrl dan fileName wajib' }, 400)
-
-    // Catat ke Google Sheets via Service Account
-    const token = await getGoogleAccessToken()
-    const now   = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })
-    const sheetResp = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/Sheet1!A1:F1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values: [[now, kode_unit||'', nama_unit||'', tanggal||'', fileName, fileUrl]] })
-      }
-    )
-    const sheetJson: any = await sheetResp.json()
-    return c.json({ success: true, sheets: sheetJson })
+    return c.json({ success: true, url: fileUrl, viewUrl, fileName: imgName })
   } catch(e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 

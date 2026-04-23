@@ -655,8 +655,8 @@ function renderLapForm() {
     }
   }
   html += '<div class="lap-field-row" style="flex-direction:column;align-items:flex-start;gap:4px;">'
-  html += '<label class="lap-field-label" style="min-width:unset;">Upload Dokumen <span style="font-size:0.72rem;color:#94a3b8;">(foto/pdf, maks 4MB)</span></label>'
-  html += '<input id="field-dokumen" type="file" accept="image/*,.pdf" class="lap-field-input" style="padding:4px;cursor:pointer;"/>'
+  html += '<label class="lap-field-label" style="min-width:unset;">Upload Dokumen <span style="font-size:0.72rem;color:#94a3b8;">(foto/gambar, maks 32MB)</span></label>'
+  html += '<input id="field-dokumen" type="file" accept="image/*" class="lap-field-input" style="padding:4px;cursor:pointer;"/>'
   html += docPreview
   html += '<div id="doc-progress-wrap" style="display:none;margin-top:4px;"><div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;"><div id="doc-progress-bar" style="height:100%;background:#22c55e;width:0%;transition:width 0.3s;"></div></div><span id="doc-progress-pct" style="font-size:0.72rem;color:#475569;">0%</span></div>'
   html += '<span id="doc-upload-status" style="font-size:0.75rem;color:#64748b;"></span>'
@@ -730,16 +730,16 @@ function renderLapForm() {
   attachOliField('field-stock-oli-sx',      'stock_oli_sx')
   attachOliField('field-stock-oli-sx-plus', 'stock_oli_sx_plus')
 
-  // ── Upload dokumen langsung ke Worker (tanpa login Google) ──
+  // ── Upload gambar langsung ke ImgBB dari browser ──
+  var IMGBB_KEY = 'bb2f97ad9b31b5ae4967eeead61e03de'
   var elFile = document.getElementById('field-dokumen')
   if (elFile) {
     elFile.addEventListener('change', function() {
       var file = this.files[0]
       if (!file) return
 
-      // Validasi ukuran: maks 4 MB
-      if (file.size > 4 * 1024 * 1024) {
-        document.getElementById('doc-upload-status').textContent = '⚠ File terlalu besar (maks 4MB)'
+      if (file.size > 32 * 1024 * 1024) {
+        document.getElementById('doc-upload-status').textContent = '⚠ File terlalu besar (maks 32MB)'
         this.value = ''; return
       }
 
@@ -749,9 +749,9 @@ function renderLapForm() {
       var ppct     = document.getElementById('doc-progress-pct')
 
       statusEl.textContent = 'Membaca file...'
-      if (pwrap) { pwrap.style.display = 'block'; }
-      if (pbar)  pbar.style.width = '5%'
-      if (ppct)  ppct.textContent = '5%'
+      if (pwrap) pwrap.style.display = 'block'
+      if (pbar)  pbar.style.width = '10%'
+      if (ppct)  ppct.textContent = '10%'
 
       var tanggal = document.getElementById('lap-tanggal').value
       var reader  = new FileReader()
@@ -759,25 +759,20 @@ function renderLapForm() {
       reader.onload = function(ev) {
         if (pbar) pbar.style.width = '30%'
         if (ppct) ppct.textContent = '30%'
-        statusEl.textContent = 'Mengupload...'
+        statusEl.textContent = 'Mengupload gambar...'
 
-        var b64      = ev.target.result.split(',')[1]
-        var payload  = JSON.stringify({
-          base64:    b64,
-          mimeType:  file.type || 'application/octet-stream',
-          fileName:  file.name,
-          kode_unit: lapSelectedKode,
-          tanggal:   tanggal,
-          nama_unit: lapSelectedUnit
-        })
+        var b64 = ev.target.result.split(',')[1]
+        var fd  = new FormData()
+        fd.append('key', IMGBB_KEY)
+        fd.append('image', b64)
+        fd.append('name', lapSelectedUnit + '_' + tanggal + '_' + file.name)
 
         var xhr = new XMLHttpRequest()
-        xhr.open('POST', '/api/upload', true)
-        xhr.setRequestHeader('Content-Type', 'application/json')
+        xhr.open('POST', 'https://api.imgbb.com/1/upload', true)
 
         xhr.upload.onprogress = function(e) {
           if (e.lengthComputable) {
-            var pct = 30 + Math.round(e.loaded / e.total * 60) // 30~90%
+            var pct = 30 + Math.round(e.loaded / e.total * 60)
             if (pbar) pbar.style.width = pct + '%'
             if (ppct) ppct.textContent = pct + '%'
           }
@@ -787,33 +782,46 @@ function renderLapForm() {
           if (pbar) pbar.style.width = '100%'
           if (ppct) ppct.textContent = '100%'
           var j
-          try { j = JSON.parse(xhr.responseText) } catch(e) { j = {} }
+          try { j = JSON.parse(xhr.responseText) } catch(e2) { j = {} }
+
           if (!j.success) {
             if (pwrap) pwrap.style.display = 'none'
-            statusEl.textContent = '⚠ Gagal upload: ' + (j.error || 'Error tidak diketahui')
+            statusEl.textContent = '⚠ Gagal upload: ' + (j.error && j.error.message || JSON.stringify(j.error || j))
             return
           }
-          var fileUrl = window.location.origin + j.url
-          currentLapForm.dokumen_url  = j.url   // simpan relative URL
-          currentLapForm.dokumen_nama = file.name
+
+          var imgUrl  = j.data.url          // URL gambar langsung
+          var imgName = j.data.title || file.name
+
+          currentLapForm.dokumen_url  = imgUrl
+          currentLapForm.dokumen_nama = imgName
+
+          // Simpan URL ke database via Worker
+          fetch('/api/lap-operasional/dokumen', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              kode_unit:    lapSelectedKode,
+              tanggal:      tanggal,
+              dokumen_url:  imgUrl,
+              dokumen_nama: imgName
+            })
+          }).catch(function(){})
+
           // Preview
           var wrap = document.getElementById('doc-preview-wrap')
           if (!wrap) {
             wrap = document.createElement('div'); wrap.id = 'doc-preview-wrap'; wrap.style.marginTop = '6px'
             statusEl.parentNode.insertBefore(wrap, statusEl)
           }
-          if (file.type.startsWith('image/')) {
-            wrap.innerHTML = '<img src="' + j.url + '" style="max-width:100%;max-height:180px;border-radius:6px;border:1px solid #e2e8f0;" alt="dokumen"/>'
-          } else {
-            wrap.innerHTML = '<a href="' + j.url + '" target="_blank" rel="noopener" style="color:#1d4ed8;font-size:0.82rem;"><i class="fas fa-file-pdf"></i> ' + file.name + '</a>'
-          }
-          statusEl.textContent = '✓ ' + file.name + ' berhasil diupload'
+          wrap.innerHTML = '<img src="' + imgUrl + '" style="max-width:100%;max-height:200px;border-radius:8px;border:1px solid #e2e8f0;" alt="dokumen"/>'
+          statusEl.innerHTML = '✓ <a href="' + imgUrl + '" target="_blank" style="color:#1d4ed8;">' + imgName + '</a> berhasil diupload'
         }
         xhr.onerror = function() {
           if (pwrap) pwrap.style.display = 'none'
-          statusEl.textContent = '⚠ Gagal koneksi ke server'
+          statusEl.textContent = '⚠ Gagal koneksi ke ImgBB'
         }
-        xhr.send(payload)
+        xhr.send(fd)
       }
       reader.onerror = function() { statusEl.textContent = '⚠ Gagal membaca file' }
       reader.readAsDataURL(file)
