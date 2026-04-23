@@ -520,6 +520,11 @@ function showLapState(state) {
     btnSave.style.display = (state === 'review') ? 'none' : 'inline-flex'
     if (state === 'form') { btnSave.disabled = false; btnSave.style.opacity = '1'; btnSave.style.cursor = 'pointer' }
   }
+  // Sembunyikan tombol Tampilkan & Riwayat saat review
+  var btnTampilkan = document.getElementById('btn-tampilkan-lap')
+  var btnRiwayatLap = document.querySelector('#toolbar-laporan .btn-outline[onclick="showRiwayatLap()"]')
+  if (btnTampilkan) btnTampilkan.style.display = (state === 'review') ? 'none' : ''
+  if (btnRiwayatLap) btnRiwayatLap.style.display = (state === 'review') ? 'none' : ''
 }
 
 function renderLapForm() {
