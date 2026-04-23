@@ -605,9 +605,7 @@ app.get('/', (c) => {
       </div>
       <div class="header-actions" id="header-actions-data" style="display:none;"></div>
       <div class="header-actions" id="header-actions-laporan" style="display:none;">
-        <button class="btn btn-outline" id="btn-edit-lap" style="color:#fff;border-color:#93c5fd;display:none;" onclick="backToForm()">
-          <span class="btn-text">Edit</span>
-        </button>
+
 
       </div>
     </div>
