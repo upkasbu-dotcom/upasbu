@@ -10,6 +10,12 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.use('/api/*', cors())
 app.use('/static/*', serveStatic({ root: './public' }))
 
+// Auto-init DB tables on every API request (idempotent CREATE IF NOT EXISTS)
+app.use('/api/*', async (c, next) => {
+  await initDB(c.env.DB)
+  return next()
+})
+
 const JSON_URL = 'https://script.google.com/macros/s/AKfycbyGPqAcIBVFFzHuu5ZxtQWHGOmM8ragfZspoiF72NyvdLXc1qW0TWBeovokFJlVEDEI/exec'
 
 // ============================================================
@@ -70,6 +76,8 @@ async function initDB(db: D1Database) {
     stock_oli_sae40 TEXT,
     stock_oli_sx TEXT,
     stock_oli_sx_plus TEXT,
+    dokumen_url  TEXT,
+    dokumen_nama TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`).run()
@@ -77,6 +85,22 @@ async function initDB(db: D1Database) {
   await db.prepare(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_lap_ops ON lap_operasional(kode_unit, tanggal)`
   ).run()
+
+  // Tabel untuk menyimpan file dokumen (base64) — tanpa Google Drive / R2
+  await db.prepare(`CREATE TABLE IF NOT EXISTS dokumen_file (
+    id          TEXT PRIMARY KEY,
+    kode_unit   INTEGER,
+    tanggal     TEXT,
+    nama_file   TEXT NOT NULL,
+    mime_type   TEXT NOT NULL DEFAULT 'application/octet-stream',
+    file_data   TEXT NOT NULL,
+    ukuran      INTEGER DEFAULT 0,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`).run()
+
+  // Tambah kolom dokumen_url & dokumen_nama jika belum ada (migrasi)
+  try { await db.prepare(`ALTER TABLE lap_operasional ADD COLUMN dokumen_url  TEXT`).run() } catch(_){}
+  try { await db.prepare(`ALTER TABLE lap_operasional ADD COLUMN dokumen_nama TEXT`).run() } catch(_){}
 }
 
 // ============================================================
@@ -428,6 +452,72 @@ async function getGoogleAccessToken(): Promise<string> {
 // ============================================================
 // API: CATAT KE GOOGLE SHEETS (dipanggil setelah upload dari browser)
 // ============================================================
+// ============================================================
+// API: UPLOAD FILE (simpan ke D1, sajikan via /api/file/:id)
+// Tidak butuh Google OAuth / R2 — langsung dari browser
+// Limit: 4 MB per file
+// ============================================================
+app.post('/api/upload', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { base64, mimeType, fileName, kode_unit, tanggal } = body
+    if (!base64 || !fileName) return c.json({ success: false, error: 'base64 dan fileName wajib' }, 400)
+
+    // Cek ukuran (~75% dari base64 length = byte asli)
+    const estimatedBytes = Math.ceil(base64.length * 0.75)
+    if (estimatedBytes > 4 * 1024 * 1024) {
+      return c.json({ success: false, error: 'File terlalu besar (maks 4 MB)' }, 413)
+    }
+
+    // Generate ID unik
+    const id = `doc_${Date.now()}_${Math.random().toString(36).slice(2,8)}`
+    const mime = mimeType || 'application/octet-stream'
+
+    await c.env.DB.prepare(`
+      INSERT INTO dokumen_file (id, kode_unit, tanggal, nama_file, mime_type, file_data, ukuran)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(id, kode_unit || null, tanggal || null, fileName, mime, base64, estimatedBytes).run()
+
+    // Update URL dokumen di lap_operasional jika ada kode_unit & tanggal
+    const fileUrl = `/api/file/${id}`
+    if (kode_unit && tanggal) {
+      await c.env.DB.prepare(`
+        UPDATE lap_operasional SET dokumen_url=?, dokumen_nama=?, updated_at=CURRENT_TIMESTAMP
+        WHERE kode_unit=? AND tanggal=?
+      `).bind(fileUrl, fileName, kode_unit, tanggal).run()
+    }
+
+    return c.json({ success: true, id, url: fileUrl, fileName })
+  } catch(e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ============================================================
+// API: SERVE FILE (ambil file dari D1 dan kembalikan sebagai binary)
+// ============================================================
+app.get('/api/file/:id', async (c) => {
+  try {
+    const id  = c.req.param('id')
+    const row = await c.env.DB.prepare(
+      `SELECT nama_file, mime_type, file_data FROM dokumen_file WHERE id = ?`
+    ).bind(id).first<{ nama_file: string, mime_type: string, file_data: string }>()
+
+    if (!row) return c.json({ error: 'File tidak ditemukan' }, 404)
+
+    // Decode base64 → binary
+    const binary = atob(row.file_data)
+    const bytes  = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+
+    return new Response(bytes, {
+      headers: {
+        'Content-Type': row.mime_type,
+        'Content-Disposition': `inline; filename="${encodeURIComponent(row.nama_file)}"`,
+        'Cache-Control': 'public, max-age=86400'
+      }
+    })
+  } catch(e: any) { return c.json({ error: e.message }, 500) }
+})
+
 app.post('/api/upload-drive', async (c) => {
   try {
     const body = await c.req.json()
@@ -690,6 +780,45 @@ app.get('/api/data-stok', async (c) => {
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
+// ===========================================================
+// API: REKAP LAPORAN (summary per periode & unit)
+// ===========================================================
+app.get('/api/laporan', async (c) => {
+  try {
+    const date_start    = c.req.query('date_start') || ''
+    const date_end      = c.req.query('date_end')   || ''
+    const kode_unit     = c.req.query('kode_unit')  || ''
+    const nama_operator = c.req.query('nama_operator') || ''
+
+    if (!date_start || !date_end) {
+      return c.json({ success: false, error: 'date_start dan date_end wajib diisi' }, 400)
+    }
+
+    let sql = `SELECT kode_unit, nama_unit, tanggal, nama_operator,
+                      kwh_produksi, saldo_awal, saldo_akhir, penerimaan_bbm, estimasi_bbm_max,
+                      stock_oli_sae40, stock_oli_sx, stock_oli_sx_plus,
+                      dokumen_url, dokumen_nama, updated_at
+               FROM lap_operasional
+               WHERE tanggal BETWEEN ? AND ?`
+    const binds: any[] = [date_start, date_end]
+
+    if (kode_unit && kode_unit !== '0' && kode_unit !== 'all') {
+      sql += ' AND kode_unit = ?'
+      binds.push(Number(kode_unit))
+    }
+    if (nama_operator) {
+      sql += ' AND nama_operator LIKE ?'
+      binds.push('%' + nama_operator + '%')
+    }
+    sql += ' ORDER BY tanggal DESC, nama_unit ASC'
+
+    const result = await c.env.DB.prepare(sql).bind(...binds).all<any>()
+    return c.json({ success: true, data: result.results })
+  } catch (e: any) {
+    return c.json({ success: false, error: e.message }, 500)
+  }
+})
+
 // ============================================================
 // SERVE MAIN PAGE
 // ============================================================
@@ -778,17 +907,41 @@ app.get('/', (c) => {
 
   <!-- Data toolbar -->
   <div id="toolbar-data" class="hidden">
-    <!-- Sub-tab row: HOP BBM | STOCK OLI | Tanggal | info -->
-    <div class="data-subtab-row">
+    <!-- Sub-tab row: HOP BBM | STOCK OLI | REKAP | Tanggal/Filter | info -->
+    <div class="data-subtab-row" style="flex-wrap:wrap;gap:4px;">
       <button id="subtab-btn-hop-bbm" class="data-subtab-btn active" onclick="switchDataView('hop-bbm')">
         HOP BBM
       </button>
       <button id="subtab-btn-stock-oli" class="data-subtab-btn" onclick="switchDataView('stock-oli')">
         STOCK OLI
       </button>
-      <div class="data-subtab-date">
+      <button id="subtab-btn-rekap" class="data-subtab-btn" onclick="switchDataView('rekap')">
+        REKAP
+      </button>
+      <!-- Tanggal (untuk HOP BBM & STOCK OLI) -->
+      <div id="data-subtab-date-wrap" class="data-subtab-date">
         <label class="toolbar-label">Tanggal</label>
         <input type="date" id="data-tanggal" class="toolbar-input" onchange="onDataTanggalChange()"/>
+      </div>
+      <!-- Filter Rekap (untuk REKAP) -->
+      <div id="rekap-filter-wrap" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
+        <input type="date" id="rekap-start" class="toolbar-input" style="max-width:130px;"/>
+        <span style="font-size:0.72rem;color:#64748b;">s/d</span>
+        <input type="date" id="rekap-end"   class="toolbar-input" style="max-width:130px;"/>
+        <select id="rekap-unit" class="toolbar-select" style="max-width:160px;">
+          <option value="all">Semua Unit</option>
+        </select>
+        <select id="rekap-jenis" class="toolbar-select" style="max-width:120px;">
+          <option value="all">Semua Data</option>
+          <option value="bbm">BBM</option>
+          <option value="oli">OLI</option>
+        </select>
+        <button class="btn btn-primary" onclick="loadRekapLaporan()" style="font-size:0.78rem;padding:4px 10px;">
+          <i class="fas fa-filter"></i> Filter
+        </button>
+        <button class="btn btn-outline" onclick="exportRekapCSV()" style="font-size:0.78rem;padding:4px 10px;">
+          <i class="fas fa-download"></i> CSV
+        </button>
       </div>
       <div id="loading-indicator-data" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-data-record"></span>
@@ -855,6 +1008,18 @@ app.get('/', (c) => {
       <table id="oli-table" style="width:100%;border-collapse:collapse;">
         <thead id="oli-table-head"></thead>
         <tbody id="oli-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <!-- REKAP LAPORAN -->
+  <div id="rekap-table-wrap" class="hidden">
+    <div id="rekap-empty-msg" style="display:none;text-align:center;padding:24px;color:#94a3b8;font-size:0.85rem;">
+      Pilih periode dan klik Filter untuk menampilkan data.
+    </div>
+    <div class="table-wrap" id="rekap-table-inner" style="display:none;">
+      <table id="rekap-table" style="width:100%;border-collapse:collapse;">
+        <thead id="rekap-table-head"></thead>
+        <tbody id="rekap-table-body"></tbody>
       </table>
     </div>
   </div>
