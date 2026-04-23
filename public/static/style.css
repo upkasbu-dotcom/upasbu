@@ -403,17 +403,17 @@ select.cell-input { width: 112px; cursor: pointer; }
 .review-divider { height: 1px; background: linear-gradient(90deg,#e2e8f0 0%,#bfdbfe 50%,#e2e8f0 100%); margin: 0 20px; }
 .review-identity { padding: 16px 20px 12px; }
 .review-unit-name { font-size: 1.1rem; font-weight: 800; color: #1e3a5f; margin-bottom: 10px; }
-.review-id-table { border-collapse: collapse; width: auto; }
-.review-id-table td { padding: 3px 0; font-size: 0.85rem; border: none; text-align: left; background: transparent !important; }
+.review-id-table { border-collapse: separate; border-spacing: 0; width: auto; }
+.review-id-table td { padding: 3px 0; font-size: 0.85rem; border: none !important; outline: none !important; box-shadow: none !important; text-align: left; background: transparent !important; }
 .rid-label { color: #64748b; min-width: 110px; font-weight: 500; text-align: left !important; background: transparent !important; }
 .rid-sep { color: #94a3b8; padding: 0 8px; }
 .rid-val { color: #1e293b; font-weight: 700; text-align: right !important; }
 .review-data-section { padding: 12px 20px 16px; }
 .review-section-label { font-size: 0.65rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
 .review-section-label i { color: #3b82f6; }
-.review-data-table { border-collapse: collapse; width: 100%; }
+.review-data-table { border-collapse: separate; border-spacing: 0; width: 100%; }
 .review-data-table tr { border: none; }
-.review-data-table td { border: none; text-align: left; background: transparent !important; }
+.review-data-table td { border: none !important; outline: none !important; box-shadow: none !important; text-align: left; background: transparent !important; }
 .rdt-label { color: #475569; font-size: 0.85rem; padding: 7px 0; min-width: 160px; text-align: left !important; background: transparent !important; }
 .rdt-sep { color: #94a3b8; padding: 7px 10px; }
 .rdt-val { font-size: 0.9rem; color: #1e293b; padding: 7px 0; text-align: right !important; }
