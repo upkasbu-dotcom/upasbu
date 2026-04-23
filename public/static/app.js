@@ -988,7 +988,7 @@ function renderReview(unit, tanggal, d) {
   html += '<div class="review-actions">'
   html += '<button class="btn btn-outline-dark" onclick="backToForm()"><i class="fas fa-pen"></i> Edit</button>'
   currentTeksLaporan = teksLaporan
-  html += '<button class="btn btn-kirim" onclick="kirimLaporan()"><i class="fas fa-paper-plane"></i> Kirim</button>'
+
   html += '</div></div></div>'
 
   document.getElementById('lap-review-container').innerHTML = html
