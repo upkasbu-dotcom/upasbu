@@ -412,8 +412,7 @@ select.cell-input { width: 112px; cursor: pointer; }
 .review-section-label { font-size: 0.65rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
 .review-section-label i { color: #3b82f6; }
 .review-data-table { border-collapse: collapse; width: 100%; }
-.review-data-table tr { border-bottom: 1px solid #f1f5f9; }
-.review-data-table tr:last-child { border-bottom: none; }
+.review-data-table tr { border-bottom: none; }
 .rdt-label { color: #475569; font-size: 0.85rem; padding: 7px 0; min-width: 160px; }
 .rdt-sep { color: #94a3b8; padding: 7px 10px; }
 .rdt-val { font-size: 0.9rem; color: #1e293b; padding: 7px 0; }
