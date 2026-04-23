@@ -472,6 +472,11 @@ async function onLapUnitChange(kode) {
   currentLapForm = lapData[lapSelectedKode] ? JSON.parse(JSON.stringify(lapData[lapSelectedKode])) : {}
   lastSavedData  = {}
 
+  // Default oli ke "tidak menggunakan" jika belum ada nilai
+  if (currentLapForm.stock_oli_sae40   === undefined || currentLapForm.stock_oli_sae40   === null) currentLapForm.stock_oli_sae40   = 'tidak menggunakan'
+  if (currentLapForm.stock_oli_sx      === undefined || currentLapForm.stock_oli_sx      === null) currentLapForm.stock_oli_sx      = 'tidak menggunakan'
+  if (currentLapForm.stock_oli_sx_plus === undefined || currentLapForm.stock_oli_sx_plus === null) currentLapForm.stock_oli_sx_plus = 'tidak menggunakan'
+
   // Auto-fill Saldo Awal dari STOCK AWAL HOP BBM H-1 tanggal terpilih (jika belum ada data)
   if (currentLapForm.saldo_awal === undefined || currentLapForm.saldo_awal === null) {
     var tglTerpilih = document.getElementById('lap-tanggal').value
@@ -668,19 +673,30 @@ function renderLapForm() {
   attachNumericField('field-kwh-produksi',   'kwh_produksi',    null)
   attachNumericField('field-estimasi-bbm',   'estimasi_bbm_max',null)
 
-  // Oil fields — text input with "tidak menggunakan" default
+  // Oil fields — harus angka atau "tidak menggunakan"
   function attachOliField(id, fieldKey) {
     var el = document.getElementById(id)
     if (!el) return
     el.addEventListener('focus', function() {
       if (this.value === 'tidak menggunakan') this.value = ''
+      this.style.borderColor = ''
     })
     el.addEventListener('blur', function() {
-      if (this.value.trim() === '') this.value = 'tidak menggunakan'
-      setLapField(fieldKey, this.value)
+      var val = this.value.trim()
+      // Kosong → default ke "tidak menggunakan"
+      if (val === '') val = 'tidak menggunakan'
+      // Bukan angka dan bukan "tidak menggunakan" → paksa ke "tidak menggunakan"
+      if (val !== 'tidak menggunakan' && !/^[0-9]+$/.test(val)) val = 'tidak menggunakan'
+      this.value = val
+      this.style.borderColor = ''
+      setLapField(fieldKey, val)
     })
     el.addEventListener('input', function() {
-      setLapField(fieldKey, this.value)
+      // Saat mengetik: hanya izinkan angka atau teks "tidak menggunakan" sebagian
+      var val = this.value
+      // Jika ada huruf selain awalan "tidak menggunakan", batasi ke angka saja
+      // (validasi penuh dilakukan di blur)
+      setLapField(fieldKey, val)
     })
     el.addEventListener('change', function() {
       setLapField(fieldKey, this.value)
@@ -842,6 +858,16 @@ function validateLapForm() {
   if (d.kwh_produksi === null || d.kwh_produksi === undefined || d.kwh_produksi === '') { errors.push('kWh Produksi'); highlightError('field-kwh-produksi') }
   if (d.saldo_akhir === null || d.saldo_akhir === undefined || d.saldo_akhir === '') { errors.push('Saldo Akhir'); highlightError('field-saldo-akhir') }
   if (d.estimasi_bbm_max === null || d.estimasi_bbm_max === undefined || d.estimasi_bbm_max === '') { errors.push('Pemakaian BBM'); highlightError('field-estimasi-bbm') }
+  // Validasi oli: wajib diisi angka atau "tidak menggunakan"
+  function validOli(val) {
+    if (val === null || val === undefined || val === '') return false
+    if (val === 'tidak menggunakan') return true
+    if (/^[0-9]+$/.test(String(val))) return true
+    return false
+  }
+  if (!validOli(d.stock_oli_sae40))   { errors.push('Stock Oli SAE 40');  highlightError('field-stock-oli-sae40') }
+  if (!validOli(d.stock_oli_sx))      { errors.push('Stock Oli SX');       highlightError('field-stock-oli-sx') }
+  if (!validOli(d.stock_oli_sx_plus)) { errors.push('Stock Oli SX Plus');  highlightError('field-stock-oli-sx-plus') }
   return errors
 }
 
