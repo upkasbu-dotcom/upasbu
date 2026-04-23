@@ -656,8 +656,12 @@ function renderLapForm() {
   }
   html += '<div class="lap-field-row" style="flex-direction:column;align-items:flex-start;gap:4px;">'
   html += '<label class="lap-field-label" style="min-width:unset;">Upload Dokumen <span style="font-size:0.72rem;color:#94a3b8;">(foto/pdf, maks 10MB)</span></label>'
-  html += '<input id="field-dokumen" type="file" accept="image/*,.pdf" class="lap-field-input" style="padding:4px;cursor:pointer;"/>'
+  html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+  html += '<input id="field-dokumen" type="file" accept="image/*,.pdf" class="lap-field-input" style="padding:4px;cursor:pointer;flex:1;min-width:200px;"/>'
+  html += '<button type="button" id="btn-gdr-login" onclick="gdrForceLogin()" style="font-size:0.75rem;padding:4px 10px;background:#4285f4;color:#fff;border:none;border-radius:5px;cursor:pointer;white-space:nowrap;"><i class="fab fa-google"></i> <span id="gdr-login-label">Login Google</span></button>'
+  html += '</div>'
   html += docPreview
+  html += '<div id="doc-progress-wrap" style="display:none;margin-top:4px;"><div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;"><div id="doc-progress-bar" style="height:100%;background:#22c55e;width:0%;transition:width 0.3s;"></div></div><span id="doc-progress-pct" style="font-size:0.72rem;color:#475569;">0%</span></div>'
   html += '<span id="doc-upload-status" style="font-size:0.75rem;color:#64748b;"></span>'
   html += '</div>'
 
@@ -729,8 +733,218 @@ function renderLapForm() {
   attachOliField('field-stock-oli-sx',      'stock_oli_sx')
   attachOliField('field-stock-oli-sx-plus', 'stock_oli_sx_plus')
 
-  // Attach file upload listener — kirim ke Google Drive via Apps Script
-  var UPLOAD_URL = '/api/upload-drive'
+  // ── Google Drive OAuth Implicit Upload ──
+  var GDRIVE_CLIENT_ID = '96593301579-4knd8i9odmnrgkm411vbeo7rs8hp5iji.apps.googleusercontent.com'
+  var GDRIVE_FOLDER_ID = '1lTLoelRorRd9vxN1xZsV1kgJ1bEE5Utx'
+  // scope 'drive' = full access (bisa tulis ke folder manapun yang dimiliki user)
+  var GDRIVE_SCOPE     = 'https://www.googleapis.com/auth/drive'
+  var LS_TOKEN_KEY     = 'gdrive_access_token'
+  var LS_TOKEN_EXP     = 'gdrive_token_exp'
+  var LS_SCOPE_VER     = 'gdrive_scope_ver'
+  var SCOPE_VER        = '2' // increment this when scope changes to force re-auth
+
+  function gdrGetToken() {
+    // Force re-auth jika scope berubah (version mismatch)
+    if (localStorage.getItem(LS_SCOPE_VER) !== SCOPE_VER) {
+      localStorage.removeItem(LS_TOKEN_KEY); localStorage.removeItem(LS_TOKEN_EXP)
+      localStorage.setItem(LS_SCOPE_VER, SCOPE_VER)
+      return null
+    }
+    var exp = parseInt(localStorage.getItem(LS_TOKEN_EXP) || '0')
+    if (Date.now() < exp - 60000) return localStorage.getItem(LS_TOKEN_KEY)
+    localStorage.removeItem(LS_TOKEN_KEY); localStorage.removeItem(LS_TOKEN_EXP)
+    return null
+  }
+  function gdrSetToken(tok, expiresIn) {
+    localStorage.setItem(LS_TOKEN_KEY, tok)
+    localStorage.setItem(LS_TOKEN_EXP, String(Date.now() + expiresIn * 1000))
+    localStorage.setItem(LS_SCOPE_VER, SCOPE_VER)
+  }
+  function gdrClearToken() {
+    localStorage.removeItem(LS_TOKEN_KEY); localStorage.removeItem(LS_TOKEN_EXP)
+    localStorage.removeItem(LS_SCOPE_VER)
+  }
+
+  // Update button tampilan
+  function gdrUpdateBtn() {
+    var lbl = document.getElementById('gdr-login-label')
+    var btn = document.getElementById('btn-gdr-login')
+    if (!lbl || !btn) return
+    if (gdrGetToken()) {
+      lbl.textContent = '✓ Google Terhubung'
+      btn.style.background = '#16a34a'
+    } else {
+      lbl.textContent = 'Login Google'
+      btn.style.background = '#4285f4'
+    }
+  }
+
+  // Fungsi login Google — dipanggil dari tombol
+  window.gdrForceLogin = function() {
+    gdrClearToken() // paksa login ulang agar scope baru diterapkan
+    var authUrl = 'https://accounts.google.com/o/oauth2/v2/auth' +
+      '?client_id=' + GDRIVE_CLIENT_ID +
+      '&redirect_uri=' + encodeURIComponent(window.location.origin) +
+      '&response_type=token' +
+      '&scope=' + encodeURIComponent(GDRIVE_SCOPE) +
+      '&prompt=consent' +
+      '&access_type=online'
+    var popup = window.open(authUrl, 'gdrive_auth', 'width=500,height=600,left=200,top=100')
+    if (!popup) { showToast('Izinkan popup browser untuk login Google Drive', 'error'); return }
+    var timer = setInterval(function() {
+      try {
+        if (!popup || popup.closed) { clearInterval(timer); gdrUpdateBtn(); return }
+        var hash = popup.location.hash
+        if (hash && hash.indexOf('access_token') !== -1) {
+          clearInterval(timer); popup.close()
+          var params = {}
+          hash.replace(/^#/,'').split('&').forEach(function(p){
+            var kv = p.split('='); params[kv[0]] = decodeURIComponent(kv[1]||'')
+          })
+          if (params.access_token) {
+            gdrSetToken(params.access_token, parseInt(params.expires_in||'3600'))
+            gdrUpdateBtn()
+            showToast('Google Drive terhubung ✓', 'success')
+          }
+        }
+      } catch(e) { /* cross-origin, tunggu redirect */ }
+    }, 300)
+  }
+
+  function gdrDoAuth(callback) {
+    var tok = gdrGetToken()
+    if (tok) { callback(tok); return }
+    // Auto-buka login popup
+    var authUrl = 'https://accounts.google.com/o/oauth2/v2/auth' +
+      '?client_id=' + GDRIVE_CLIENT_ID +
+      '&redirect_uri=' + encodeURIComponent(window.location.origin) +
+      '&response_type=token' +
+      '&scope=' + encodeURIComponent(GDRIVE_SCOPE) +
+      '&prompt=consent' +
+      '&access_type=online'
+    var popup = window.open(authUrl, 'gdrive_auth', 'width=500,height=600,left=200,top=100')
+    if (!popup) { showToast('Izinkan popup browser untuk login Google Drive', 'error'); return }
+    var timer = setInterval(function() {
+      try {
+        if (!popup || popup.closed) { clearInterval(timer); return }
+        var hash = popup.location.hash
+        if (hash && hash.indexOf('access_token') !== -1) {
+          clearInterval(timer); popup.close()
+          var params = {}
+          hash.replace(/^#/,'').split('&').forEach(function(p){
+            var kv = p.split('='); params[kv[0]] = decodeURIComponent(kv[1]||'')
+          })
+          if (params.access_token) {
+            gdrSetToken(params.access_token, parseInt(params.expires_in||'3600'))
+            gdrUpdateBtn()
+            callback(params.access_token)
+          }
+        }
+      } catch(e) { /* cross-origin */ }
+    }, 300)
+  }
+
+  function gdrUpload(token, file, statusEl) {
+    var tanggal = document.getElementById('lap-tanggal').value
+    var fname   = lapSelectedUnit + '_' + tanggal + '_' + file.name
+    // Show progress bar
+    var pwrap = document.getElementById('doc-progress-wrap')
+    var pbar  = document.getElementById('doc-progress-bar')
+    var ppct  = document.getElementById('doc-progress-pct')
+    if (pwrap) pwrap.style.display = 'block'
+    if (pbar)  pbar.style.width = '0%'
+    if (ppct)  ppct.textContent = '0%'
+    statusEl.textContent = 'Mempersiapkan file...'
+
+    var reader = new FileReader()
+    reader.onload = function(ev) {
+      var b64      = ev.target.result.split(',')[1]
+      var boundary = 'PLTD_UPLOAD_' + Date.now()
+      var metadata = JSON.stringify({ name: fname, parents: [GDRIVE_FOLDER_ID] })
+      var body     = '--' + boundary + '\r\n' +
+        'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+        metadata + '\r\n' +
+        '--' + boundary + '\r\n' +
+        'Content-Type: ' + (file.type || 'application/octet-stream') + '\r\n' +
+        'Content-Transfer-Encoding: base64\r\n\r\n' +
+        b64 + '\r\n' +
+        '--' + boundary + '--'
+
+      var xhr = new XMLHttpRequest()
+      xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name', true)
+      xhr.setRequestHeader('Authorization', 'Bearer ' + token)
+      xhr.setRequestHeader('Content-Type', 'multipart/related; boundary=' + boundary)
+
+      xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) {
+          var pct = Math.round(e.loaded / e.total * 90) // cap at 90% until done
+          if (pbar) pbar.style.width = pct + '%'
+          if (ppct) ppct.textContent = pct + '%'
+        }
+      }
+
+      xhr.onload = function() {
+        if (pbar) pbar.style.width = '100%'
+        if (ppct) ppct.textContent = '100%'
+        var j
+        try { j = JSON.parse(xhr.responseText) } catch(e) { j = {} }
+        if (!j.id) {
+          if (pwrap) pwrap.style.display = 'none'
+          if (j.error && j.error.code === 401) {
+            gdrClearToken(); gdrUpdateBtn()
+            statusEl.textContent = '⚠ Sesi Google habis, klik Login Google lalu pilih file lagi'
+          } else {
+            var errDetail = j.error ? (j.error.code + ' - ' + JSON.stringify(j.error)) : xhr.responseText
+            statusEl.textContent = '⚠ Upload gagal: ' + errDetail
+          }
+          return
+        }
+        var fileId  = j.id
+        var fileUrl = 'https://drive.google.com/file/d/' + fileId + '/view'
+        // Set permission publik (fire & forget)
+        fetch('https://www.googleapis.com/drive/v3/files/' + fileId + '/permissions', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: 'reader', type: 'anyone' })
+        }).catch(function(){})
+        // Catat ke Sheets via Worker (fire & forget)
+        fetch('/api/upload-drive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileId: fileId, fileName: fname, fileUrl: fileUrl,
+            kode_unit: lapSelectedKode, tanggal: tanggal, nama_unit: lapSelectedUnit,
+            sheetsOnly: true
+          })
+        }).catch(function(){})
+        currentLapForm.dokumen_url  = fileUrl
+        currentLapForm.dokumen_nama = file.name
+        // Preview
+        var wrap = document.getElementById('doc-preview-wrap')
+        if (!wrap) {
+          wrap = document.createElement('div'); wrap.id = 'doc-preview-wrap'; wrap.style.marginTop = '6px'
+          statusEl.parentNode.insertBefore(wrap, statusEl)
+        }
+        if (file.type.startsWith('image/')) {
+          wrap.innerHTML = '<img src="' + fileUrl + '" style="max-width:100%;max-height:180px;border-radius:6px;border:1px solid #e2e8f0;" alt="dokumen"/>'
+        } else {
+          wrap.innerHTML = '<a href="' + fileUrl + '" target="_blank" rel="noopener" style="color:#1d4ed8;font-size:0.82rem;"><i class="fas fa-file-pdf"></i> ' + file.name + '</a>'
+        }
+        statusEl.textContent = '✓ ' + file.name + ' berhasil diupload ke Google Drive'
+      }
+      xhr.onerror = function() {
+        if (pwrap) pwrap.style.display = 'none'
+        statusEl.textContent = '⚠ Gagal koneksi ke Google Drive'
+      }
+      xhr.send(body)
+      statusEl.textContent = 'Mengupload ke Google Drive...'
+    }
+    reader.readAsDataURL(file)
+  }
+
+  // Init button state saat form render
+  gdrUpdateBtn()
+
   var elFile = document.getElementById('field-dokumen')
   if (elFile) {
     elFile.addEventListener('change', function() {
@@ -738,59 +952,11 @@ function renderLapForm() {
       if (!file) return
       if (file.size > 10 * 1024 * 1024) {
         document.getElementById('doc-upload-status').textContent = '⚠ File terlalu besar (maks 10MB)'
-        this.value = ''
-        return
+        this.value = ''; return
       }
       var statusEl = document.getElementById('doc-upload-status')
-      statusEl.textContent = 'Mengupload ke Google Drive...'
-      var reader = new FileReader()
-      reader.onload = function(ev) {
-        // base64 tanpa prefix "data:...;base64,"
-        var b64 = ev.target.result.split(',')[1]
-        var tanggal = document.getElementById('lap-tanggal').value
-        var unit = lapSelectedUnit || lapSelectedKode || 'unknown'
-        var payload = {
-          fileName: unit + '_' + tanggal + '_' + file.name,
-          mimeType: file.type,
-          base64: b64,
-          kode_unit: lapSelectedKode,
-          tanggal: tanggal,
-          nama_unit: lapSelectedUnit
-        }
-        fetch(UPLOAD_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        })
-        .then(function(r){ return r.json() })
-        .then(function(j) {
-          if (j.success && j.url) {
-            currentLapForm.dokumen_url  = j.url
-            currentLapForm.dokumen_nama = file.name
-            // Preview
-            var wrap = document.getElementById('doc-preview-wrap')
-            if (!wrap) {
-              wrap = document.createElement('div')
-              wrap.id = 'doc-preview-wrap'
-              wrap.style.marginTop = '6px'
-              var statusParent = statusEl.parentNode
-              statusParent.insertBefore(wrap, statusEl)
-            }
-            if (file.type.startsWith('image/')) {
-              wrap.innerHTML = '<img src="' + j.url + '" style="max-width:100%;max-height:180px;border-radius:6px;border:1px solid #e2e8f0;" alt="dokumen"/>'
-            } else {
-              wrap.innerHTML = '<a href="' + j.url + '" target="_blank" rel="noopener" style="color:#1d4ed8;font-size:0.82rem;"><i class="fas fa-file-pdf"></i> ' + file.name + '</a>'
-            }
-            statusEl.textContent = '✓ ' + file.name + ' berhasil diupload ke Google Drive'
-          } else {
-            statusEl.textContent = '⚠ Gagal upload: ' + (j.error||'unknown error')
-          }
-        })
-        .catch(function(err) {
-          statusEl.textContent = '⚠ Gagal upload: ' + err.message
-        })
-      }
-      reader.readAsDataURL(file)
+      statusEl.textContent = 'Menghubungkan ke Google...'
+      gdrDoAuth(function(token) { gdrUpload(token, file, statusEl) })
     })
   }
 

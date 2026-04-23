@@ -426,65 +426,27 @@ async function getGoogleAccessToken(): Promise<string> {
 }
 
 // ============================================================
-// API: UPLOAD FILE KE GOOGLE DRIVE via Service Account
+// API: CATAT KE GOOGLE SHEETS (dipanggil setelah upload dari browser)
 // ============================================================
 app.post('/api/upload-drive', async (c) => {
   try {
     const body = await c.req.json()
-    const { base64, mimeType, fileName, kode_unit, tanggal, nama_unit } = body
-    if (!base64 || !fileName) return c.json({ success: false, error: 'base64 dan fileName wajib' }, 400)
+    const { fileId, fileName, fileUrl, kode_unit, tanggal, nama_unit } = body
+    if (!fileUrl || !fileName) return c.json({ success: false, error: 'fileUrl dan fileName wajib' }, 400)
 
+    // Catat ke Google Sheets via Service Account
     const token = await getGoogleAccessToken()
-
-    // Upload file ke Google Drive (multipart)
-    const boundary = 'BOUNDARY_PLTD_' + Date.now()
-    const metadata = JSON.stringify({ name: fileName, parents: [DRIVE_FOLDER] })
-    const multipart = [
-      `--${boundary}`,
-      'Content-Type: application/json; charset=UTF-8',
-      '',
-      metadata,
-      `--${boundary}`,
-      `Content-Type: ${mimeType || 'application/octet-stream'}`,
-      'Content-Transfer-Encoding: base64',
-      '',
-      base64,
-      `--${boundary}--`
-    ].join('\r\n')
-
-    const uploadResp = await fetch(
-      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name',
+    const now   = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })
+    const sheetResp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/Sheet1!A1:F1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
       {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': `multipart/related; boundary=${boundary}`
-        },
-        body: multipart
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: [[now, kode_unit||'', nama_unit||'', tanggal||'', fileName, fileUrl]] })
       }
     )
-    const uploadJson: any = await uploadResp.json()
-    if (!uploadJson.id) throw new Error('Upload gagal: ' + JSON.stringify(uploadJson))
-
-    const fileId  = uploadJson.id
-    const fileUrl = `https://drive.google.com/file/d/${fileId}/view`
-
-    // Set public read permission
-    await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: 'reader', type: 'anyone' })
-    })
-
-    // Catat ke Google Sheets
-    const now = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })
-    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/Sheet1!A1:append?valueInputOption=USER_ENTERED`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ values: [[now, kode_unit||'', nama_unit||'', tanggal||'', fileName, fileUrl]] })
-    })
-
-    return c.json({ success: true, url: fileUrl, fileId })
+    const sheetJson: any = await sheetResp.json()
+    return c.json({ success: true, sheets: sheetJson })
   } catch(e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
