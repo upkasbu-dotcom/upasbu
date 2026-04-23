@@ -470,17 +470,17 @@ select.cell-input { width: 112px; cursor: pointer; }
   .lap-single-infobar { padding: 8px 14px; gap: 14px; }
   .lap-single-footer { padding: 10px 14px; }
 
-  /* Form laporan operasional mobile: 100% lebar */
+  /* Form laporan operasional mobile: 100% lebar, 1 row */
   #lap-form-container,
   #lap-review-container { max-width: 100% !important; padding: 0 2px; }
-  .lap-field-row { flex-wrap: wrap; gap: 4px 8px; }
-  .lap-field-label { min-width: 0; width: 100%; font-size: 0.8rem; padding-bottom: 2px; }
-  .lap-field-sep { display: none; }
-  .lap-field-input { width: 100%; flex: 1 1 100%; font-size: 0.9rem; padding: 8px 10px; }
-  .lap-field-unit { align-self: center; }
-  .op-input-wrap { width: 100%; flex: 1 1 100%; }
-  .op-dropdown { font-size: 0.85rem; }
-  .op-item { padding: 10px 12px; }
+  .lap-field-row { flex-wrap: nowrap; gap: 4px; align-items: center; }
+  .lap-field-label { min-width: 120px; max-width: 120px; font-size: 0.72rem; flex-shrink: 0; }
+  .lap-field-sep { flex-shrink: 0; }
+  .lap-field-input { flex: 1; min-width: 0; font-size: 0.82rem; padding: 6px 8px; }
+  .lap-field-unit { flex-shrink: 0; font-size: 0.68rem; }
+  .op-input-wrap { flex: 1; min-width: 0; }
+  .op-dropdown { font-size: 0.82rem; }
+  .op-item { padding: 9px 10px; }
 
   /* Review */
   .review-identity { padding: 12px 14px; }
