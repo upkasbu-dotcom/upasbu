@@ -587,7 +587,7 @@ function renderLapForm() {
   html += '<div class="lap-field-row">'
   html += '<label class="lap-field-label">Saldo Akhir</label>'
   html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-saldo-akhir" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + fldNum('saldo_akhir') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');setLapField(\'saldo_akhir\',this.value);calcEstimasiBbm()"/>'
+  html += '<input id="field-saldo-akhir" type="text" inputmode="numeric" pattern="[1-9][0-9]*" class="lap-field-input" placeholder="—" value="' + fldNum('saldo_akhir') + '" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');if(this.value===\'0\')this.value=\'\';setLapField(\'saldo_akhir\',this.value);calcEstimasiBbm()" onblur="if(this.value===\'0\')this.value=\'\'"/>'
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
