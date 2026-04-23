@@ -808,6 +808,19 @@ function renderLapForm() {
             })
           }).catch(function(){})
 
+          // Catat ke Google Sheets via Worker
+          fetch('/api/log-sheets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              kode_unit: lapSelectedKode,
+              nama_unit: lapSelectedUnit,
+              tanggal:   tanggal,
+              fileName:  imgName,
+              imgUrl:    imgUrl
+            })
+          }).catch(function(){})
+
           // Preview
           var wrap = document.getElementById('doc-preview-wrap')
           if (!wrap) {
