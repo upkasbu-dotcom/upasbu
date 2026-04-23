@@ -967,7 +967,7 @@ function renderReview(unit, tanggal, d) {
   html += '<div class="review-identity"><div class="review-unit-name">' + unit.nama_unit + '</div>'
   html += '<table class="review-id-table">'
   html += '<tr><td class="rid-label">ID Unit</td><td class="rid-val">' + kodeFormatted + '</td></tr>'
-  html += '<tr><td class="rid-label">Tgl</td><td class="rid-val">' + tglFormatted + '</td></tr>'
+  html += '<tr><td class="rid-label">Tanggal</td><td class="rid-val">' + tglFormatted + '</td></tr>'
   html += '<tr><td class="rid-label">Nama Operator</td><td class="rid-val">' + fmtStr(d.nama_operator) + '</td></tr>'
   html += '</table></div>'
   html += '<div class="review-divider"></div>'
