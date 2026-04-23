@@ -678,12 +678,7 @@ app.get('/', (c) => {
         <label class="toolbar-label">Tanggal</label>
         <input type="date" id="lap-tanggal" class="toolbar-input" onchange="onLapTanggalChange()"/>
       </div>
-      <button class="btn btn-primary" onclick="loadLapData()" id="btn-tampilkan-lap" disabled style="opacity:0.5;cursor:not-allowed;">
-        <i class="fas fa-search"></i><span class="btn-text"> Tampilkan</span>
-      </button>
-      <button class="btn btn-outline" onclick="showRiwayatLap()">
-        <i class="fas fa-history"></i><span class="btn-text"> Riwayat</span>
-      </button>
+
       <div id="loading-indicator-lap-unit" class="hidden"><span class="spinner"></span></div>
       <div id="loading-indicator-lap" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-lap-record"></span>
