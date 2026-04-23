@@ -477,15 +477,15 @@ async function onLapUnitChange(kode) {
   if (currentLapForm.stock_oli_sx      === undefined || currentLapForm.stock_oli_sx      === null) currentLapForm.stock_oli_sx      = 'tidak menggunakan'
   if (currentLapForm.stock_oli_sx_plus === undefined || currentLapForm.stock_oli_sx_plus === null) currentLapForm.stock_oli_sx_plus = 'tidak menggunakan'
 
-  // Auto-fill Saldo Awal dari STOCK AWAL HOP BBM H-1 tanggal terpilih (jika belum ada data)
-  if (currentLapForm.saldo_awal === undefined || currentLapForm.saldo_awal === null) {
-    var tglTerpilih = document.getElementById('lap-tanggal').value
-    if (tglTerpilih) await autoFillSaldoAwal(tglTerpilih)
+  var tglTerpilih = document.getElementById('lap-tanggal').value
+  if (tglTerpilih) {
+    // Gunakan onLapTanggalChange untuk fetch + tampilkan review/form sesuai kondisi data
+    await onLapTanggalChange()
+  } else {
+    renderLapForm()
+    setBtnLapEnabled(true)
+    showLapState('form')
   }
-
-  renderLapForm()
-  setBtnLapEnabled(true)
-  showLapState('form')
 }
 
 function setBtnLapEnabled(enabled) {
@@ -806,12 +806,52 @@ async function autoFillSaldoAwal(tanggal) {
   } catch(e2) { /* gagal fetch, biarkan kosong */ }
 }
 
-// Saat tanggal berubah, selalu auto-fill Saldo Awal dari STOCK AWAL HOP BBM H-1
+// Saat tanggal berubah: fetch data → jika sudah ada tampilkan review, jika belum tampilkan form
 async function onLapTanggalChange() {
   var tanggal = document.getElementById('lap-tanggal').value
   if (!lapSelectedKode || !tanggal) return
-  currentLapForm.saldo_awal = null  // reset agar diisi ulang
-  await autoFillSaldoAwal(tanggal)
+  showLoading(true, 'loading-indicator-lap')
+  try {
+    var res  = await fetch('/api/lap-operasional?tanggal=' + tanggal + '&kode_unit=' + lapSelectedKode)
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error)
+    lapData = {}
+    for (var i = 0; i < json.data.length; i++) {
+      var row = json.data[i]
+      lapData[row.kode_unit] = {
+        nama_operator: row.nama_operator,
+        kwh_produksi: row.kwh_produksi,
+        saldo_awal: row.saldo_awal,
+        saldo_akhir: row.saldo_akhir,
+        penerimaan_bbm: row.penerimaan_bbm,
+        estimasi_bbm_max: row.estimasi_bbm_max,
+        stock_oli_sae40: row.stock_oli_sae40,
+        stock_oli_sx: row.stock_oli_sx,
+        stock_oli_sx_plus: row.stock_oli_sx_plus
+      }
+    }
+    if (lapData[lapSelectedKode]) {
+      // Data sudah ada → tampilkan review langsung
+      currentLapForm = JSON.parse(JSON.stringify(lapData[lapSelectedKode]))
+      lastSavedData  = JSON.parse(JSON.stringify(currentLapForm))
+      renderReview(lapSelectedUnit, tanggal, currentLapForm)
+      showLapState('review')
+    } else {
+      // Belum ada data → tampilkan form dengan auto-fill saldo awal
+      currentLapForm = {}
+      currentLapForm.stock_oli_sae40   = 'tidak menggunakan'
+      currentLapForm.stock_oli_sx      = 'tidak menggunakan'
+      currentLapForm.stock_oli_sx_plus = 'tidak menggunakan'
+      currentLapForm.saldo_awal = null
+      await autoFillSaldoAwal(tanggal)
+      renderLapForm()
+      showLapState('form')
+    }
+  } catch(e) {
+    showToast('Gagal memuat data: ' + e.message, 'error')
+  } finally {
+    showLoading(false, 'loading-indicator-lap')
+  }
 }
 
 async function loadLapData() {
