@@ -407,7 +407,7 @@ select.cell-input { width: 112px; cursor: pointer; }
 .review-id-table td { padding: 3px 0; font-size: 0.85rem; border: none; text-align: left; }
 .rid-label { color: #64748b; min-width: 110px; font-weight: 500; text-align: left !important; }
 .rid-sep { color: #94a3b8; padding: 0 8px; }
-.rid-val { color: #1e293b; font-weight: 700; }
+.rid-val { color: #1e293b; font-weight: 700; text-align: right !important; }
 .review-data-section { padding: 12px 20px 16px; }
 .review-section-label { font-size: 0.65rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
 .review-section-label i { color: #3b82f6; }
@@ -416,7 +416,7 @@ select.cell-input { width: 112px; cursor: pointer; }
 .review-data-table td { border: none; text-align: left; }
 .rdt-label { color: #475569; font-size: 0.85rem; padding: 7px 0; min-width: 160px; text-align: left !important; }
 .rdt-sep { color: #94a3b8; padding: 7px 10px; }
-.rdt-val { font-size: 0.9rem; color: #1e293b; padding: 7px 0; }
+.rdt-val { font-size: 0.9rem; color: #1e293b; padding: 7px 0; text-align: right !important; }
 .rdt-unit { font-size: 0.7rem; color: #64748b; margin-left: 3px; font-weight: 500; }
 .rdt-last { background: #f8fafc; border-radius: 6px; }
 .rdt-last .rdt-label, .rdt-last .rdt-sep, .rdt-last .rdt-val { font-weight: 700; color: #1e3a5f; }
