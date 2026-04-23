@@ -341,8 +341,155 @@ app.post('/api/lap-operasional', async (c) => {
 })
 
 // ============================================================
+// SERVICE ACCOUNT CONFIG (Google Drive + Sheets)
 // ============================================================
-// API: SIMPAN URL DOKUMEN (dari Google Drive via Apps Script)
+const SA_EMAIL      = 'pltd-service@pltd-upload.iam.gserviceaccount.com'
+const SA_KEY_ID     = 'd924253a34a279f108e0aec4fc7c83c661548e97'
+const DRIVE_FOLDER  = '1lTLoelRorRd9vxN1xZsV1kgJ1bEE5Utx'
+const SHEETS_ID     = '17QuFT3vK9uQZ7iQtY8iEA5LPiVt2tuTtBxu7Ekdgdac'
+const SA_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC8/Bx6mn54ezEO
+fzs4hcDDpOWabZM71Ei5XL+QIqwXbaOqbAPj1Yj/O8mwforbC0Kwu7A0iCrHPOYv
+mRP/KYt3+Vs4tP/j478rCrm9amuDWbwF/SQ+OqRowanl8QCzAdpfSdjKz/AkXTu8
+pb29EfMKVMGVSXjRxD18bMBa4Re4sq6Yjutr4f833ZkXXFHpOtucSYpQit/vyBSq
+zR/BEzw8HDl0kA/aAty82LJAMPbZC2Dumxp/BtXd9wSaV3peKYUmboa81qK2ZlJc
++zqzUC2faFMkq6/P1cNIY0iRvbjBxMWhj77PENpmZQcQJBBJrdEkSAXn3w1JJ+BE
+9NRfFDrfAgMBAAECgf9mEIBHfeZeDtT97GOnIxoxOhYu+5Z/WqIlCCGvme22IcLj
+uUxzfVr7AilKFbg9sRARII7jhEgH/R5BQUVJF3wx3YzraK+IIfM5QjxQZX57x0ax
+vG26EZLyaOfBZDgPa93P94PSKscL0yifbcdgqqZVjzfhACKCouspzHWkn0HbHpsv
+ehgveRBW7EWygZCi98fdHedwUkMj+EPlU9aKOF16YX4RBdCaP0xAHXWBIM/nBQO8
+A5XX8LPAXRbrW6QRrL4xR7C82iQGdFhLcYF1Iwkiwg9ipplyNVqk7zUvEDzXwB2o
+NUq/SyFD1mMxDO9A4Oqk9p5wFaIPY0Rgj+snw2ECgYEA4rr+kwJg2Sad+veF59Vh
+bpwBFNRqmxpzFOQnARkSG3gB398Z+ut95EH7tjgHCwj4laY03Suumkh02BE77xlB
+TXDpAn2Zmg55G/LB1M3zFJ/IqJ5SsZEkfYreKahr6VaygKCvURuOe7FcYCBMMr8p
+0pswhBBKLJGYSDECXE+Q/jECgYEA1WGyLzR43oudiIozQ0XQ1dM2Ks3LyUr+Lt0B
+RaXoaP0DObCfynbxO7l23KRkuSVaRLWFmslI9VB3W+DzJKQOjsYksjrOGD6WMCil
+Bd10DKE7P7CT/4Fub7VOHwkMhVKK585rvDyKWLxLeRLC2k3CSnFP3thElFQEL+6u
+yK6nNg8CgYEAnKSQiUSVYLF7aA5mpxsW63JAlQGEfZAyffZ6tBl8Fxo8QU1EB8V2
+/qJPoz7mLsuN4uYnk75ALTtt7nFJtRD/ut8NPLlFy9e/+H0pSTrYfCFAYq6vdxpN
+2aZ9gs5nb5iETrW1KhYdxHtu1MK7ojvMS0MIq9UNSel1CjtB5EDcbaECgYEAqLKd
+ce6VJLTSrhE86BG5QmPCrmKXm6P7g0dc6xh4vxBRTXnTSvlwTNybGWOq8imSzUGJ
+yE8crD2ar/wPnsdJbx0+A96z87z/dkGb/iAP0LBjrD3JNDa6/fwkMCsyR/FzOkMb
+L+3ZHsB3Fth7TqYtVjdxgugOiApIaTDV5HkYX4cCgYBupxmjD6GE16UGNP09IWmX
+kMycQktjZXca5fyoW7Km+v9pQlw1vAaLR1MBJTPG2Iyz3wKvxsUul4VztHxHnB47
+bPcCohqhI6DzDPtpMS90MNOGwNwkrvI9UOPJe3/NulwNs3BWN6CYXW2ZRieWEPuj
+6vKIyNBEsPIOrVa81hESfQ==
+-----END PRIVATE KEY-----`
+
+// Helper: base64url encode
+function b64url(data: ArrayBuffer): string {
+  const bytes = new Uint8Array(data)
+  let str = ''
+  for (const b of bytes) str += String.fromCharCode(b)
+  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+}
+
+// Helper: generate Google OAuth2 access token dari Service Account
+async function getGoogleAccessToken(): Promise<string> {
+  const now = Math.floor(Date.now() / 1000)
+  const header = { alg: 'RS256', typ: 'JWT', kid: SA_KEY_ID }
+  const claim  = {
+    iss: SA_EMAIL,
+    scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now
+  }
+  const enc = new TextEncoder()
+  const headerB64  = b64url(enc.encode(JSON.stringify(header)).buffer as ArrayBuffer)
+  const claimB64   = b64url(enc.encode(JSON.stringify(claim)).buffer as ArrayBuffer)
+  const sigInput   = `${headerB64}.${claimB64}`
+
+  // Import private key
+  const pemBody = SA_PRIVATE_KEY
+    .replace('-----BEGIN PRIVATE KEY-----', '')
+    .replace('-----END PRIVATE KEY-----', '')
+    .replace(/\s/g, '')
+  const keyBytes = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0))
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8', keyBytes.buffer,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false, ['sign']
+  )
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, enc.encode(sigInput))
+  const jwt = `${sigInput}.${b64url(sig)}`
+
+  // Exchange JWT for access token
+  const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`
+  })
+  const tokenJson: any = await tokenResp.json()
+  if (!tokenJson.access_token) throw new Error('Token error: ' + JSON.stringify(tokenJson))
+  return tokenJson.access_token
+}
+
+// ============================================================
+// API: UPLOAD FILE KE GOOGLE DRIVE via Service Account
+// ============================================================
+app.post('/api/upload-drive', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { base64, mimeType, fileName, kode_unit, tanggal, nama_unit } = body
+    if (!base64 || !fileName) return c.json({ success: false, error: 'base64 dan fileName wajib' }, 400)
+
+    const token = await getGoogleAccessToken()
+
+    // Upload file ke Google Drive (multipart)
+    const boundary = 'BOUNDARY_PLTD_' + Date.now()
+    const metadata = JSON.stringify({ name: fileName, parents: [DRIVE_FOLDER] })
+    const multipart = [
+      `--${boundary}`,
+      'Content-Type: application/json; charset=UTF-8',
+      '',
+      metadata,
+      `--${boundary}`,
+      `Content-Type: ${mimeType || 'application/octet-stream'}`,
+      'Content-Transfer-Encoding: base64',
+      '',
+      base64,
+      `--${boundary}--`
+    ].join('\r\n')
+
+    const uploadResp = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`
+        },
+        body: multipart
+      }
+    )
+    const uploadJson: any = await uploadResp.json()
+    if (!uploadJson.id) throw new Error('Upload gagal: ' + JSON.stringify(uploadJson))
+
+    const fileId  = uploadJson.id
+    const fileUrl = `https://drive.google.com/file/d/${fileId}/view`
+
+    // Set public read permission
+    await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'reader', type: 'anyone' })
+    })
+
+    // Catat ke Google Sheets
+    const now = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/Sheet1!A1:append?valueInputOption=USER_ENTERED`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: [[now, kode_unit||'', nama_unit||'', tanggal||'', fileName, fileUrl]] })
+    })
+
+    return c.json({ success: true, url: fileUrl, fileId })
+  } catch(e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ============================================================
+// API: SIMPAN URL DOKUMEN ke D1
 // ============================================================
 app.post('/api/lap-operasional/dokumen', async (c) => {
   try {

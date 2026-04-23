@@ -730,7 +730,7 @@ function renderLapForm() {
   attachOliField('field-stock-oli-sx-plus', 'stock_oli_sx_plus')
 
   // Attach file upload listener — kirim ke Google Drive via Apps Script
-  var GAS_URL = 'https://script.google.com/macros/s/AKfycbxOtWFCAgXJr-EQ-_xsiirgSYTFnClJTKXO2grYLlrOdU9YDFw8gxiCo2eEY5ltnmp4/exec'
+  var UPLOAD_URL = '/api/upload-drive'
   var elFile = document.getElementById('field-dokumen')
   if (elFile) {
     elFile.addEventListener('change', function() {
@@ -757,9 +757,9 @@ function renderLapForm() {
           tanggal: tanggal,
           nama_unit: lapSelectedUnit
         }
-        fetch(GAS_URL, {
+        fetch(UPLOAD_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         })
         .then(function(r){ return r.json() })
