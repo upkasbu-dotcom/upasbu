@@ -123,7 +123,10 @@ document.addEventListener('DOMContentLoaded', function() {
   var yesterdayStr = yesterday.toISOString().split('T')[0]
 
   document.getElementById('sel-tanggal').value   = todayStr
-  document.getElementById('lap-tanggal').value   = todayStr
+  // Tab OPERASIONAL: default H-1, max = H-1 (tidak boleh pilih hari ini atau setelahnya)
+  var lapTglEl = document.getElementById('lap-tanggal')
+  lapTglEl.value = yesterdayStr
+  lapTglEl.max   = yesterdayStr
   document.getElementById('data-tanggal').value  = yesterdayStr
   var hr = String(today.getHours()).padStart(2,'0') + ':00'
   document.getElementById('sel-jam').value = hr
