@@ -642,6 +642,8 @@ function renderLapForm() {
   html += '</div>'
 
   document.getElementById('lap-form-container').innerHTML = html
+  // Recalculate after render so Pemakaian BBM always reflects current values
+  setTimeout(calcEstimasiBbm, 0)
 }
 
 var OLI_FIELDS = ['stock_oli_sae40', 'stock_oli_sx', 'stock_oli_sx_plus']
@@ -701,8 +703,11 @@ function calcEstimasiBbm() {
   var awal       = parseInt(document.getElementById('field-saldo-awal')?.value       || '', 10)
   var akhir      = parseInt(document.getElementById('field-saldo-akhir')?.value      || '', 10)
   var penerimaan = parseInt(document.getElementById('field-penerimaan-bbm')?.value   || '', 10)
+  // Butuh minimal saldo_awal dan saldo_akhir agar bisa hitung
   if (!isNaN(awal) && !isNaN(akhir)) {
     var pen    = isNaN(penerimaan) ? 0 : penerimaan
+    // Jika Penerimaan BBM terisi: Pemakaian = Saldo Awal + Penerimaan - Saldo Akhir
+    // Jika tidak: Pemakaian = Saldo Awal - Saldo Akhir
     var hasil  = Math.max(0, awal + pen - akhir)
     var elEstimasi = document.getElementById('field-estimasi-bbm')
     if (elEstimasi) elEstimasi.value = hasil
