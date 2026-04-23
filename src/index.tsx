@@ -608,9 +608,7 @@ app.get('/', (c) => {
         <button class="btn btn-outline" id="btn-edit-lap" style="color:#fff;border-color:#93c5fd;display:none;" onclick="backToForm()">
           <span class="btn-text">Edit</span>
         </button>
-        <button class="btn btn-success" id="btn-save-lap" onclick="saveLapCurrent()" disabled style="opacity:0.5;cursor:not-allowed;">
-          <span class="btn-text">Simpan</span>
-        </button>
+
       </div>
     </div>
   </div>
