@@ -465,7 +465,7 @@ select.cell-input { width: 112px; cursor: pointer; }
   /* Form single col on mobile */
   .form-row { grid-template-columns: 1fr; }
   .form-group.full { grid-column: 1; }
-  .lap-single-body { padding: 12px 10px; }
+  .lap-single-body { padding: 10px; gap: 7px; }
   .lap-single-header { padding: 12px 14px; }
   .lap-single-infobar { padding: 8px 14px; gap: 14px; }
   .lap-single-footer { padding: 10px 14px; }
@@ -473,7 +473,7 @@ select.cell-input { width: 112px; cursor: pointer; }
   /* Form laporan operasional mobile: 100% lebar, 1 row */
   #lap-form-container,
   #lap-review-container { max-width: 100% !important; padding: 0 2px; }
-  .lap-field-row { flex-wrap: nowrap; gap: 4px; align-items: center; }
+  .lap-field-row { flex-wrap: nowrap; gap: 4px; align-items: center; padding: 4px 0; }
   .lap-field-label { min-width: 120px; max-width: 120px; font-size: 0.72rem; flex-shrink: 0; }
   .lap-field-sep { flex-shrink: 0; }
   .lap-field-input { flex: 1; min-width: 0; font-size: 0.82rem; padding: 6px 8px; }
