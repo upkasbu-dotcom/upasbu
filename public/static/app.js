@@ -978,7 +978,7 @@ function renderReview(unit, tanggal, d) {
   html += '<tr><td class="rdt-label">Saldo Awal</td><td class="rdt-val"><strong>' + fmtNum(d.saldo_awal) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
   html += '<tr><td class="rdt-label">Saldo Akhir</td><td class="rdt-val"><strong>' + fmtNum(d.saldo_akhir) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
   html += '<tr><td class="rdt-label">Penerimaan BBM</td><td class="rdt-val"><strong>' + fmtNum(d.penerimaan_bbm) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
-  html += '<tr><td class="rdt-label">Estimasi Pemakaian BBM Maks</td><td class="rdt-val"><strong>' + fmtNum(d.estimasi_bbm_max) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
+  html += '<tr><td class="rdt-label">Pemakaian BBM</td><td class="rdt-val"><strong>' + fmtNum(d.estimasi_bbm_max) + '</strong> <span class="rdt-unit">ltr</span></td></tr>'
   html += '<tr><td class="rdt-label">Stock Oli SAE 40</td><td class="rdt-val"><strong>' + fmtOli(d.stock_oli_sae40) + '</strong></td></tr>'
   html += '<tr><td class="rdt-label">Stock Oli SX</td><td class="rdt-val"><strong>' + fmtOli(d.stock_oli_sx) + '</strong></td></tr>'
   html += '<tr class="rdt-last"><td class="rdt-label">Stock Oli SX Plus</td><td class="rdt-val"><strong>' + fmtOli(d.stock_oli_sx_plus) + '</strong></td></tr>'
