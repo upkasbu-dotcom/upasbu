@@ -1117,7 +1117,7 @@ async function saveLapCurrent() {
     renderReview(unit, tanggal, d)
     showLapState('review')
     // Langsung buka URL WA setelah simpan berhasil
-    window.open('https://wa.me/6285388709607?text=' + encodeURIComponent(currentTeksLaporan), '_blank')
+    window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(currentTeksLaporan), '_blank')
   } catch(e) {
     showToast('Gagal menyimpan: ' + e.message,'error')
     if (btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fas fa-save"></i> Simpan Data' }
@@ -1222,7 +1222,7 @@ function fallbackCopy(teks) {
 
 function kirimWhatsApp() {
   var teks = document.getElementById('kirim-preview-text').textContent
-  window.open('https://wa.me/6285388709607?text=' + encodeURIComponent(teks), '_blank')
+  window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(teks), '_blank')
 }
 
 async function showRiwayatLap() {
