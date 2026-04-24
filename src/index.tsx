@@ -812,13 +812,12 @@ app.get('/api/data-stok', async (c) => {
         estimasiBbmHabis = tglHabis.toISOString().split('T')[0]
       }
 
-      // Kondisi stok
+      // Kondisi stok berdasarkan nilai SAFETY STOCK (hari)
       let kondisi = '-'
-      if (stockBersih !== null && safetyStock !== null) {
-        if (stockBersih <= 0) kondisi = 'KRITIS'
-        else if (stockBersih <= safetyStock) kondisi = 'MENIPIS'
-        else if (bbmSiapKirim !== null && bbmSiapKirim > 0) kondisi = 'AMAN'
-        else kondisi = 'CUKUP'
+      if (safetyStock !== null) {
+        if (safetyStock < 5)                             kondisi = 'KRITIS'
+        else if (safetyStock >= 5 && safetyStock <= 7)   kondisi = 'SIAGA'
+        else                                             kondisi = 'AMAN'
       }
 
       return {

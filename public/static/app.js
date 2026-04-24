@@ -1501,10 +1501,9 @@ async function loadDataTab() {
     for (var r = 0; r < rows.length; r++) {
       var d = rows[r]
       var kondisiColor = '#475569'
-      if (d.kondisi_stock === 'KRITIS')       kondisiColor = '#dc2626'
-      else if (d.kondisi_stock === 'MENIPIS') kondisiColor = '#d97706'
-      else if (d.kondisi_stock === 'AMAN')    kondisiColor = '#16a34a'
-      else if (d.kondisi_stock === 'CUKUP')   kondisiColor = '#2563eb'
+      if (d.kondisi_stock === 'KRITIS')      kondisiColor = '#ef4444'
+      else if (d.kondisi_stock === 'SIAGA')  kondisiColor = '#eab308'
+      else if (d.kondisi_stock === 'AMAN')   kondisiColor = '#22c55e'
 
       var bgRow = r % 2 === 0 ? '#fff' : '#f8fafc'
       bodyHTML += '<tr style="background:' + bgRow + ';border-bottom:1px solid #e2e8f0;">'
