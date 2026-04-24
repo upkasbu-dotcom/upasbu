@@ -572,17 +572,42 @@ app.post('/api/upload', async (c) => {
 app.post('/api/lap-operasional/dokumen', async (c) => {
   try {
     const body = await c.req.json()
-    const { kode_unit, tanggal, dokumen_url, dokumen_nama, nama_unit } = body
+    const {
+      kode_unit, tanggal, dokumen_url, dokumen_nama, nama_unit,
+      nama_operator, kwh_produksi, saldo_awal, saldo_akhir,
+      penerimaan_bbm, estimasi_bbm_max,
+      stock_oli_sae40, stock_oli_sx, stock_oli_sx_plus
+    } = body
     if (!kode_unit || !tanggal || !dokumen_url) return c.json({ success: false, error: 'Parameter tidak lengkap' }, 400)
-    // INSERT baris jika belum ada, lalu UPDATE dokumen_url/nama
+    // INSERT baris jika belum ada, UPDATE dokumen + semua field form jika nilai tidak null
     await c.env.DB.prepare(`
-      INSERT INTO lap_operasional (kode_unit, nama_unit, tanggal, dokumen_url, dokumen_nama)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO lap_operasional
+        (kode_unit, nama_unit, tanggal, nama_operator,
+         kwh_produksi, saldo_awal, saldo_akhir, penerimaan_bbm, estimasi_bbm_max,
+         stock_oli_sae40, stock_oli_sx, stock_oli_sx_plus,
+         dokumen_url, dokumen_nama)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(kode_unit, tanggal) DO UPDATE SET
-        dokumen_url  = excluded.dokumen_url,
-        dokumen_nama = excluded.dokumen_nama,
-        updated_at   = CURRENT_TIMESTAMP
-    `).bind(kode_unit, nama_unit || '', tanggal, dokumen_url, dokumen_nama || 'dokumen').run()
+        dokumen_url       = excluded.dokumen_url,
+        dokumen_nama      = excluded.dokumen_nama,
+        nama_operator     = COALESCE(excluded.nama_operator,     lap_operasional.nama_operator),
+        kwh_produksi      = COALESCE(excluded.kwh_produksi,      lap_operasional.kwh_produksi),
+        saldo_awal        = COALESCE(excluded.saldo_awal,        lap_operasional.saldo_awal),
+        saldo_akhir       = COALESCE(excluded.saldo_akhir,       lap_operasional.saldo_akhir),
+        penerimaan_bbm    = COALESCE(excluded.penerimaan_bbm,    lap_operasional.penerimaan_bbm),
+        estimasi_bbm_max  = COALESCE(excluded.estimasi_bbm_max,  lap_operasional.estimasi_bbm_max),
+        stock_oli_sae40   = COALESCE(excluded.stock_oli_sae40,   lap_operasional.stock_oli_sae40),
+        stock_oli_sx      = COALESCE(excluded.stock_oli_sx,      lap_operasional.stock_oli_sx),
+        stock_oli_sx_plus = COALESCE(excluded.stock_oli_sx_plus, lap_operasional.stock_oli_sx_plus),
+        updated_at        = CURRENT_TIMESTAMP
+    `).bind(
+      kode_unit, nama_unit || '', tanggal,
+      nama_operator ?? null,
+      kwh_produksi ?? null, saldo_awal ?? null, saldo_akhir ?? null,
+      penerimaan_bbm ?? null, estimasi_bbm_max ?? null,
+      stock_oli_sae40 ?? null, stock_oli_sx ?? null, stock_oli_sx_plus ?? null,
+      dokumen_url, dokumen_nama || 'dokumen'
+    ).run()
     return c.json({ success: true })
   } catch(e: any) { return c.json({ success: false, error: e.message }, 500) }
 })

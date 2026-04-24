@@ -872,16 +872,25 @@ function renderLapForm() {
           currentLapForm.dokumen_url  = imgUrl
           currentLapForm.dokumen_nama = imgName
 
-          // Simpan URL ke database via Worker
+          // Simpan URL + data form ke database via Worker
           fetch('/api/lap-operasional/dokumen', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              kode_unit:    lapSelectedKode,
-              nama_unit:    lapSelectedUnit && lapSelectedUnit.nama_unit ? lapSelectedUnit.nama_unit : String(lapSelectedUnit || ''),
-              tanggal:      tanggal,
-              dokumen_url:  imgUrl,
-              dokumen_nama: imgName
+              kode_unit:         lapSelectedKode,
+              nama_unit:         lapSelectedUnit && lapSelectedUnit.nama_unit ? lapSelectedUnit.nama_unit : String(lapSelectedUnit || ''),
+              tanggal:           tanggal,
+              dokumen_url:       imgUrl,
+              dokumen_nama:      imgName,
+              nama_operator:     currentLapForm.nama_operator     || null,
+              kwh_produksi:      currentLapForm.kwh_produksi      != null ? currentLapForm.kwh_produksi      : null,
+              saldo_awal:        currentLapForm.saldo_awal        != null ? currentLapForm.saldo_awal        : null,
+              saldo_akhir:       currentLapForm.saldo_akhir       != null ? currentLapForm.saldo_akhir       : null,
+              penerimaan_bbm:    currentLapForm.penerimaan_bbm    != null ? currentLapForm.penerimaan_bbm    : null,
+              estimasi_bbm_max:  currentLapForm.estimasi_bbm_max  != null ? currentLapForm.estimasi_bbm_max  : null,
+              stock_oli_sae40:   currentLapForm.stock_oli_sae40   != null ? currentLapForm.stock_oli_sae40   : null,
+              stock_oli_sx:      currentLapForm.stock_oli_sx      != null ? currentLapForm.stock_oli_sx      : null,
+              stock_oli_sx_plus: currentLapForm.stock_oli_sx_plus != null ? currentLapForm.stock_oli_sx_plus : null
             })
           }).catch(function(){})
 
