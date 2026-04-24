@@ -626,25 +626,24 @@ function renderLapForm() {
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
-  // Helper render field oli: input angka + tombol "Tidak Menggunakan"
+  // Helper render field oli: input angka + tombol silang
   function renderOliField(labelText, selectId, inputId, fieldKey) {
-    var val    = currentLapForm[fieldKey]
-    var isTM   = (val === 'tidak menggunakan')
-    var isEmpty = (val === null || val === undefined || val === '')
-    var angkaVal = (!isTM && !isEmpty) ? val : ''
-    var html2  = ''
+    var val      = currentLapForm[fieldKey]
+    var isTM     = (val === 'tidak menggunakan')
+    var hasAngka = (!isTM && val !== null && val !== undefined && val !== '')
+    var angkaVal = hasAngka ? val : ''
+    var html2    = ''
     html2 += '<div class="lap-field-row">'
     html2 += '<label class="lap-field-label">' + labelText + '</label>'
     html2 += '<span class="lap-field-sep">:</span>'
     // Input angka — tampil saat bukan TM
     html2 += '<input id="' + inputId + '" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input oli-angka-input" placeholder="0" value="' + angkaVal + '" style="' + (isTM ? 'display:none;' : '') + '"/>'
     html2 += '<span class="lap-field-unit" id="unit-' + inputId + '" style="' + (isTM ? 'display:none;' : '') + '">ltr</span>'
-    // Tombol Tidak Menggunakan — tampil saat bukan TM
-    html2 += '<button type="button" id="btn-tm-' + inputId + '" class="oli-btn-tm" style="' + (isTM ? 'display:none;' : '') + '" onclick="oliSetTM(\'' + inputId + '\',\'' + fieldKey + '\')">Tidak Menggunakan</button>'
-    // Label TM + tombol reset — tampil saat TM
-    html2 += '<span id="lbl-tm-' + inputId + '" class="oli-tm-label" style="' + (!isTM ? 'display:none;' : '') + '">Tidak Menggunakan <button type="button" class="oli-reset-btn" onclick="oliResetAngka(\'' + inputId + '\',\'' + fieldKey + '\')">&#10005;</button></span>'
-    // Hint wajib isi — elemen tetap ada untuk logika error, tapi tidak menampilkan teks
-    html2 += '<span id="hint-' + inputId + '" class="oli-hint" style="display:none;"></span>'
+    // Tombol silang ✕ — tampil saat field kosong (bukan TM, bukan ada angka)
+    html2 += '<button type="button" id="btn-tm-' + inputId + '" class="oli-x-btn" style="' + (isTM || hasAngka ? 'display:none;' : '') + '" onclick="oliSetTM(\'' + inputId + '\',\'' + fieldKey + '\')" title="Tidak Menggunakan">&#10005;</button>'
+    // Label TM + tombol kembali — tampil saat TM
+    html2 += '<span id="lbl-tm-' + inputId + '" class="oli-tm-label" style="' + (!isTM ? 'display:none;' : '') + '">Tidak Menggunakan <button type="button" class="oli-reset-btn" onclick="oliResetAngka(\'' + inputId + '\',\'' + fieldKey + '\')">&#8635;</button></span>'
+    html2 += '<span id="hint-' + inputId + '" style="display:none;"></span>'
     html2 += '</div>'
     return html2
   }
@@ -713,27 +712,17 @@ function renderLapForm() {
     el.addEventListener('input', function() {
       var v = this.value.replace(/[^0-9]/g, '')
       this.value = v
-      var hintEl = document.getElementById('hint-' + id)
+      var btnX = document.getElementById('btn-tm-' + id)
       if (v !== '') {
         setLapField(fieldKey, v)
-        if (hintEl) hintEl.style.display = 'none'
+        if (btnX) btnX.style.display = 'none'   // ada angka → sembunyikan ✕
         this.classList.remove('input-error')
       } else {
         setLapField(fieldKey, null)
-      }
-    })
-    el.addEventListener('blur', function() {
-      var hintEl = document.getElementById('hint-' + id)
-      if (this.value.trim() === '') {
-        setLapField(fieldKey, null)
-        if (hintEl) hintEl.style.display = ''
-      } else {
-        if (hintEl) hintEl.style.display = 'none'
+        if (btnX) btnX.style.display = ''        // kosong → tampilkan ✕
       }
     })
     el.addEventListener('focus', function() {
-      var hintEl = document.getElementById('hint-' + id)
-      if (hintEl) hintEl.style.display = 'none'
       this.classList.remove('input-error')
     })
   }
@@ -875,18 +864,16 @@ function oliSetTM(inputId, fieldKey) {
   setLapField(fieldKey, 'tidak menggunakan')
 }
 
-// Klik ✕ di label TM → kembali ke mode input angka
+// Klik ↺ di label TM → kembali ke mode input angka
 function oliResetAngka(inputId, fieldKey) {
   var inputEl = document.getElementById(inputId)
   var unitEl  = document.getElementById('unit-' + inputId)
-  var btnTM   = document.getElementById('btn-tm-' + inputId)
+  var btnX    = document.getElementById('btn-tm-' + inputId)
   var lblTM   = document.getElementById('lbl-tm-' + inputId)
-  var hintEl  = document.getElementById('hint-' + inputId)
   if (inputEl) { inputEl.style.display = ''; inputEl.value = ''; inputEl.focus() }
   if (unitEl)  unitEl.style.display = ''
-  if (btnTM)   btnTM.style.display  = ''
+  if (btnX)    btnX.style.display   = ''    // field kosong → tampilkan ✕
   if (lblTM)   lblTM.style.display  = 'none'
-  if (hintEl)  hintEl.style.display = ''
   setLapField(fieldKey, null)
 }
 

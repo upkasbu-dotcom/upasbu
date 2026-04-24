@@ -347,12 +347,14 @@ select.cell-input { width: 112px; cursor: pointer; }
 
 /* ── OLI FIELD ── */
 .oli-angka-input { flex: 1; min-width: 0; max-width: 100px; }
-.oli-btn-tm {
-  flex-shrink: 0; padding: 4px 10px; font-size: 0.72rem; font-weight: 600;
-  border: 1.5px solid #cbd5e1; border-radius: 20px; background: #f8fafc;
-  color: #64748b; cursor: pointer; white-space: nowrap; transition: all 0.15s;
+.oli-x-btn {
+  flex-shrink: 0; width: 24px; height: 24px; padding: 0;
+  font-size: 0.85rem; font-weight: 700; line-height: 1;
+  border: 1.5px solid #fca5a5; border-radius: 50%; background: #fff5f5;
+  color: #ef4444; cursor: pointer; transition: all 0.15s;
+  display: flex; align-items: center; justify-content: center;
 }
-.oli-btn-tm:hover { border-color: #94a3b8; background: #f1f5f9; color: #334155; }
+.oli-x-btn:hover { background: #ef4444; color: #fff; border-color: #ef4444; }
 .oli-tm-label {
   flex: 1; font-size: 0.82rem; color: #475569; font-style: italic;
   display: flex; align-items: center; gap: 6px;
@@ -499,7 +501,7 @@ select.cell-input { width: 112px; cursor: pointer; }
   .lap-field-unit { flex-shrink: 0; font-size: 0.68rem; }
   .op-input-wrap { flex: 1; min-width: 0; }
   .oli-angka-input { max-width: 70px; }
-  .oli-btn-tm { font-size: 0.68rem; padding: 3px 8px; }
+  .oli-x-btn { width: 22px; height: 22px; font-size: 0.78rem; }
   .op-dropdown { font-size: 0.82rem; }
   .op-item { padding: 9px 10px; }
 
