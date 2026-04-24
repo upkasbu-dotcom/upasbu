@@ -355,6 +355,14 @@ select.cell-input { width: 112px; cursor: pointer; }
   display: flex; align-items: center; justify-content: center;
 }
 .oli-x-btn:hover { background: #ef4444; color: #fff; border-color: #ef4444; }
+.oli-x-btn-error { background: #ef4444 !important; color: #fff !important; border-color: #dc2626 !important; animation: oli-shake 0.35s ease; }
+@keyframes oli-shake {
+  0%,100% { transform: translateX(0); }
+  20%     { transform: translateX(-4px); }
+  40%     { transform: translateX(4px); }
+  60%     { transform: translateX(-3px); }
+  80%     { transform: translateX(3px); }
+}
 .oli-tm-label {
   flex: 1; font-size: 0.82rem; color: #475569; font-style: italic;
   display: flex; align-items: center; gap: 6px;

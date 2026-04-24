@@ -715,15 +715,17 @@ function renderLapForm() {
       var btnX = document.getElementById('btn-tm-' + id)
       if (v !== '') {
         setLapField(fieldKey, v)
-        if (btnX) btnX.style.display = 'none'   // ada angka → sembunyikan ✕
+        if (btnX) { btnX.style.display = 'none'; btnX.classList.remove('oli-x-btn-error') }
         this.classList.remove('input-error')
       } else {
         setLapField(fieldKey, null)
-        if (btnX) btnX.style.display = ''        // kosong → tampilkan ✕
+        if (btnX) btnX.style.display = ''
       }
     })
     el.addEventListener('focus', function() {
       this.classList.remove('input-error')
+      var btnX = document.getElementById('btn-tm-' + id)
+      if (btnX) btnX.classList.remove('oli-x-btn-error')
     })
   }
 
@@ -849,16 +851,16 @@ function renderLapForm() {
 
 var OLI_FIELDS = ['stock_oli_sae40', 'stock_oli_sx', 'stock_oli_sx_plus']
 
-// Klik "Tidak Menggunakan" → sembunyikan input, tampilkan label TM
+// Klik ✕ → sembunyikan input, tampilkan label TM
 function oliSetTM(inputId, fieldKey) {
   var inputEl = document.getElementById(inputId)
   var unitEl  = document.getElementById('unit-' + inputId)
-  var btnTM   = document.getElementById('btn-tm-' + inputId)
+  var btnX    = document.getElementById('btn-tm-' + inputId)
   var lblTM   = document.getElementById('lbl-tm-' + inputId)
   var hintEl  = document.getElementById('hint-' + inputId)
   if (inputEl) { inputEl.style.display = 'none'; inputEl.value = ''; inputEl.classList.remove('input-error') }
   if (unitEl)  unitEl.style.display = 'none'
-  if (btnTM)   btnTM.style.display  = 'none'
+  if (btnX)    { btnX.style.display = 'none'; btnX.classList.remove('oli-x-btn-error') }
   if (lblTM)   lblTM.style.display  = ''
   if (hintEl)  hintEl.style.display = 'none'
   setLapField(fieldKey, 'tidak menggunakan')
@@ -1074,10 +1076,12 @@ function validateLapForm() {
     return false
   }
   function highlightOliError(inputId) {
+    // highlight border merah di input angka
     var el = document.getElementById(inputId)
     if (el && el.style.display !== 'none') el.classList.add('input-error')
-    var hintEl = document.getElementById('hint-' + inputId)
-    if (hintEl) hintEl.style.display = ''
+    // highlight tombol ✕ jadi merah terang + shake
+    var btnX = document.getElementById('btn-tm-' + inputId)
+    if (btnX && btnX.style.display !== 'none') btnX.classList.add('oli-x-btn-error')
   }
   if (!validOli(d.stock_oli_sae40))   { errors.push('Stock Oli SAE 40');  highlightOliError('field-stock-oli-sae40') }
   if (!validOli(d.stock_oli_sx))      { errors.push('Stock Oli SX');       highlightOliError('field-stock-oli-sx') }
