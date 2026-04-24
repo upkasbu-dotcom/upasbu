@@ -1153,8 +1153,8 @@ function renderReview(unit, tanggal, d) {
     'kWh Produksi : ' + fmtNumPlain(d.kwh_produksi) + '\n' +
     'Saldo Awal : ' + fmtNumPlain(d.saldo_awal) + '\n' +
     'Saldo Akhir : ' + fmtNumPlain(d.saldo_akhir) + '\n' +
-    'Penerimaan BBM : ' + fmtNumPlain(d.penerimaan_bbm) + '\n' +
-    'Estimasi Pemakaian BBM Maksimal : ' + (d.estimasi_bbm_max != null && d.estimasi_bbm_max !== '' ? String(Number(d.estimasi_bbm_max)) : '0')
+    'Penerimaan BBM : ' + (d.penerimaan_bbm != null && d.penerimaan_bbm !== '' ? String(Number(d.penerimaan_bbm)) : '0') + '\n' +
+    'Estimasi Pemakaian BBM Maksimal : ' + fmtNumPlain(d.estimasi_bbm_max)
 
   var html = '<div class="review-wrap">'
   html += '<div class="review-kop"><div class="review-kop-left">'
