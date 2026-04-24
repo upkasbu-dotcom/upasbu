@@ -58,6 +58,7 @@ async function initDB(db: D1Database) {
     mesin_id INTEGER NOT NULL,
     tanggal TEXT NOT NULL,
     jam TEXT NOT NULL,
+    terpasang REAL,
     daya_mampu REAL, beban REAL, stand_kwh REAL, stand_bbm REAL,
     phasa_r REAL, phasa_s REAL, phasa_t REAL, tek_oli REAL,
     temp_air_pendingin REAL, tegangan REAL, frequency REAL, cos_phi REAL,
@@ -110,6 +111,8 @@ async function initDB(db: D1Database) {
   // Tambah kolom dokumen_url & dokumen_nama jika belum ada (migrasi)
   try { await db.prepare(`ALTER TABLE lap_operasional ADD COLUMN dokumen_url  TEXT`).run() } catch(_){}
   try { await db.prepare(`ALTER TABLE lap_operasional ADD COLUMN dokumen_nama TEXT`).run() } catch(_){}
+  // Tambah kolom terpasang ke data_monitoring jika belum ada (migrasi)
+  try { await db.prepare(`ALTER TABLE data_monitoring ADD COLUMN terpasang REAL`).run() } catch(_){}
 }
 
 // ============================================================

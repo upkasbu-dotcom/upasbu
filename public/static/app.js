@@ -53,6 +53,7 @@ var OPERATOR_DATA = {
 // =============================================
 var PARAMS = [
   { key:'status_mesin',       label:'STATUS MESIN',       unit:'',     type:'select' },
+  { key:'terpasang',          label:'TERPASANG',          unit:'kW',   type:'number' },
   { key:'daya_mampu',         label:'DAYA MAMPU',         unit:'kW',   type:'number' },
   { key:'beban',              label:'BEBAN',              unit:'kW',   type:'number' },
   { key:'stand_kwh',          label:'STAND KWH',          unit:'kWh',  type:'number' },
