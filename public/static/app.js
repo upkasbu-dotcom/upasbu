@@ -1517,7 +1517,7 @@ async function loadDataTab() {
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.stock_mati) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;">' + fmtData(d.stock_bersih) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.rata_rata_harian) + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + (d.daya_tampung_storage !== null && d.daya_tampung_storage !== undefined ? (d.daya_tampung_storage * 100).toFixed(1) + '%' : '<span style="color:#cbd5e1">—</span>') + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + (d.daya_tampung_storage !== null && d.daya_tampung_storage !== undefined ? Math.round(d.daya_tampung_storage * 100) + '%' : '<span style="color:#cbd5e1">—</span>') + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;">' + fmtData(d.bbm_siap_kirim) + '</td>'
       var ssBg = ''
       if (d.safety_stock !== null && d.safety_stock !== undefined) {
