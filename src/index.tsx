@@ -686,11 +686,11 @@ app.get('/api/data-stok', async (c) => {
     const lapMap: Record<number, any> = {}
     for (const row of lapHariIni.results) lapMap[row.kode_unit] = row
 
-    // Ambil rata-rata pemakaian 30 hari terakhir per unit
+    // Ambil pemakaian BBM tertinggi 30 hari terakhir per unit
     // pemakaian = saldo_awal - saldo_akhir + penerimaan_bbm
     const avgResult = await c.env.DB.prepare(`
       SELECT kode_unit,
-             AVG(CASE WHEN (saldo_awal - saldo_akhir + COALESCE(penerimaan_bbm,0)) > 0
+             MAX(CASE WHEN (saldo_awal - saldo_akhir + COALESCE(penerimaan_bbm,0)) > 0
                       THEN (saldo_awal - saldo_akhir + COALESCE(penerimaan_bbm,0))
                       ELSE NULL END) AS avg_pemakaian
       FROM lap_operasional
