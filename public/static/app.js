@@ -264,7 +264,7 @@ function renderTable() {
 
   // ── HEADER: kolom pertama = "Mesin", lalu satu kolom per parameter ──
   var headHTML = '<tr>'
-  headHTML += '<th class="th-param" style="min-width:200px;">MESIN</th>'
+  headHTML += '<th class="th-param" style="min-width:200px;text-align:center;">MESIN</th>'
   for (var pi = 0; pi < PARAMS.length; pi++) {
     var p = PARAMS[pi]
     headHTML += '<th class="th-mesin">'
