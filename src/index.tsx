@@ -979,34 +979,12 @@ app.get('/', (c) => {
       <button id="subtab-btn-stock-oli" class="data-subtab-btn" onclick="switchDataView('stock-oli')">
         STOCK OLI
       </button>
-      <button id="subtab-btn-rekap" class="data-subtab-btn" onclick="switchDataView('rekap')">
-        REKAP
-      </button>
       <!-- Tanggal (untuk HOP BBM & STOCK OLI) -->
       <div id="data-subtab-date-wrap" class="data-subtab-date">
         <label class="toolbar-label">Tanggal</label>
         <input type="date" id="data-tanggal" class="toolbar-input" onchange="onDataTanggalChange()"/>
       </div>
-      <!-- Filter Rekap (untuk REKAP) -->
-      <div id="rekap-filter-wrap" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
-        <input type="date" id="rekap-start" class="toolbar-input" style="max-width:130px;"/>
-        <span style="font-size:0.72rem;color:#64748b;">s/d</span>
-        <input type="date" id="rekap-end"   class="toolbar-input" style="max-width:130px;"/>
-        <select id="rekap-unit" class="toolbar-select" style="max-width:160px;">
-          <option value="all">Semua Unit</option>
-        </select>
-        <select id="rekap-jenis" class="toolbar-select" style="max-width:120px;">
-          <option value="all">Semua Data</option>
-          <option value="bbm">BBM</option>
-          <option value="oli">OLI</option>
-        </select>
-        <button class="btn btn-primary" onclick="loadRekapLaporan()" style="font-size:0.78rem;padding:4px 10px;">
-          <i class="fas fa-filter"></i> Filter
-        </button>
-        <button class="btn btn-outline" onclick="exportRekapCSV()" style="font-size:0.78rem;padding:4px 10px;">
-          <i class="fas fa-download"></i> CSV
-        </button>
-      </div>
+
       <div id="loading-indicator-data" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-data-record"></span>
     </div>
@@ -1075,18 +1053,7 @@ app.get('/', (c) => {
       </table>
     </div>
   </div>
-  <!-- REKAP LAPORAN -->
-  <div id="rekap-table-wrap" class="hidden">
-    <div id="rekap-empty-msg" style="display:none;text-align:center;padding:24px;color:#94a3b8;font-size:0.85rem;">
-      Pilih periode dan klik Filter untuk menampilkan data.
-    </div>
-    <div class="table-wrap" id="rekap-table-inner" style="display:none;">
-      <table id="rekap-table" style="width:100%;border-collapse:collapse;">
-        <thead id="rekap-table-head"></thead>
-        <tbody id="rekap-table-body"></tbody>
-      </table>
-    </div>
-  </div>
+
 </div>
 
 <!-- TOAST -->
