@@ -572,12 +572,17 @@ app.post('/api/upload', async (c) => {
 app.post('/api/lap-operasional/dokumen', async (c) => {
   try {
     const body = await c.req.json()
-    const { kode_unit, tanggal, dokumen_url, dokumen_nama } = body
+    const { kode_unit, tanggal, dokumen_url, dokumen_nama, nama_unit } = body
     if (!kode_unit || !tanggal || !dokumen_url) return c.json({ success: false, error: 'Parameter tidak lengkap' }, 400)
+    // INSERT baris jika belum ada, lalu UPDATE dokumen_url/nama
     await c.env.DB.prepare(`
-      UPDATE lap_operasional SET dokumen_url=?, dokumen_nama=?, updated_at=CURRENT_TIMESTAMP
-      WHERE kode_unit=? AND tanggal=?
-    `).bind(dokumen_url, dokumen_nama||'dokumen', kode_unit, tanggal).run()
+      INSERT INTO lap_operasional (kode_unit, nama_unit, tanggal, dokumen_url, dokumen_nama)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(kode_unit, tanggal) DO UPDATE SET
+        dokumen_url  = excluded.dokumen_url,
+        dokumen_nama = excluded.dokumen_nama,
+        updated_at   = CURRENT_TIMESTAMP
+    `).bind(kode_unit, nama_unit || '', tanggal, dokumen_url, dokumen_nama || 'dokumen').run()
     return c.json({ success: true })
   } catch(e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
@@ -862,9 +867,9 @@ app.get('/', (c) => {
   <title>Digitalisasi Pelaporan</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
-  <link rel="preload" href="/static/style.css?v=20260425n" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260425n" as="script"/>
-  <link href="/static/style.css?v=20260425n" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260425o" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260425o" as="script"/>
+  <link href="/static/style.css?v=20260425o" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -1099,7 +1104,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<script src="/static/app.js?v=20260425n" defer></script>
+<script src="/static/app.js?v=20260425o" defer></script>
 </body>
 </html>`
   const resp = c.html(html)
