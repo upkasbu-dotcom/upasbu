@@ -867,7 +867,7 @@ function renderLapForm() {
             return
           }
 
-          var imgUrl  = j.data.url          // URL gambar langsung
+          var imgUrl  = j.data.image && j.data.image.url ? j.data.image.url : (j.data.display_url || j.data.url) // URL langsung ke file gambar
           var imgName = j.data.title || file.name
 
           currentLapForm.dokumen_url  = imgUrl
