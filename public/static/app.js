@@ -626,29 +626,34 @@ function renderLapForm() {
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
-  // Stock Oli SAE 40
-  html += '<div class="lap-field-row">'
-  html += '<label class="lap-field-label">Stock Oli SAE 40</label>'
-  html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-stock-oli-sae40" type="text" class="lap-field-input" placeholder="tidak menggunakan" value="' + fldOli('stock_oli_sae40') + '"/>'
-  html += '<span class="lap-field-unit">ltr</span>'
-  html += '</div>'
+  // Helper render field oli dengan toggle + input angka
+  function renderOliField(labelText, inputId, toggleId, fieldKey) {
+    var val = fldOli(fieldKey)
+    var isTM = (val === 'tidak menggunakan')
+    var angkaVal = isTM ? '' : val
+    var html2 = ''
+    html2 += '<div class="oli-field-wrap" id="wrap-' + inputId + '">'
+    html2 += '<div class="lap-field-row" style="align-items:flex-start;">'
+    html2 += '<label class="lap-field-label">' + labelText + '</label>'
+    html2 += '<span class="lap-field-sep">:</span>'
+    html2 += '<div class="oli-input-group">'
+    // Toggle buttons
+    html2 += '<div class="oli-toggle-row">'
+    html2 += '<button type="button" id="' + toggleId + '-angka" class="oli-btn' + (!isTM ? ' oli-btn-active' : '') + '" onclick="oliToggle(\'' + inputId + '\',\'' + toggleId + '\',\'' + fieldKey + '\',false)">Angka</button>'
+    html2 += '<button type="button" id="' + toggleId + '-tm" class="oli-btn' + (isTM ? ' oli-btn-active oli-btn-tm' : '') + '" onclick="oliToggle(\'' + inputId + '\',\'' + toggleId + '\',\'' + fieldKey + '\',true)">Tidak Menggunakan</button>'
+    html2 += '</div>'
+    // Input angka (tampil hanya saat mode angka)
+    html2 += '<div class="oli-num-row" id="row-' + inputId + '" style="' + (isTM ? 'display:none;' : '') + '">'
+    html2 += '<input id="' + inputId + '" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + angkaVal + '"/>'
+    html2 += '<span class="lap-field-unit">ltr</span>'
+    html2 += '</div>'
+    html2 += '</div></div></div>'
+    return html2
+  }
 
-  // Stock Oli SX
-  html += '<div class="lap-field-row">'
-  html += '<label class="lap-field-label">Stock Oli SX</label>'
-  html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-stock-oli-sx" type="text" class="lap-field-input" placeholder="tidak menggunakan" value="' + fldOli('stock_oli_sx') + '"/>'
-  html += '<span class="lap-field-unit">ltr</span>'
-  html += '</div>'
-
-  // Stock Oli SX Plus
-  html += '<div class="lap-field-row">'
-  html += '<label class="lap-field-label">Stock Oli SX Plus</label>'
-  html += '<span class="lap-field-sep">:</span>'
-  html += '<input id="field-stock-oli-sx-plus" type="text" class="lap-field-input" placeholder="tidak menggunakan" value="' + fldOli('stock_oli_sx_plus') + '"/>'
-  html += '<span class="lap-field-unit">ltr</span>'
-  html += '</div>'
+  html += renderOliField('Stock Oli SAE 40',  'field-stock-oli-sae40',   'tog-sae40',   'stock_oli_sae40')
+  html += renderOliField('Stock Oli SX',      'field-stock-oli-sx',      'tog-oli-sx',  'stock_oli_sx')
+  html += renderOliField('Stock Oli SX Plus', 'field-stock-oli-sx-plus', 'tog-oli-sxp', 'stock_oli_sx_plus')
 
   // ── UPLOAD DOKUMEN ──
   var docPreview = ''
@@ -703,38 +708,25 @@ function renderLapForm() {
   attachNumericField('field-estimasi-bbm',   'estimasi_bbm_max',null)
 
   // Oil fields — harus angka atau "tidak menggunakan"
-  function attachOliField(id, fieldKey) {
+  // Attach input angka oli
+  function attachOliInput(id, fieldKey) {
     var el = document.getElementById(id)
     if (!el) return
-    el.addEventListener('focus', function() {
-      if (this.value === 'tidak menggunakan') this.value = ''
-      this.style.borderColor = ''
+    el.addEventListener('input', function() {
+      var v = this.value.replace(/[^0-9]/g, '')
+      this.value = v
+      setLapField(fieldKey, v === '' ? 'tidak menggunakan' : v)
     })
     el.addEventListener('blur', function() {
-      var val = this.value.trim()
-      // Kosong → default ke "tidak menggunakan"
-      if (val === '') val = 'tidak menggunakan'
-      // Bukan angka dan bukan "tidak menggunakan" → paksa ke "tidak menggunakan"
-      if (val !== 'tidak menggunakan' && !/^[0-9]+$/.test(val)) val = 'tidak menggunakan'
-      this.value = val
-      this.style.borderColor = ''
-      setLapField(fieldKey, val)
-    })
-    el.addEventListener('input', function() {
-      // Saat mengetik: hanya izinkan angka atau teks "tidak menggunakan" sebagian
-      var val = this.value
-      // Jika ada huruf selain awalan "tidak menggunakan", batasi ke angka saja
-      // (validasi penuh dilakukan di blur)
-      setLapField(fieldKey, val)
-    })
-    el.addEventListener('change', function() {
-      setLapField(fieldKey, this.value)
+      if (this.value.trim() === '') {
+        setLapField(fieldKey, 'tidak menggunakan')
+      }
     })
   }
 
-  attachOliField('field-stock-oli-sae40',   'stock_oli_sae40')
-  attachOliField('field-stock-oli-sx',      'stock_oli_sx')
-  attachOliField('field-stock-oli-sx-plus', 'stock_oli_sx_plus')
+  attachOliInput('field-stock-oli-sae40',   'stock_oli_sae40')
+  attachOliInput('field-stock-oli-sx',      'stock_oli_sx')
+  attachOliInput('field-stock-oli-sx-plus', 'stock_oli_sx_plus')
 
   // ── Upload gambar langsung ke ImgBB dari browser ──
   var IMGBB_KEY = 'bb2f97ad9b31b5ae4967eeead61e03de'
@@ -852,6 +844,29 @@ function renderLapForm() {
 }
 
 var OLI_FIELDS = ['stock_oli_sae40', 'stock_oli_sx', 'stock_oli_sx_plus']
+
+// Toggle mode oli: isTM=true → "tidak menggunakan", false → mode angka
+function oliToggle(inputId, toggleId, fieldKey, isTM) {
+  var btnAngka = document.getElementById(toggleId + '-angka')
+  var btnTM    = document.getElementById(toggleId + '-tm')
+  var numRow   = document.getElementById('row-' + inputId)
+  var inputEl  = document.getElementById(inputId)
+  if (!btnAngka || !btnTM || !numRow) return
+
+  if (isTM) {
+    btnTM.classList.add('oli-btn-active', 'oli-btn-tm')
+    btnAngka.classList.remove('oli-btn-active')
+    numRow.style.display = 'none'
+    if (inputEl) inputEl.value = ''
+    setLapField(fieldKey, 'tidak menggunakan')
+  } else {
+    btnAngka.classList.add('oli-btn-active')
+    btnTM.classList.remove('oli-btn-active', 'oli-btn-tm')
+    numRow.style.display = ''
+    if (inputEl) { inputEl.focus() }
+    setLapField(fieldKey, inputEl && inputEl.value ? inputEl.value : 'tidak menggunakan')
+  }
+}
 
 function setLapField(field, value) {
   if (OLI_FIELDS.indexOf(field) !== -1) {
