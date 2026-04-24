@@ -649,7 +649,7 @@ app.get('/api/stock-oli', async (c) => {
 // Data statis per unit: jalur, kapasitas tangki (liter), stock mati (liter)
 // NO di sini sesuai urutan dari dokumen resmi
 const UNIT_META: Record<number, { no: number, jalur: string, kapasitas_tangki: number, stock_mati: number }> = {
-  366: { no:  1, jalur: 'SUNGAI',               kapasitas_tangki: 45000, stock_mati: 1500 }, // BABAI
+  366: { no:  1, jalur: 'SUNGAI',               kapasitas_tangki: 52000, stock_mati: 1500 }, // BABAI
   910: { no:  2, jalur: 'SUNGAI',               kapasitas_tangki: 60000, stock_mati: 3500 }, // MANGKATIP
   385: { no:  3, jalur: 'SUNGAI',               kapasitas_tangki: 47000, stock_mati: 1500 }, // RANGGA ILUNG
   911: { no:  4, jalur: 'SUNGAI',               kapasitas_tangki: 28000, stock_mati: 1500 }, // TELUK BETUNG
