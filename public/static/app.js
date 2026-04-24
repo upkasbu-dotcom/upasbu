@@ -1154,7 +1154,7 @@ function renderReview(unit, tanggal, d) {
     'Saldo Awal : ' + fmtNumPlain(d.saldo_awal) + '\n' +
     'Saldo Akhir : ' + fmtNumPlain(d.saldo_akhir) + '\n' +
     'Penerimaan BBM : ' + fmtNumPlain(d.penerimaan_bbm) + '\n' +
-    'Estimasi Pemakaian BBM Maksimal : ' + fmtNumPlain(d.estimasi_bbm_max)
+    'Estimasi Pemakaian BBM Maksimal : ' + (d.estimasi_bbm_max === null || d.estimasi_bbm_max === undefined || d.estimasi_bbm_max === '' ? '0' : String(Number(d.estimasi_bbm_max)))
 
   var html = '<div class="review-wrap">'
   html += '<div class="review-kop"><div class="review-kop-left">'
