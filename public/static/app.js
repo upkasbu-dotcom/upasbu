@@ -810,8 +810,9 @@ function renderLapForm() {
 
   // ── Upload gambar langsung ke ImgBB dari browser ──
   var IMGBB_KEY = 'bb2f97ad9b31b5ae4967eeead61e03de'
+  window._IMGBB_KEY = IMGBB_KEY
 
-  function handleFileUpload(file) {
+  window.handleFileUpload = function(file) {
       if (!file) return
 
       if (file.size > 32 * 1024 * 1024) {
