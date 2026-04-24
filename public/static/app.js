@@ -1146,10 +1146,10 @@ function renderReview(unit, tanggal, d) {
     return isNaN(val) ? val : val + ' ltr'
   }
 
-  // Baca nilai penerimaan_bbm langsung dari DOM agar tidak pakai nilai lama di currentLapForm
+  // Baca nilai penerimaan_bbm: DOM input > currentLapForm > default 0
   var elPenBbm = document.getElementById('field-penerimaan-bbm')
-  var penBbmVal = elPenBbm ? elPenBbm.value.trim() : ''
-  var penBbmTeks = (penBbmVal !== '' && !isNaN(penBbmVal)) ? String(Number(penBbmVal)) : '0'
+  var penBbmRaw = elPenBbm ? elPenBbm.value.trim() : (d.penerimaan_bbm != null ? String(d.penerimaan_bbm) : '')
+  var penBbmTeks = (penBbmRaw !== '' && !isNaN(penBbmRaw)) ? String(Number(penBbmRaw)) : '0'
 
   var savedAt = new Date().toLocaleString('id-ID', { dateStyle:'long', timeStyle:'short' })
   var teksLaporan =
