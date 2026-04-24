@@ -626,7 +626,7 @@ function renderLapForm() {
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
-  // Helper render field oli dengan dropdown + input angka inline
+  // Helper render field oli: input angka + tombol "Tidak Menggunakan"
   function renderOliField(labelText, selectId, inputId, fieldKey) {
     var val = fldOli(fieldKey)
     var isTM = (val === 'tidak menggunakan')
@@ -635,12 +635,13 @@ function renderLapForm() {
     html2 += '<div class="lap-field-row">'
     html2 += '<label class="lap-field-label">' + labelText + '</label>'
     html2 += '<span class="lap-field-sep">:</span>'
-    html2 += '<select id="' + selectId + '" class="lap-field-input oli-select" onchange="oliSelectChange(\'' + selectId + '\',\'' + inputId + '\',\'' + fieldKey + '\')">'
-    html2 += '<option value="angka"' + (!isTM ? ' selected' : '') + '>Masukkan Angka</option>'
-    html2 += '<option value="tm"'    + (isTM  ? ' selected' : '') + '>Tidak Menggunakan</option>'
-    html2 += '</select>'
+    // Input angka — tampil saat bukan TM
     html2 += '<input id="' + inputId + '" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input oli-angka-input" placeholder="0" value="' + angkaVal + '" style="' + (isTM ? 'display:none;' : '') + '"/>'
     html2 += '<span class="lap-field-unit" id="unit-' + inputId + '" style="' + (isTM ? 'display:none;' : '') + '">ltr</span>'
+    // Tombol Tidak Menggunakan — tampil saat bukan TM
+    html2 += '<button type="button" id="btn-tm-' + inputId + '" class="oli-btn-tm" style="' + (isTM ? 'display:none;' : '') + '" onclick="oliSetTM(\'' + inputId + '\',\'' + fieldKey + '\')">Tidak Menggunakan</button>'
+    // Label TM + tombol reset — tampil saat TM
+    html2 += '<span id="lbl-tm-' + inputId + '" class="oli-tm-label" style="' + (!isTM ? 'display:none;' : '') + '">Tidak Menggunakan <button type="button" class="oli-reset-btn" onclick="oliResetAngka(\'' + inputId + '\',\'' + fieldKey + '\')">&#10005;</button></span>'
     html2 += '</div>'
     return html2
   }
@@ -840,22 +841,30 @@ function renderLapForm() {
 
 var OLI_FIELDS = ['stock_oli_sae40', 'stock_oli_sx', 'stock_oli_sx_plus']
 
-// Handler saat dropdown oli berubah
-function oliSelectChange(selectId, inputId, fieldKey) {
-  var sel     = document.getElementById(selectId)
-  var inputEl = document.getElementById(inputId)
-  var unitEl  = document.getElementById('unit-' + inputId)
-  if (!sel) return
+// Klik "Tidak Menggunakan" → sembunyikan input, tampilkan label TM
+function oliSetTM(inputId, fieldKey) {
+  var inputEl  = document.getElementById(inputId)
+  var unitEl   = document.getElementById('unit-' + inputId)
+  var btnTM    = document.getElementById('btn-tm-' + inputId)
+  var lblTM    = document.getElementById('lbl-tm-' + inputId)
+  if (inputEl) { inputEl.style.display = 'none'; inputEl.value = '' }
+  if (unitEl)  unitEl.style.display  = 'none'
+  if (btnTM)   btnTM.style.display   = 'none'
+  if (lblTM)   lblTM.style.display   = ''
+  setLapField(fieldKey, 'tidak menggunakan')
+}
 
-  if (sel.value === 'tm') {
-    if (inputEl) { inputEl.style.display = 'none'; inputEl.value = '' }
-    if (unitEl)  unitEl.style.display = 'none'
-    setLapField(fieldKey, 'tidak menggunakan')
-  } else {
-    if (inputEl) { inputEl.style.display = ''; inputEl.focus() }
-    if (unitEl)  unitEl.style.display = ''
-    setLapField(fieldKey, inputEl && inputEl.value ? inputEl.value : 'tidak menggunakan')
-  }
+// Klik ✕ di label TM → kembali ke mode input angka
+function oliResetAngka(inputId, fieldKey) {
+  var inputEl  = document.getElementById(inputId)
+  var unitEl   = document.getElementById('unit-' + inputId)
+  var btnTM    = document.getElementById('btn-tm-' + inputId)
+  var lblTM    = document.getElementById('lbl-tm-' + inputId)
+  if (inputEl) { inputEl.style.display = ''; inputEl.value = ''; inputEl.focus() }
+  if (unitEl)  unitEl.style.display  = ''
+  if (btnTM)   btnTM.style.display   = ''
+  if (lblTM)   lblTM.style.display   = 'none'
+  setLapField(fieldKey, 'tidak menggunakan')
 }
 
 function setLapField(field, value) {
