@@ -287,7 +287,6 @@ function renderTable() {
     bodyHTML += '<td style="text-align:left;">'
     bodyHTML += '<div class="th-mesin-name" style="font-size:0.78rem;color:#1e3a5f;font-weight:700;">' + m.mesin + '</div>'
     bodyHTML += '<div class="th-mesin-meta">'
-    bodyHTML += '<span class="th-id">ID: ' + m.id_mesin + '</span>'
     bodyHTML += '<span class="th-sn">S/N: ' + sn + '</span>'
     bodyHTML += '</div>'
     bodyHTML += '</td>'
