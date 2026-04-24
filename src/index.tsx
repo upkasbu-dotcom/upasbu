@@ -694,7 +694,7 @@ app.get('/api/data-stok', async (c) => {
                       THEN (saldo_awal - saldo_akhir + COALESCE(penerimaan_bbm,0))
                       ELSE NULL END) AS avg_pemakaian
       FROM lap_operasional
-      WHERE tanggal >= date(?, '-30 days') AND tanggal < ?
+      WHERE tanggal >= date(?, '-30 days') AND tanggal <= ?
       GROUP BY kode_unit
     `).bind(tanggal, tanggal).all<{ kode_unit: number, avg_pemakaian: number }>()
     const avgMap: Record<number, number> = {}
