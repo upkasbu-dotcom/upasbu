@@ -1520,7 +1520,13 @@ async function loadDataTab() {
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + (d.daya_tampung_storage !== null && d.daya_tampung_storage !== undefined ? (d.daya_tampung_storage * 100).toFixed(1) + '%' : '<span style="color:#cbd5e1">—</span>') + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;">' + fmtData(d.bbm_siap_kirim) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.safety_stock) + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;">' + (d.estimasi_bbm_habis || '—') + '</td>'
+      var fmtEst = '—'
+      if (d.estimasi_bbm_habis) {
+        var eParts = d.estimasi_bbm_habis.split('-')
+        var BULAN_ID = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des']
+        fmtEst = parseInt(eParts[2],10) + ' ' + BULAN_ID[parseInt(eParts[1],10)-1] + ' ' + eParts[0]
+      }
+      bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;">' + fmtEst + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;font-weight:700;color:' + kondisiColor + ';">' + d.kondisi_stock + '</td>'
       bodyHTML += '</tr>'
     }
