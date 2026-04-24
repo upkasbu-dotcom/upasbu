@@ -643,8 +643,8 @@ function renderLapForm() {
     html2 += '<button type="button" id="btn-tm-' + inputId + '" class="oli-btn-tm" style="' + (isTM ? 'display:none;' : '') + '" onclick="oliSetTM(\'' + inputId + '\',\'' + fieldKey + '\')">Tidak Menggunakan</button>'
     // Label TM + tombol reset — tampil saat TM
     html2 += '<span id="lbl-tm-' + inputId + '" class="oli-tm-label" style="' + (!isTM ? 'display:none;' : '') + '">Tidak Menggunakan <button type="button" class="oli-reset-btn" onclick="oliResetAngka(\'' + inputId + '\',\'' + fieldKey + '\')">&#10005;</button></span>'
-    // Hint wajib isi — tampil saat kosong (bukan TM, bukan ada nilai)
-    html2 += '<span id="hint-' + inputId + '" class="oli-hint" style="' + (isEmpty && !isTM ? '' : 'display:none;') + '">Isi angka atau klik Tidak Menggunakan</span>'
+    // Hint wajib isi — elemen tetap ada untuk logika error, tapi tidak menampilkan teks
+    html2 += '<span id="hint-' + inputId + '" class="oli-hint" style="display:none;"></span>'
     html2 += '</div>'
     return html2
   }
