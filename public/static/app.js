@@ -662,11 +662,18 @@ function renderLapForm() {
       docPreview = '<div id="doc-preview-wrap" style="margin-top:6px;"><a href="' + currentLapForm.dokumen_url + '" target="_blank" rel="noopener" style="color:#1d4ed8;font-size:0.82rem;"><i class="fas fa-file-pdf"></i> ' + (currentLapForm.dokumen_nama||'dokumen') + '</a></div>'
     }
   }
-  html += '<div class="lap-field-row" style="flex-direction:column;align-items:flex-start;gap:4px;">'
-  html += '<label class="lap-field-label" style="min-width:unset;">Upload Dokumen <span style="font-size:0.72rem;color:#94a3b8;">(foto/gambar, maks 32MB)</span></label>'
-  html += '<input id="field-dokumen" type="file" accept="image/*" class="lap-field-input" style="padding:4px;cursor:pointer;"/>'
+  html += '<div class="lap-field-row" style="flex-direction:column;align-items:flex-start;gap:6px;">'
+  html += '<label class="lap-field-label" style="min-width:unset;">Upload Dokumen <span style="font-size:0.72rem;color:#94a3b8;">(maks 32MB)</span></label>'
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+  // Tombol galeri — input file tanpa capture
+  html += '<label class="btn-upload-opt" for="field-dokumen-galeri"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Galeri</label>'
+  html += '<input id="field-dokumen-galeri" type="file" accept="image/*" style="display:none;"/>'
+  // Tombol kamera — input file dengan capture=environment
+  html += '<label class="btn-upload-opt btn-upload-kamera" for="field-dokumen-kamera"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> Kamera</label>'
+  html += '<input id="field-dokumen-kamera" type="file" accept="image/*" capture="environment" style="display:none;"/>'
+  html += '</div>'
   html += docPreview
-  html += '<div id="doc-progress-wrap" style="display:none;margin-top:4px;"><div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;"><div id="doc-progress-bar" style="height:100%;background:#22c55e;width:0%;transition:width 0.3s;"></div></div><span id="doc-progress-pct" style="font-size:0.72rem;color:#475569;">0%</span></div>'
+  html += '<div id="doc-progress-wrap" style="display:none;margin-top:4px;width:100%;"><div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;"><div id="doc-progress-bar" style="height:100%;background:#22c55e;width:0%;transition:width 0.3s;"></div></div><span id="doc-progress-pct" style="font-size:0.72rem;color:#475569;">0%</span></div>'
   html += '<span id="doc-upload-status" style="font-size:0.75rem;color:#64748b;"></span>'
   html += '</div>'
 
@@ -736,15 +743,13 @@ function renderLapForm() {
 
   // ── Upload gambar langsung ke ImgBB dari browser ──
   var IMGBB_KEY = 'bb2f97ad9b31b5ae4967eeead61e03de'
-  var elFile = document.getElementById('field-dokumen')
-  if (elFile) {
-    elFile.addEventListener('change', function() {
-      var file = this.files[0]
+
+  function handleFileUpload(file) {
       if (!file) return
 
       if (file.size > 32 * 1024 * 1024) {
         document.getElementById('doc-upload-status').textContent = '⚠ File terlalu besar (maks 32MB)'
-        this.value = ''; return
+        return
       }
 
       var statusEl = document.getElementById('doc-upload-status')
@@ -842,8 +847,13 @@ function renderLapForm() {
       }
       reader.onerror = function() { statusEl.textContent = '⚠ Gagal membaca file' }
       reader.readAsDataURL(file)
-    })
   }
+
+  // Attach ke kedua input
+  var elGaleri = document.getElementById('field-dokumen-galeri')
+  var elKamera = document.getElementById('field-dokumen-kamera')
+  if (elGaleri) elGaleri.addEventListener('change', function() { handleFileUpload(this.files[0]); this.value = '' })
+  if (elKamera) elKamera.addEventListener('change', function() { handleFileUpload(this.files[0]); this.value = '' })
 
   // Recalculate after render so Pemakaian BBM always reflects current values
   setTimeout(calcEstimasiBbm, 0)
