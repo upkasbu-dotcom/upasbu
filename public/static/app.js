@@ -867,7 +867,7 @@ function renderLapForm() {
             return
           }
 
-          var imgUrl  = j.data.url          // URL halaman ImgBB (contoh: https://ibb.co/xxx)
+          var imgUrl  = j.data.url_viewer || j.data.url  // URL viewer ImgBB (contoh: https://ibb.co.com/xxx)
           var imgName = j.data.title || file.name
 
           currentLapForm.dokumen_url  = imgUrl
