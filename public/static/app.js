@@ -477,10 +477,10 @@ async function onLapUnitChange(kode) {
 
   // Default penerimaan_bbm = 0 jika belum ada nilai
   if (currentLapForm.penerimaan_bbm === undefined || currentLapForm.penerimaan_bbm === null) currentLapForm.penerimaan_bbm = 0
-  // Default oli ke "tidak menggunakan" jika belum ada nilai
-  if (currentLapForm.stock_oli_sae40   === undefined || currentLapForm.stock_oli_sae40   === null) currentLapForm.stock_oli_sae40   = 'tidak menggunakan'
-  if (currentLapForm.stock_oli_sx      === undefined || currentLapForm.stock_oli_sx      === null) currentLapForm.stock_oli_sx      = 'tidak menggunakan'
-  if (currentLapForm.stock_oli_sx_plus === undefined || currentLapForm.stock_oli_sx_plus === null) currentLapForm.stock_oli_sx_plus = 'tidak menggunakan'
+  // Default oli: null agar user wajib isi angka atau pilih tidak menggunakan
+  if (currentLapForm.stock_oli_sae40   === undefined) currentLapForm.stock_oli_sae40   = null
+  if (currentLapForm.stock_oli_sx      === undefined) currentLapForm.stock_oli_sx      = null
+  if (currentLapForm.stock_oli_sx_plus === undefined) currentLapForm.stock_oli_sx_plus = null
 
   var tglTerpilih = document.getElementById('lap-tanggal').value
   if (tglTerpilih) {
@@ -628,10 +628,11 @@ function renderLapForm() {
 
   // Helper render field oli: input angka + tombol "Tidak Menggunakan"
   function renderOliField(labelText, selectId, inputId, fieldKey) {
-    var val = fldOli(fieldKey)
-    var isTM = (val === 'tidak menggunakan')
-    var angkaVal = isTM ? '' : val
-    var html2 = ''
+    var val    = currentLapForm[fieldKey]
+    var isTM   = (val === 'tidak menggunakan')
+    var isEmpty = (val === null || val === undefined || val === '')
+    var angkaVal = (!isTM && !isEmpty) ? val : ''
+    var html2  = ''
     html2 += '<div class="lap-field-row">'
     html2 += '<label class="lap-field-label">' + labelText + '</label>'
     html2 += '<span class="lap-field-sep">:</span>'
@@ -642,6 +643,8 @@ function renderLapForm() {
     html2 += '<button type="button" id="btn-tm-' + inputId + '" class="oli-btn-tm" style="' + (isTM ? 'display:none;' : '') + '" onclick="oliSetTM(\'' + inputId + '\',\'' + fieldKey + '\')">Tidak Menggunakan</button>'
     // Label TM + tombol reset — tampil saat TM
     html2 += '<span id="lbl-tm-' + inputId + '" class="oli-tm-label" style="' + (!isTM ? 'display:none;' : '') + '">Tidak Menggunakan <button type="button" class="oli-reset-btn" onclick="oliResetAngka(\'' + inputId + '\',\'' + fieldKey + '\')">&#10005;</button></span>'
+    // Hint wajib isi — tampil saat kosong (bukan TM, bukan ada nilai)
+    html2 += '<span id="hint-' + inputId + '" class="oli-hint" style="' + (isEmpty && !isTM ? '' : 'display:none;') + '">Isi angka atau klik Tidak Menggunakan</span>'
     html2 += '</div>'
     return html2
   }
@@ -710,12 +713,28 @@ function renderLapForm() {
     el.addEventListener('input', function() {
       var v = this.value.replace(/[^0-9]/g, '')
       this.value = v
-      setLapField(fieldKey, v === '' ? 'tidak menggunakan' : v)
+      var hintEl = document.getElementById('hint-' + id)
+      if (v !== '') {
+        setLapField(fieldKey, v)
+        if (hintEl) hintEl.style.display = 'none'
+        this.classList.remove('input-error')
+      } else {
+        setLapField(fieldKey, null)
+      }
     })
     el.addEventListener('blur', function() {
+      var hintEl = document.getElementById('hint-' + id)
       if (this.value.trim() === '') {
-        setLapField(fieldKey, 'tidak menggunakan')
+        setLapField(fieldKey, null)
+        if (hintEl) hintEl.style.display = ''
+      } else {
+        if (hintEl) hintEl.style.display = 'none'
       }
+    })
+    el.addEventListener('focus', function() {
+      var hintEl = document.getElementById('hint-' + id)
+      if (hintEl) hintEl.style.display = 'none'
+      this.classList.remove('input-error')
     })
   }
 
@@ -843,28 +862,32 @@ var OLI_FIELDS = ['stock_oli_sae40', 'stock_oli_sx', 'stock_oli_sx_plus']
 
 // Klik "Tidak Menggunakan" → sembunyikan input, tampilkan label TM
 function oliSetTM(inputId, fieldKey) {
-  var inputEl  = document.getElementById(inputId)
-  var unitEl   = document.getElementById('unit-' + inputId)
-  var btnTM    = document.getElementById('btn-tm-' + inputId)
-  var lblTM    = document.getElementById('lbl-tm-' + inputId)
-  if (inputEl) { inputEl.style.display = 'none'; inputEl.value = '' }
-  if (unitEl)  unitEl.style.display  = 'none'
-  if (btnTM)   btnTM.style.display   = 'none'
-  if (lblTM)   lblTM.style.display   = ''
+  var inputEl = document.getElementById(inputId)
+  var unitEl  = document.getElementById('unit-' + inputId)
+  var btnTM   = document.getElementById('btn-tm-' + inputId)
+  var lblTM   = document.getElementById('lbl-tm-' + inputId)
+  var hintEl  = document.getElementById('hint-' + inputId)
+  if (inputEl) { inputEl.style.display = 'none'; inputEl.value = ''; inputEl.classList.remove('input-error') }
+  if (unitEl)  unitEl.style.display = 'none'
+  if (btnTM)   btnTM.style.display  = 'none'
+  if (lblTM)   lblTM.style.display  = ''
+  if (hintEl)  hintEl.style.display = 'none'
   setLapField(fieldKey, 'tidak menggunakan')
 }
 
 // Klik ✕ di label TM → kembali ke mode input angka
 function oliResetAngka(inputId, fieldKey) {
-  var inputEl  = document.getElementById(inputId)
-  var unitEl   = document.getElementById('unit-' + inputId)
-  var btnTM    = document.getElementById('btn-tm-' + inputId)
-  var lblTM    = document.getElementById('lbl-tm-' + inputId)
+  var inputEl = document.getElementById(inputId)
+  var unitEl  = document.getElementById('unit-' + inputId)
+  var btnTM   = document.getElementById('btn-tm-' + inputId)
+  var lblTM   = document.getElementById('lbl-tm-' + inputId)
+  var hintEl  = document.getElementById('hint-' + inputId)
   if (inputEl) { inputEl.style.display = ''; inputEl.value = ''; inputEl.focus() }
-  if (unitEl)  unitEl.style.display  = ''
-  if (btnTM)   btnTM.style.display   = ''
-  if (lblTM)   lblTM.style.display   = 'none'
-  setLapField(fieldKey, 'tidak menggunakan')
+  if (unitEl)  unitEl.style.display = ''
+  if (btnTM)   btnTM.style.display  = ''
+  if (lblTM)   lblTM.style.display  = 'none'
+  if (hintEl)  hintEl.style.display = ''
+  setLapField(fieldKey, null)
 }
 
 function setLapField(field, value) {
@@ -1063,9 +1086,15 @@ function validateLapForm() {
     if (/^[0-9]+$/.test(String(val))) return true
     return false
   }
-  if (!validOli(d.stock_oli_sae40))   { errors.push('Stock Oli SAE 40');  highlightError('field-stock-oli-sae40') }
-  if (!validOli(d.stock_oli_sx))      { errors.push('Stock Oli SX');       highlightError('field-stock-oli-sx') }
-  if (!validOli(d.stock_oli_sx_plus)) { errors.push('Stock Oli SX Plus');  highlightError('field-stock-oli-sx-plus') }
+  function highlightOliError(inputId) {
+    var el = document.getElementById(inputId)
+    if (el && el.style.display !== 'none') el.classList.add('input-error')
+    var hintEl = document.getElementById('hint-' + inputId)
+    if (hintEl) hintEl.style.display = ''
+  }
+  if (!validOli(d.stock_oli_sae40))   { errors.push('Stock Oli SAE 40');  highlightOliError('field-stock-oli-sae40') }
+  if (!validOli(d.stock_oli_sx))      { errors.push('Stock Oli SX');       highlightOliError('field-stock-oli-sx') }
+  if (!validOli(d.stock_oli_sx_plus)) { errors.push('Stock Oli SX Plus');  highlightOliError('field-stock-oli-sx-plus') }
   return errors
 }
 
