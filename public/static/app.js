@@ -1519,7 +1519,13 @@ async function loadDataTab() {
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.rata_rata_harian) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + (d.daya_tampung_storage !== null && d.daya_tampung_storage !== undefined ? (d.daya_tampung_storage * 100).toFixed(1) + '%' : '<span style="color:#cbd5e1">—</span>') + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;">' + fmtData(d.bbm_siap_kirim) + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.safety_stock) + '</td>'
+      var ssBg = ''
+      if (d.safety_stock !== null && d.safety_stock !== undefined) {
+        if (d.safety_stock < 5)                              ssBg = 'background:#7f1d1d;color:#fff;'
+        else if (d.safety_stock >= 5 && d.safety_stock <= 7) ssBg = 'background:#fef9c3;color:#713f12;'
+        else                                                  ssBg = 'background:#ccfbf1;color:#0f766e;'
+      }
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;' + ssBg + '">' + fmtData(d.safety_stock) + '</td>'
       var fmtEst = '—'
       if (d.estimasi_bbm_habis) {
         var eParts = d.estimasi_bbm_habis.split('-')
