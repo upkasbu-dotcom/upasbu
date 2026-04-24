@@ -1507,7 +1507,7 @@ async function loadDataTab() {
 
       var bgRow = r % 2 === 0 ? '#fff' : '#f8fafc'
       bodyHTML += '<tr style="background:' + bgRow + ';border-bottom:1px solid #e2e8f0;">'
-      bodyHTML += '<td style="width:24px;min-width:24px;max-width:24px;padding:4px;text-align:center;font-size:0.7rem;position:sticky;left:0;background:' + bgRow + ';z-index:1;border-right:1px solid #e2e8f0;">' + d.no + '</td>'
+      bodyHTML += '<td style="width:24px;min-width:24px;max-width:24px;padding:4px;text-align:center;font-size:0.7rem;position:sticky;left:0;background:' + bgRow + ';z-index:1;border-right:1px solid #e2e8f0;">' + (r + 1) + '</td>'
       var uldColor = (d.stok_awal === null || d.stok_awal === undefined) ? '#94a3b8' : '#1e3a5f'
       bodyHTML += '<td style="padding:7px 10px;white-space:nowrap;font-size:0.78rem;font-weight:600;color:' + uldColor + ';text-align:left;position:sticky;left:24px;background:' + bgRow + ';z-index:1;">' + d.nama_unit + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:left;font-size:0.78rem;min-width:198px;white-space:nowrap;">' + (d.jalur || '—') + '</td>'
