@@ -549,7 +549,7 @@ app.post('/api/upload', async (c) => {
       return c.json({ success: false, error: 'ImgBB error: ' + JSON.stringify(json.error || json) }, 500)
     }
 
-    const fileUrl  = json.data.url        // URL gambar langsung
+    const fileUrl  = (json.data.url || '').replace('https://ibb.co/', 'https://ibb.co.com/') // URL format https://ibb.co.com/xxx
     const viewUrl  = json.data.url_viewer // URL halaman viewer
     const imgName  = json.data.title || fileName || 'dokumen'
 
