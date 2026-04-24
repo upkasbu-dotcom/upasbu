@@ -896,7 +896,7 @@ app.get('/', (c) => {
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Digitalisasi Pelaporan</title>
+  <title>DILAN [DIGITALISASI LAPORAN]</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
   <link rel="preload" href="/static/style.css?v=20260425o" as="style"/>
@@ -908,7 +908,7 @@ app.get('/', (c) => {
 <!-- ===== HEADER ===== -->
 <header class="app-header">
   <div class="app-header-body">
-    <div class="app-name">Digitalisasi Pelaporan</div>
+    <div class="app-name">DILAN [DIGITALISASI LAPORAN]</div>
     <div class="app-header-nav">
       <div class="tab-row">
         <button id="tab-btn-laporan" class="tab-btn active" onclick="switchTab('laporan')">
