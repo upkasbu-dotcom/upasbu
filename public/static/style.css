@@ -346,11 +346,8 @@ select.cell-input { width: 112px; cursor: pointer; }
 .lap-field-unit  { font-size: 0.72rem; color: #94a3b8; font-weight: 600; white-space: nowrap; flex-shrink: 0; min-width: 28px; }
 
 /* ── OLI DROPDOWN FIELD ── */
-.oli-field-row { align-items: flex-start !important; }
-.oli-input-group { display: flex; flex-direction: column; flex: 1; gap: 4px; min-width: 0; }
-.oli-select { flex: 1; }
-.oli-num-row { display: flex; align-items: center; gap: 6px; }
-.oli-num-row .lap-field-input { max-width: 120px; }
+.oli-select { flex: 0 0 auto; width: auto; min-width: 160px; }
+.oli-angka-input { flex: 1; min-width: 0; max-width: 100px; }
 
 /* Operator dropdown */
 .op-input-wrap { position: relative; flex: 1; min-width: 0; }
@@ -486,8 +483,8 @@ select.cell-input { width: 112px; cursor: pointer; }
   .lap-field-input { flex: 1; min-width: 0; font-size: 0.82rem; padding: 6px 8px; }
   .lap-field-unit { flex-shrink: 0; font-size: 0.68rem; }
   .op-input-wrap { flex: 1; min-width: 0; }
-  .oli-field-row { align-items: flex-start !important; }
-  .oli-num-row .lap-field-input { max-width: 90px; }
+  .oli-select { min-width: 130px; }
+  .oli-angka-input { max-width: 70px; }
   .op-dropdown { font-size: 0.82rem; }
   .op-item { padding: 9px 10px; }
 

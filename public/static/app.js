@@ -626,25 +626,22 @@ function renderLapForm() {
   html += '<span class="lap-field-unit">ltr</span>'
   html += '</div>'
 
-  // Helper render field oli dengan dropdown + input angka
+  // Helper render field oli dengan dropdown + input angka inline
   function renderOliField(labelText, selectId, inputId, fieldKey) {
     var val = fldOli(fieldKey)
     var isTM = (val === 'tidak menggunakan')
     var angkaVal = isTM ? '' : val
     var html2 = ''
-    html2 += '<div class="lap-field-row oli-field-row">'
+    html2 += '<div class="lap-field-row">'
     html2 += '<label class="lap-field-label">' + labelText + '</label>'
     html2 += '<span class="lap-field-sep">:</span>'
-    html2 += '<div class="oli-input-group">'
-    html2 += '<select id="' + selectId + '" class="lap-field-input oli-select" onchange="oliSelectChange(\'' + selectId + '\',\'' + inputId + '\',\'' + fieldKey + '\')">' 
+    html2 += '<select id="' + selectId + '" class="lap-field-input oli-select" onchange="oliSelectChange(\'' + selectId + '\',\'' + inputId + '\',\'' + fieldKey + '\')">'
     html2 += '<option value="angka"' + (!isTM ? ' selected' : '') + '>Masukkan Angka</option>'
     html2 += '<option value="tm"'    + (isTM  ? ' selected' : '') + '>Tidak Menggunakan</option>'
     html2 += '</select>'
-    html2 += '<div class="oli-num-row" id="row-' + inputId + '" style="' + (isTM ? 'display:none;' : '') + '">'
-    html2 += '<input id="' + inputId + '" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input" placeholder="0" value="' + angkaVal + '"/>'
-    html2 += '<span class="lap-field-unit">ltr</span>'
+    html2 += '<input id="' + inputId + '" type="text" inputmode="numeric" pattern="[0-9]*" class="lap-field-input oli-angka-input" placeholder="0" value="' + angkaVal + '" style="' + (isTM ? 'display:none;' : '') + '"/>'
+    html2 += '<span class="lap-field-unit" id="unit-' + inputId + '" style="' + (isTM ? 'display:none;' : '') + '">ltr</span>'
     html2 += '</div>'
-    html2 += '</div></div>'
     return html2
   }
 
@@ -845,18 +842,18 @@ var OLI_FIELDS = ['stock_oli_sae40', 'stock_oli_sx', 'stock_oli_sx_plus']
 
 // Handler saat dropdown oli berubah
 function oliSelectChange(selectId, inputId, fieldKey) {
-  var sel    = document.getElementById(selectId)
-  var numRow = document.getElementById('row-' + inputId)
+  var sel     = document.getElementById(selectId)
   var inputEl = document.getElementById(inputId)
-  if (!sel || !numRow) return
+  var unitEl  = document.getElementById('unit-' + inputId)
+  if (!sel) return
 
   if (sel.value === 'tm') {
-    numRow.style.display = 'none'
-    if (inputEl) inputEl.value = ''
+    if (inputEl) { inputEl.style.display = 'none'; inputEl.value = '' }
+    if (unitEl)  unitEl.style.display = 'none'
     setLapField(fieldKey, 'tidak menggunakan')
   } else {
-    numRow.style.display = ''
-    if (inputEl) inputEl.focus()
+    if (inputEl) { inputEl.style.display = ''; inputEl.focus() }
+    if (unitEl)  unitEl.style.display = ''
     setLapField(fieldKey, inputEl && inputEl.value ? inputEl.value : 'tidak menggunakan')
   }
 }
