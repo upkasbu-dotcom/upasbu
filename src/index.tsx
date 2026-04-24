@@ -793,7 +793,10 @@ app.get('/api/data-stok', async (c) => {
       const safetyStock  = avgPakai !== null ? Math.round(avgPakai * SAFETY_STOCK_HARI) : null
       const bbmSiapKirim = (stockBersih !== null && safetyStock !== null)
                            ? Math.max(0, stockBersih - safetyStock) : null
-      const dayaTampung  = kapasitasTangki
+      // DAYA TAMPUNG = (KAPASITAS - STOCK AWAL) / KAPASITAS
+      const dayaTampung  = (kapasitasTangki !== null && stokAwal !== null && kapasitasTangki > 0)
+                           ? Math.round(((kapasitasTangki - stokAwal) / kapasitasTangki) * 100) / 100
+                           : null
 
       // Estimasi BBM habis: stockBersih / avgPakai
       let estimasiBbmHabis: string | null = null
