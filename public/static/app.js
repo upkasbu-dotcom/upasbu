@@ -1460,7 +1460,7 @@ async function loadStockOliTab() {
 function initDataTable() {
   if (dataTableInited) return
   var cols = ['NO','ULD','JALUR','KAPASITAS TANGKI','STOK AWAL BULAN','STOCK AWAL',
-              'STOCK MATI','STOCK BERSIH','PEMAKAIAN TERTINGGI (30 HARI)',
+              'STOCK MATI','STOCK BERSIH','PEMAKAIAN TERTINGGI',
               'DAYA TAMPUNG STORAGE','BBM SIAP KIRIM','SAFETY STOCK',
               'ESTIMASI BBM HABIS','KONDISI STOCK']
   var headHTML = '<tr>'
