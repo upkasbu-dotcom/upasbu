@@ -52,6 +52,7 @@ var OPERATOR_DATA = {
 // CONSTANTS
 // =============================================
 var PARAMS = [
+  { key:'status_mesin',       label:'STATUS MESIN',       unit:'',     type:'select' },
   { key:'daya_mampu',         label:'DAYA MAMPU',         unit:'kW',   type:'number' },
   { key:'beban',              label:'BEBAN',              unit:'kW',   type:'number' },
   { key:'stand_kwh',          label:'STAND KWH',          unit:'kWh',  type:'number' },
@@ -65,7 +66,6 @@ var PARAMS = [
   { key:'frequency',          label:'FREQUENCY',          unit:'Hz',   type:'number' },
   { key:'cos_phi',            label:'COS PHI',            unit:'',     type:'number' },
   { key:'jam_kerja_mesin',    label:'JAM KERJA MESIN',    unit:'Jam',  type:'number' },
-  { key:'status_mesin',       label:'STATUS MESIN',       unit:'',     type:'select' },
   { key:'kwh_produksi',       label:'KWH PRODUKSI',       unit:'kWh',  type:'number' },
   { key:'pemakaian_bbm',      label:'PEMAKAIAN BBM',      unit:'ltr',  type:'number' },
 ]
