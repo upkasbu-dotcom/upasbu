@@ -1143,6 +1143,11 @@ function renderReview(unit, tanggal, d) {
     return isNaN(val) ? val : val + ' ltr'
   }
 
+  // Baca nilai penerimaan_bbm langsung dari DOM agar tidak pakai nilai lama di currentLapForm
+  var elPenBbm = document.getElementById('field-penerimaan-bbm')
+  var penBbmVal = elPenBbm ? elPenBbm.value.trim() : ''
+  var penBbmTeks = (penBbmVal !== '' && !isNaN(penBbmVal)) ? String(Number(penBbmVal)) : '0'
+
   var savedAt = new Date().toLocaleString('id-ID', { dateStyle:'long', timeStyle:'short' })
   var teksLaporan =
     'LAPORAN OPERASIONAL PLTD\n' +
@@ -1153,7 +1158,7 @@ function renderReview(unit, tanggal, d) {
     'kWh Produksi : ' + fmtNumPlain(d.kwh_produksi) + '\n' +
     'Saldo Awal : ' + fmtNumPlain(d.saldo_awal) + '\n' +
     'Saldo Akhir : ' + fmtNumPlain(d.saldo_akhir) + '\n' +
-    'Penerimaan BBM : ' + (d.penerimaan_bbm != null && d.penerimaan_bbm !== '' ? String(Number(d.penerimaan_bbm)) : '0') + '\n' +
+    'Penerimaan BBM : ' + penBbmTeks + '\n' +
     'Estimasi Pemakaian BBM Maksimal : ' + fmtNumPlain(d.estimasi_bbm_max)
 
   var html = '<div class="review-wrap">'
