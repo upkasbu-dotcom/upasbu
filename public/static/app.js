@@ -475,6 +475,8 @@ async function onLapUnitChange(kode) {
   currentLapForm = lapData[lapSelectedKode] ? JSON.parse(JSON.stringify(lapData[lapSelectedKode])) : {}
   lastSavedData  = {}
 
+  // Default penerimaan_bbm = 0 jika belum ada nilai
+  if (currentLapForm.penerimaan_bbm === undefined || currentLapForm.penerimaan_bbm === null) currentLapForm.penerimaan_bbm = 0
   // Default oli ke "tidak menggunakan" jika belum ada nilai
   if (currentLapForm.stock_oli_sae40   === undefined || currentLapForm.stock_oli_sae40   === null) currentLapForm.stock_oli_sae40   = 'tidak menggunakan'
   if (currentLapForm.stock_oli_sx      === undefined || currentLapForm.stock_oli_sx      === null) currentLapForm.stock_oli_sx      = 'tidak menggunakan'
@@ -539,6 +541,7 @@ function renderLapForm() {
   var kodeFormatted = String(unit.kode_unit).padStart(4, '0')
 
   function fldNum(key) {
+    if (key === 'penerimaan_bbm') return (d[key] !== undefined && d[key] !== null) ? d[key] : '0'
     return (d[key] !== undefined && d[key] !== null) ? d[key] : ''
   }
   function fldOli(key) {
