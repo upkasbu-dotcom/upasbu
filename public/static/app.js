@@ -1467,7 +1467,7 @@ function initDataTable() {
   for (var i = 0; i < cols.length; i++) {
     var stickyStyle = i < 2 ? 'position:sticky;left:' + (i===0?'0':'24px') + ';z-index:2;' : ''
     var thExtra = i === 0 ? 'width:24px;min-width:24px;max-width:24px;padding:8px 4px;border-right:1px solid rgba(255,255,255,0.2);' : 'padding:8px 10px;'
-    var thAlign = i === 1 ? 'text-align:left;' : i === 2 ? 'text-align:left;' : 'text-align:center;'
+    var thAlign = 'text-align:center;'
     var thWidth  = i === 2 ? 'min-width:198px;' : ''
     headHTML += '<th style="background:#1e3a5f;color:#fff;white-space:nowrap;font-size:0.72rem;' + thAlign + thWidth + thExtra + stickyStyle + '">' + cols[i] + '</th>'
   }
