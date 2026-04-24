@@ -183,7 +183,7 @@ function populateUnitSelect(id, units) {
     var u = units[i]
     var opt = document.createElement('option')
     opt.value = u.kode_unit
-    opt.textContent = u.nama_unit + ' (' + u.kode_unit + ')'
+    opt.textContent = u.nama_unit
     sel.appendChild(opt)
   }
 }
