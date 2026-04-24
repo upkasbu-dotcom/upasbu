@@ -666,7 +666,7 @@ const UNIT_META: Record<number, { no: number, jalur: string, kapasitas_tangki: n
   391: { no: 17, jalur: 'DARAT',                kapasitas_tangki: 20000, stock_mati: 1000 }, // TELAGA PULANG
   376: { no: 18, jalur: 'DARAT - LAUT - SUNGAI', kapasitas_tangki: 83000, stock_mati: 5000 }, // MENDAWAI
   373: { no: 19, jalur: 'DARAT',                kapasitas_tangki: 20000, stock_mati: 2000 }, // KENAMBUI
-  395: { no: 20, jalur: 'DARAT - SUNGAI',       kapasitas_tangki: 26000, stock_mati: 1000 }, // TUMBANG MANJUL
+  395: { no: 20, jalur: 'DARAT - SUNGAI',       kapasitas_tangki: 46000, stock_mati: 1000 }, // TUMBANG MANJUL
   375: { no: 21, jalur: 'DARAT',                kapasitas_tangki: 46000, stock_mati: 1000 }, // KUDANGAN
 }
 
