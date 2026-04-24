@@ -282,10 +282,12 @@ function renderTable() {
     var m = mesinList[mi]
     var sn = m.s_n ? String(m.s_n) : '-'
 
+    var terpasangVal = (currentData[m.id_mesin] && currentData[m.id_mesin]['terpasang'] !== undefined && currentData[m.id_mesin]['terpasang'] !== null) ? currentData[m.id_mesin]['terpasang'] : null
+    var mesinColor = (terpasangVal !== null && terpasangVal !== '') ? '#1e3a5f' : '#94a3b8'
     bodyHTML += '<tr data-mesin="' + m.id_mesin + '">'
     // Kolom pertama: info mesin (sticky)
     bodyHTML += '<td style="text-align:left;">'
-    bodyHTML += '<div class="th-mesin-name" style="font-size:0.78rem;color:#1e3a5f;font-weight:700;">' + m.mesin + '</div>'
+    bodyHTML += '<div class="th-mesin-name" style="font-size:0.78rem;color:' + mesinColor + ';font-weight:700;">' + m.mesin + '</div>'
     bodyHTML += '<div class="th-mesin-meta">'
     bodyHTML += '<span class="th-sn">S/N: ' + sn + '</span>'
     bodyHTML += '</div>'
@@ -341,6 +343,10 @@ function updateTableData() {
         el.value = val
       }
     }
+    // Update warna nama mesin sesuai ada/tidaknya nilai TERPASANG
+    var terpasangNow = (currentData[m.id_mesin] && currentData[m.id_mesin]['terpasang'] !== undefined && currentData[m.id_mesin]['terpasang'] !== null) ? currentData[m.id_mesin]['terpasang'] : null
+    var nameDiv = row.querySelector('.th-mesin-name')
+    if (nameDiv) nameDiv.style.color = (terpasangNow !== null && terpasangNow !== '') ? '#1e3a5f' : '#94a3b8'
   }
 }
 
