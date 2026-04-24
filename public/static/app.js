@@ -1521,7 +1521,7 @@ async function loadDataTab() {
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;">' + fmtData(d.bbm_siap_kirim) + '</td>'
       var ssBg = ''
       if (d.safety_stock !== null && d.safety_stock !== undefined) {
-        if (d.safety_stock < 5)                              ssBg = 'background:#7f1d1d;color:#fff;'
+        if (d.safety_stock < 5)                              ssBg = 'background:#ef4444;color:#fff;'
         else if (d.safety_stock >= 5 && d.safety_stock <= 7) ssBg = 'background:#fef9c3;color:#713f12;'
         else                                                  ssBg = 'background:#ccfbf1;color:#0f766e;'
       }
