@@ -297,7 +297,7 @@ function renderTable() {
       var val = (currentData[m.id_mesin] && currentData[m.id_mesin][p2.key] !== undefined && currentData[m.id_mesin][p2.key] !== null)
                 ? currentData[m.id_mesin][p2.key] : ''
       if (p2.type === 'select') {
-        bodyHTML += '<td><select class="cell-input" onchange="setCellValue(' + m.id_mesin + ',\'' + p2.key + '\',this.value)">'
+        bodyHTML += '<td><select class="cell-input" data-mesin-id="' + m.id_mesin + '" data-key="' + p2.key + '" onchange="setCellValue(' + m.id_mesin + ',\'' + p2.key + '\',this.value)">'
         for (var si = 0; si < STATUS_OPTIONS.length; si++) {
           var sopt = STATUS_OPTIONS[si]
           var sel  = (val === sopt || (!val && sopt === 'Operasi')) ? ' selected' : ''
@@ -306,6 +306,7 @@ function renderTable() {
         bodyHTML += '</select></td>'
       } else {
         bodyHTML += '<td><input type="number" step="any" class="cell-input" placeholder="—"'
+        bodyHTML += ' data-mesin-id="' + m.id_mesin + '" data-key="' + p2.key + '"'
         bodyHTML += ' value="' + val + '"'
         bodyHTML += ' oninput="setCellValue(' + m.id_mesin + ',\'' + p2.key + '\',this.value)"/></td>'
       }
@@ -318,6 +319,29 @@ function renderTable() {
 function setCellValue(mesinId, field, value) {
   if (!currentData[mesinId]) currentData[mesinId] = {}
   currentData[mesinId][field] = value === '' ? null : (field === 'status_mesin' ? value : parseFloat(value))
+}
+
+// Update hanya nilai input tanpa re-render seluruh tabel
+function updateTableData() {
+  var tbody = document.getElementById('table-body')
+  if (!tbody || tbody.innerHTML === '') { renderTable(); return }
+  for (var mi = 0; mi < mesinList.length; mi++) {
+    var m   = mesinList[mi]
+    var row = tbody.querySelector('tr[data-mesin="' + m.id_mesin + '"]')
+    if (!row) { renderTable(); return }
+    for (var pi = 0; pi < PARAMS.length; pi++) {
+      var p   = PARAMS[pi]
+      var val = (currentData[m.id_mesin] && currentData[m.id_mesin][p.key] !== undefined && currentData[m.id_mesin][p.key] !== null)
+                ? currentData[m.id_mesin][p.key] : ''
+      var el  = row.querySelector('[data-mesin-id="' + m.id_mesin + '"][data-key="' + p.key + '"]')
+      if (!el) continue
+      if (p.type === 'select') {
+        el.value = val || 'Operasi'
+      } else {
+        el.value = val
+      }
+    }
+  }
 }
 
 async function loadData() {
@@ -340,6 +364,7 @@ async function loadData() {
     for (var i = 0; i < json.data.length; i++) {
       var row = json.data[i]
       currentData[row.mesin_id] = {
+        terpasang: row.terpasang,
         daya_mampu: row.daya_mampu, beban: row.beban,
         stand_kwh: row.stand_kwh, stand_bbm: row.stand_bbm,
         phasa_r: row.phasa_r, phasa_s: row.phasa_s, phasa_t: row.phasa_t,
@@ -349,7 +374,7 @@ async function loadData() {
         kwh_produksi: row.kwh_produksi, pemakaian_bbm: row.pemakaian_bbm
       }
     }
-    renderTable()
+    updateTableData()
     var cnt = json.data.length
     document.getElementById('info-record').textContent = cnt > 0
       ? cnt + ' mesin sudah ada data'
