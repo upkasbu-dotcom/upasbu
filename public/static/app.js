@@ -52,22 +52,22 @@ var OPERATOR_DATA = {
 // CONSTANTS
 // =============================================
 var PARAMS = [
-  { key:'daya_mampu',         label:'Daya Mampu',         unit:'kW',   type:'number' },
-  { key:'beban',              label:'Beban',              unit:'kW',   type:'number' },
-  { key:'stand_kwh',          label:'Stand KWH',          unit:'kWh',  type:'number' },
-  { key:'stand_bbm',          label:'Stand BBM',          unit:'ltr',  type:'number' },
-  { key:'phasa_r',            label:'Phasa R',            unit:'A',    type:'number' },
-  { key:'phasa_s',            label:'Phasa S',            unit:'A',    type:'number' },
-  { key:'phasa_t',            label:'Phasa T',            unit:'A',    type:'number' },
-  { key:'tek_oli',            label:'Tek. Oli',           unit:'bar',  type:'number' },
-  { key:'temp_air_pendingin', label:'Temp Air Pendingin', unit:'°C',   type:'number' },
-  { key:'tegangan',           label:'Tegangan',           unit:'V',    type:'number' },
-  { key:'frequency',          label:'Frequency',          unit:'Hz',   type:'number' },
-  { key:'cos_phi',            label:'Cos Phi',            unit:'',     type:'number' },
-  { key:'jam_kerja_mesin',    label:'Jam Kerja Mesin',    unit:'Jam',  type:'number' },
-  { key:'status_mesin',       label:'Status Mesin',       unit:'',     type:'select' },
-  { key:'kwh_produksi',       label:'KWH Produksi',       unit:'kWh',  type:'number' },
-  { key:'pemakaian_bbm',      label:'Pemakaian BBM',      unit:'ltr',  type:'number' },
+  { key:'daya_mampu',         label:'DAYA MAMPU',         unit:'kW',   type:'number' },
+  { key:'beban',              label:'BEBAN',              unit:'kW',   type:'number' },
+  { key:'stand_kwh',          label:'STAND KWH',          unit:'kWh',  type:'number' },
+  { key:'stand_bbm',          label:'STAND BBM',          unit:'ltr',  type:'number' },
+  { key:'phasa_r',            label:'PHASA R',            unit:'A',    type:'number' },
+  { key:'phasa_s',            label:'PHASA S',            unit:'A',    type:'number' },
+  { key:'phasa_t',            label:'PHASA T',            unit:'A',    type:'number' },
+  { key:'tek_oli',            label:'TEK. OLI',           unit:'bar',  type:'number' },
+  { key:'temp_air_pendingin', label:'TEMP AIR PENDINGIN', unit:'°C',   type:'number' },
+  { key:'tegangan',           label:'TEGANGAN',           unit:'V',    type:'number' },
+  { key:'frequency',          label:'FREQUENCY',          unit:'Hz',   type:'number' },
+  { key:'cos_phi',            label:'COS PHI',            unit:'',     type:'number' },
+  { key:'jam_kerja_mesin',    label:'JAM KERJA MESIN',    unit:'Jam',  type:'number' },
+  { key:'status_mesin',       label:'STATUS MESIN',       unit:'',     type:'select' },
+  { key:'kwh_produksi',       label:'KWH PRODUKSI',       unit:'kWh',  type:'number' },
+  { key:'pemakaian_bbm',      label:'PEMAKAIAN BBM',      unit:'ltr',  type:'number' },
 ]
 var STATUS_OPTIONS = ['Operasi','Standby','Pemeliharaan','Gangguan','Rusak Permanen']
 
@@ -264,7 +264,7 @@ function renderTable() {
 
   // ── HEADER: kolom pertama = "Mesin", lalu satu kolom per parameter ──
   var headHTML = '<tr>'
-  headHTML += '<th class="th-param" style="min-width:200px;">Mesin</th>'
+  headHTML += '<th class="th-param" style="min-width:200px;">MESIN</th>'
   for (var pi = 0; pi < PARAMS.length; pi++) {
     var p = PARAMS[pi]
     headHTML += '<th class="th-mesin">'
