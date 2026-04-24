@@ -862,9 +862,9 @@ app.get('/', (c) => {
   <title>Digitalisasi Pelaporan</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
-  <link rel="preload" href="/static/style.css?v=20260425b" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260425b" as="script"/>
-  <link href="/static/style.css?v=20260425b" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260425c" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260425c" as="script"/>
+  <link href="/static/style.css?v=20260425c" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -1099,7 +1099,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<script src="/static/app.js?v=20260425b" defer></script>
+<script src="/static/app.js?v=20260425c" defer></script>
 </body>
 </html>`
   const resp = c.html(html)

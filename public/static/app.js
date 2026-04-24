@@ -41,11 +41,11 @@ var OPERATOR_DATA = {
   910: ["M Kamawijaya", "Deniasyah", "Sukardiono", "Riduan", "Tajudin"],                       // ULD MANGKATIP
   911: ["Hendri Aprius", "Kanserto", "Gupinda Ramadan", "M Indra Saputra", "Achrian Noor", "Rizki Permana"],                                 // ULD TELUK BETUNG
   913: ["Herianor", "Yatno Eka Nugraha", "Murjani", "Masrawan", "Yuspida", "Agus Salim", "Lambri"],                    // ULD TUMPUNG LAUNG
-  915: ["Operator"],                  // ULD SUNGAI BALI
-  917: ["Operator"],                            // ULD KERASIAN
-  918: ["Operator"],                     // ULD KERAYAAN
-  919: ["Operator"],                   // ULD KERUMPUTAN
-  920: ["Operator"],                   // ULD MARABATUAN
+  915: ["N Hirliyadi", "Husni Mubarak", "Bahrianor", "Muhammad Randi", "Gilang Ramadhan", "Muhammad Noviar Rahman", "Muhammad Riansyah", "Masriansyah"],                  // ULD SUNGAI BALI
+  917: ["Arwin", "Darmawi", "Indrayadi", "Padli", "Suaib", "Suhardi"],                            // ULD KERASIAN
+  918: ["Agus", "Alwir", "Khabir", "M Said", "Masjoni", "Muhammad Noor", "Roni Marten"],                     // ULD KERAYAAN
+  919: ["Abd Sapma", "Fahrudin", "Hidayatullah", "Paesal", "Rasdi", "Safriansyah"],                   // ULD KERUMPUTAN
+  920: ["Dedi Yusuf", "Febrianto", "Hamsyah", "Hasdiansyah", "Pardiansyah", "Sri Ekonanto", "Wahyudin"],                   // ULD MARABATUAN
 }
 
 // =============================================
