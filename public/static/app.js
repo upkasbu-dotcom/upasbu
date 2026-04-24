@@ -1461,7 +1461,7 @@ function initDataTable() {
   if (dataTableInited) return
   var cols = ['NO','ULD','JALUR','KAPASITAS TANGKI','STOK AWAL BULAN','STOCK AWAL',
               'STOCK MATI','STOCK BERSIH','PEMAKAIAN TERTINGGI',
-              'DAYA TAMPUNG STORAGE','BBM SIAP KIRIM','SAFETY STOCK',
+              'DAYA TAMPUNG','BBM SIAP KIRIM','SAFETY STOCK',
               'ESTIMASI BBM HABIS','KONDISI STOCK']
   var headHTML = '<tr>'
   for (var i = 0; i < cols.length; i++) {
