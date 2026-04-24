@@ -423,6 +423,74 @@ async function selectRiwayat(tanggal) {
 }
 
 // =============================================
+// KAMERA MODAL (getUserMedia)
+// =============================================
+var _kameraStream = null
+
+function bukaModalKamera() {
+  // Buat modal jika belum ada
+  var modal = document.getElementById('kamera-modal')
+  if (!modal) {
+    modal = document.createElement('div')
+    modal.id = 'kamera-modal'
+    modal.className = 'kamera-modal-overlay'
+    modal.innerHTML = [
+      '<div class="kamera-modal-box">',
+        '<div class="kamera-modal-header">',
+          '<span>Ambil Foto</span>',
+          '<button type="button" class="kamera-close-btn" onclick="tutupModalKamera()">&#10005;</button>',
+        '</div>',
+        '<video id="kamera-video" class="kamera-video" autoplay playsinline muted></video>',
+        '<canvas id="kamera-canvas" style="display:none;"></canvas>',
+        '<div class="kamera-modal-footer">',
+          '<button type="button" class="btn-capture" onclick="captureKamera()">&#9679; Ambil Foto</button>',
+        '</div>',
+        '<div id="kamera-error" class="kamera-error" style="display:none;"></div>',
+      '</div>'
+    ].join('')
+    document.body.appendChild(modal)
+  }
+  modal.style.display = 'flex'
+
+  // Mulai stream kamera belakang
+  var constraints = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }
+  navigator.mediaDevices.getUserMedia(constraints)
+    .then(function(stream) {
+      _kameraStream = stream
+      var video = document.getElementById('kamera-video')
+      if (video) { video.srcObject = stream; video.play() }
+      var errEl = document.getElementById('kamera-error')
+      if (errEl) errEl.style.display = 'none'
+    })
+    .catch(function(err) {
+      var errEl = document.getElementById('kamera-error')
+      if (errEl) { errEl.style.display = ''; errEl.textContent = 'Kamera tidak dapat diakses: ' + (err.message || err) }
+    })
+}
+
+function tutupModalKamera() {
+  if (_kameraStream) { _kameraStream.getTracks().forEach(function(t){ t.stop() }); _kameraStream = null }
+  var modal = document.getElementById('kamera-modal')
+  if (modal) modal.style.display = 'none'
+}
+
+function captureKamera() {
+  var video  = document.getElementById('kamera-video')
+  var canvas = document.getElementById('kamera-canvas')
+  if (!video || !canvas) return
+  canvas.width  = video.videoWidth  || 1280
+  canvas.height = video.videoHeight || 720
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+  canvas.toBlob(function(blob) {
+    if (!blob) return
+    var fileName = 'foto_' + Date.now() + '.jpg'
+    var file = new File([blob], fileName, { type: 'image/jpeg' })
+    tutupModalKamera()
+    handleFileUpload(file)
+  }, 'image/jpeg', 0.92)
+}
+
+// =============================================
 // TAB SWITCHING
 // =============================================
 function switchTab(tab) {
@@ -668,9 +736,8 @@ function renderLapForm() {
   // Tombol galeri — input file tanpa capture
   html += '<label class="btn-upload-opt" for="field-dokumen-galeri"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Galeri</label>'
   html += '<input id="field-dokumen-galeri" type="file" accept="image/*" style="display:none;"/>'
-  // Tombol kamera — input file dengan capture=environment
-  html += '<label class="btn-upload-opt btn-upload-kamera" for="field-dokumen-kamera"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> Kamera</label>'
-  html += '<input id="field-dokumen-kamera" type="file" accept="image/*" capture="environment" style="display:none;"/>'
+  // Tombol kamera — buka modal kamera via getUserMedia
+  html += '<button type="button" class="btn-upload-opt btn-upload-kamera" onclick="bukaModalKamera()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> Kamera</button>'
   html += '</div>'
   html += docPreview
   html += '<div id="doc-progress-wrap" style="display:none;margin-top:4px;width:100%;"><div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;"><div id="doc-progress-bar" style="height:100%;background:#22c55e;width:0%;transition:width 0.3s;"></div></div><span id="doc-progress-pct" style="font-size:0.72rem;color:#475569;">0%</span></div>'
@@ -849,11 +916,9 @@ function renderLapForm() {
       reader.readAsDataURL(file)
   }
 
-  // Attach ke kedua input
+  // Attach galeri input
   var elGaleri = document.getElementById('field-dokumen-galeri')
-  var elKamera = document.getElementById('field-dokumen-kamera')
   if (elGaleri) elGaleri.addEventListener('change', function() { handleFileUpload(this.files[0]); this.value = '' })
-  if (elKamera) elKamera.addEventListener('change', function() { handleFileUpload(this.files[0]); this.value = '' })
 
   // Recalculate after render so Pemakaian BBM always reflects current values
   setTimeout(calcEstimasiBbm, 0)
