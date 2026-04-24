@@ -1179,20 +1179,7 @@ function renderReview(unit, tanggal, d) {
   html += '<tr><td class="rdt-label">Stock Oli SX</td><td class="rdt-val">' + fmtOli(d.stock_oli_sx) + '</td></tr>'
   html += '<tr class="rdt-last"><td class="rdt-label">Stock Oli SX Plus</td><td class="rdt-val">' + fmtOli(d.stock_oli_sx_plus) + '</td></tr>'
   html += '</table></div>'
-  // Tampilkan dokumen jika ada (dari Google Drive URL)
-  if (d.dokumen_url) {
-    var isImg = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(d.dokumen_nama||'')
-    html += '<div class="review-divider"></div>'
-    html += '<div style="padding:12px 20px;">'
-    html += '<div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:8px;">DOKUMEN</div>'
-    if (isImg) {
-      html += '<img src="' + d.dokumen_url + '" style="max-width:100%;max-height:260px;border-radius:8px;border:1px solid #e2e8f0;" alt="dokumen"/>'
-    } else {
-      html += '<a href="' + d.dokumen_url + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;color:#1d4ed8;font-size:0.85rem;text-decoration:none;padding:8px 12px;border:1px solid #bfdbfe;border-radius:6px;background:#eff6ff;">'
-      html += '<i class="fas fa-file-pdf"></i>' + (d.dokumen_nama||'dokumen') + '</a>'
-    }
-    html += '</div>'
-  }
+
   html += '<div class="review-divider"></div>'
   html += '<div class="review-footer"><div class="review-save-info"><i class="fas fa-clock"></i> Disimpan: ' + savedAt + '</div>'
   html += '<div class="review-actions">'
