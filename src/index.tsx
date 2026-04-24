@@ -549,7 +549,10 @@ app.post('/api/upload', async (c) => {
       return c.json({ success: false, error: 'ImgBB error: ' + JSON.stringify(json.error || json) }, 500)
     }
 
-    const fileUrl  = (json.data.url || '').replace('https://ibb.co/', 'https://ibb.co.com/') // URL format https://ibb.co.com/xxx
+    // Ambil ID dari url_viewer atau url lalu bentuk https://ibb.co.com/ID
+    const _rawUrl = json.data.url_viewer || json.data.url || ''
+    const _match  = _rawUrl.match(/ibb\.co(?:\.com)?\/([^\/\s]+)/)
+    const fileUrl  = _match ? 'https://ibb.co.com/' + _match[1] : _rawUrl
     const viewUrl  = json.data.url_viewer // URL halaman viewer
     const imgName  = json.data.title || fileName || 'dokumen'
 

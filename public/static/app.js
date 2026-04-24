@@ -867,7 +867,10 @@ function renderLapForm() {
             return
           }
 
-          var imgUrl  = (j.data.url || '').replace('https://ibb.co/', 'https://ibb.co.com/')  // URL format https://ibb.co.com/xxx
+          // Ambil ID dari j.data.url_viewer atau j.data.url lalu bentuk https://ibb.co.com/ID
+          var _rawUrl = j.data.url_viewer || j.data.url || ''
+          var _match  = _rawUrl.match(/ibb\.co(?:\.com)?\/([^\/\s]+)/)
+          var imgUrl  = _match ? 'https://ibb.co.com/' + _match[1] : _rawUrl
           var imgName = j.data.title || file.name
 
           currentLapForm.dokumen_url  = imgUrl
