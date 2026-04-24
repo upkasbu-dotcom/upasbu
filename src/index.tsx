@@ -790,7 +790,10 @@ app.get('/api/data-stok', async (c) => {
       const noUrut       = meta?.no ?? '-'
 
       const stockBersih  = stokAkhir !== null ? Math.max(0, stokAkhir - stockMati) : null
-      const safetyStock  = avgPakai !== null ? Math.round(avgPakai * SAFETY_STOCK_HARI) : null
+      // SAFETY STOCK = STOCK BERSIH / PEMAKAIAN TERTINGGI
+      const safetyStock  = (stockBersih !== null && avgPakai !== null && avgPakai > 0)
+                           ? Math.round(stockBersih / avgPakai)
+                           : null
       // DAYA TAMPUNG = (KAPASITAS - STOCK AWAL) / KAPASITAS
       const dayaTampung  = (kapasitasTangki !== null && stokAwal !== null && kapasitasTangki > 0)
                            ? Math.round(((kapasitasTangki - stokAwal) / kapasitasTangki) * 100) / 100
