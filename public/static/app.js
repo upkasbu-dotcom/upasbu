@@ -1011,11 +1011,11 @@ async function onLapTanggalChange() {
       renderReview(lapSelectedUnit, tanggal, currentLapForm)
       showLapState('review')
     } else {
-      // Belum ada data → tampilkan form dengan auto-fill saldo awal
+      // Belum ada data → tampilkan form kosong, user wajib isi oli
       currentLapForm = {}
-      currentLapForm.stock_oli_sae40   = 'tidak menggunakan'
-      currentLapForm.stock_oli_sx      = 'tidak menggunakan'
-      currentLapForm.stock_oli_sx_plus = 'tidak menggunakan'
+      currentLapForm.stock_oli_sae40   = null
+      currentLapForm.stock_oli_sx      = null
+      currentLapForm.stock_oli_sx_plus = null
       currentLapForm.saldo_awal = null
       await autoFillSaldoAwal(tanggal)
       renderLapForm()
