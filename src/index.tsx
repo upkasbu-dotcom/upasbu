@@ -257,6 +257,27 @@ app.post('/api/mesin-terpasang', async (c) => {
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
+// Tambah mesin baru ke mesin_cache secara manual
+app.post('/api/mesin-cache/add', async (c) => {
+  try {
+    const body = await c.req.json() as {
+      id_mesin: number, up3: string, kode_unit: number, nama_unit: string,
+      mesin: string, type?: string, s_n?: string, nama_mesin?: string, terpasang?: number
+    }
+    const today = new Date().toISOString().slice(0,10)
+    await c.env.DB.prepare(`
+      INSERT OR REPLACE INTO mesin_cache
+        (id_mesin, up3, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, terpasang, cached_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?)
+    `).bind(
+      body.id_mesin, body.up3 || '', body.kode_unit, body.nama_unit,
+      body.mesin, body.type || null, body.s_n || null,
+      body.nama_mesin || body.mesin, body.terpasang || null, today
+    ).run()
+    return c.json({ success: true, id_mesin: body.id_mesin })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
 // ============================================================
 // API: MONITORING
 // ============================================================
