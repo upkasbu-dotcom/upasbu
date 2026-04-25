@@ -53,7 +53,7 @@ var OPERATOR_DATA = {
 // =============================================
 var PARAMS = [
   { key:'status_mesin',       label:'STATUS MESIN',       unit:'',     type:'select' },
-  { key:'terpasang',          label:'TERPASANG',          unit:'kW',   type:'number' },
+  { key:'terpasang',          label:'TERPASANG',          unit:'kW',   type:'readonly' },
   { key:'daya_mampu',         label:'DAYA MAMPU',         unit:'kW',   type:'number' },
   { key:'beban',              label:'BEBAN',              unit:'kW',   type:'number' },
   { key:'stand_kwh',          label:'STAND KWH',          unit:'kWh',  type:'number' },
@@ -294,6 +294,12 @@ function renderTable() {
     // Kolom-kolom parameter
     for (var pi2 = 0; pi2 < PARAMS.length; pi2++) {
       var p2  = PARAMS[pi2]
+      if (p2.type === 'readonly') {
+        // Nilai tetap dari master mesin, tidak bisa diubah
+        var masterVal = (m[p2.key] !== undefined && m[p2.key] !== null) ? m[p2.key] : '—'
+        bodyHTML += '<td style="text-align:center;font-size:0.8rem;color:#374151;font-weight:600;">' + masterVal + '</td>'
+        continue
+      }
       var val = (currentData[m.id_mesin] && currentData[m.id_mesin][p2.key] !== undefined && currentData[m.id_mesin][p2.key] !== null)
                 ? currentData[m.id_mesin][p2.key] : ''
       if (p2.type === 'select') {
@@ -331,6 +337,7 @@ function updateTableData() {
     if (!row) { renderTable(); return }
     for (var pi = 0; pi < PARAMS.length; pi++) {
       var p   = PARAMS[pi]
+      if (p.type === 'readonly') continue  // nilai tetap dari master, skip
       var val = (currentData[m.id_mesin] && currentData[m.id_mesin][p.key] !== undefined && currentData[m.id_mesin][p.key] !== null)
                 ? currentData[m.id_mesin][p.key] : ''
       var el  = row.querySelector('[data-mesin-id="' + m.id_mesin + '"][data-key="' + p.key + '"]')
@@ -394,7 +401,8 @@ async function saveAllData() {
   for (var i = 0; i < mesinList.length; i++) {
     var m = mesinList[i]
     var d = Object.assign({}, currentData[m.id_mesin] || { status_mesin: 'Operasi' })
-    d.mesin_id = m.id_mesin
+    d.mesin_id  = m.id_mesin
+    d.terpasang = m.terpasang !== undefined ? m.terpasang : null  // selalu dari master
     records.push(d)
   }
   showLoading(true,'loading-indicator')

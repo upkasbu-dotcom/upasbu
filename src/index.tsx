@@ -40,6 +40,7 @@ async function initDB(db: D1Database) {
     type        TEXT,
     s_n         TEXT,
     nama_mesin  TEXT,
+    terpasang   REAL,
     cached_at   TEXT NOT NULL
   )`).run()
 
@@ -113,6 +114,8 @@ async function initDB(db: D1Database) {
   try { await db.prepare(`ALTER TABLE lap_operasional ADD COLUMN dokumen_nama TEXT`).run() } catch(_){}
   // Tambah kolom terpasang ke data_monitoring jika belum ada (migrasi)
   try { await db.prepare(`ALTER TABLE data_monitoring ADD COLUMN terpasang REAL`).run() } catch(_){}
+  // Tambah kolom terpasang ke mesin_cache jika belum ada (migrasi)
+  try { await db.prepare(`ALTER TABLE mesin_cache ADD COLUMN terpasang REAL`).run() } catch(_){}
 }
 
 // ============================================================
@@ -152,8 +155,8 @@ async function syncMesinIfNeeded(db: D1Database): Promise<{ synced: boolean, cou
     const stmts = chunk.map((r: any) =>
       db.prepare(`
         INSERT OR REPLACE INTO mesin_cache
-          (id_mesin, up3, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, cached_at)
-        VALUES (?,?,?,?,?,?,?,?,?)
+          (id_mesin, up3, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, terpasang, cached_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
       `).bind(
         r.id_mesin,
         r.up3 || '',
@@ -163,6 +166,7 @@ async function syncMesinIfNeeded(db: D1Database): Promise<{ synced: boolean, cou
         r.type || null,
         String(r.s_n || ''),
         r.nama_mesin || r.mesin,
+        r.terpasang != null ? parseFloat(r.terpasang) : null,
         today
       )
     )
@@ -234,7 +238,7 @@ app.get('/api/mesin-unit', async (c) => {
     const kode_unit = c.req.query('kode_unit') || ''
     if (!kode_unit) return c.json({ success: false, error: 'kode_unit wajib' }, 400)
     const result = await c.env.DB.prepare(
-      `SELECT id_mesin, mesin, type, s_n, nama_mesin FROM mesin_cache WHERE kode_unit = ? ORDER BY id_mesin`
+      `SELECT id_mesin, mesin, type, s_n, nama_mesin, terpasang FROM mesin_cache WHERE kode_unit = ? ORDER BY id_mesin`
     ).bind(kode_unit).all()
     return c.json({ success: true, data: result.results })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
