@@ -210,16 +210,11 @@ async function onMonUnitChange(kodeUnit) {
 
   showLoading(true, 'loading-indicator-mesin')
   try {
-    var cachedMesin = lsGet('mesin_' + kodeUnit)
-    if (cachedMesin && Array.isArray(cachedMesin) && cachedMesin.length > 0) {
-      mesinList = cachedMesin
-    } else {
-      var res  = await fetch('/api/mesin-unit?kode_unit=' + kodeUnit)
-      var json = await res.json()
-      if (!json.success) throw new Error(json.error)
-      mesinList = json.data
-      lsSet('mesin_' + kodeUnit, mesinList)
-    }
+    // Selalu fetch fresh agar data master (terpasang, dll) selalu terkini
+    var res  = await fetch('/api/mesin-unit?kode_unit=' + kodeUnit)
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error)
+    mesinList = json.data
 
     if (mesinList.length === 0) {
       document.getElementById('info-mesin-count').textContent = 'Tidak ada mesin untuk unit ini'
