@@ -256,7 +256,7 @@ tbody td {
 }
 tbody tr:hover td { background: #f0f7ff; }
 
-.th-param { text-align: center !important; background: #1e3a5f !important; color: #fff !important; }
+.th-param { text-align: center !important; background: #1e3a5f !important; color: #fff !important; border-right: none !important; }
 .th-mesin { min-width: 100px; }
 .th-mesin-name { font-weight: 700; font-size: 0.72rem; white-space: normal; word-break: break-word; line-height: 1.3; }
 .th-mesin-meta { margin-top: 3px; display: flex; flex-direction: column; gap: 1px; }
