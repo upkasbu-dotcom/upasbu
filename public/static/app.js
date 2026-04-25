@@ -282,7 +282,7 @@ function renderTable() {
     var m = mesinList[mi]
     var sn = m.s_n ? String(m.s_n) : '-'
 
-    bodyHTML += '<tr data-mesin="' + m.id_mesin + '">'
+    bodyHTML += '<tr style="background:#fff;" data-mesin="' + m.id_mesin + '">'
     // Kolom pertama: info mesin (sticky)
     bodyHTML += '<td style="text-align:left;background:#fff;">'
     bodyHTML += '<div class="th-mesin-name" style="font-size:0.78rem;color:#374151;font-weight:700;">' + m.mesin + '</div>'

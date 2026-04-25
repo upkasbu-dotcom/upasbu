@@ -271,7 +271,7 @@ tbody tr:hover td { background: #f0f7ff; }
   border-radius: 4px;
   text-align: center;
   font-size: 0.8rem;
-  background: transparent;
+  background: #fff;
   transition: all 0.15s;
 }
 .cell-input:focus { outline: none; border-color: #3b82f6; background: #eff6ff; box-shadow: 0 0 0 2px #bfdbfe; }
