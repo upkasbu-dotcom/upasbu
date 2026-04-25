@@ -240,7 +240,7 @@ tbody td:first-child {
   font-size: 0.75rem;
   color: #374151;
   padding: 7px 10px;
-  border-right: 2px solid #c9d8ea;
+  border-right: none;
   border-bottom: 1px solid #e2e8f0;
   min-width: 170px;
   max-width: 220px;
