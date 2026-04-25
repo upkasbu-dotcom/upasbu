@@ -62,7 +62,7 @@ var PARAMS = [
   { key:'phasa_s',            label:'PHASA S',            unit:'A',    type:'number' },
   { key:'phasa_t',            label:'PHASA T',            unit:'A',    type:'number' },
   { key:'tek_oli',            label:'TEK. OLI',           unit:'bar',  type:'number' },
-  { key:'temp_air_pendingin', label:'TEMP AIR PENDINGIN', unit:'°C',   type:'number' },
+  { key:'temp_air_pendingin', label:'TEMP. AIR', unit:'°C',   type:'number' },
   { key:'tegangan',           label:'TEGANGAN',           unit:'V',    type:'number' },
   { key:'frequency',          label:'FREQUENCY',          unit:'Hz',   type:'number' },
   { key:'cos_phi',            label:'COS PHI',            unit:'',     type:'number' },
