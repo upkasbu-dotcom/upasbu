@@ -244,6 +244,19 @@ app.get('/api/mesin-unit', async (c) => {
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
+// Update nilai terpasang per mesin (batch)
+app.post('/api/mesin-terpasang', async (c) => {
+  try {
+    const body = await c.req.json() as { updates: { id_mesin: number, terpasang: number }[] }
+    if (!body.updates || !Array.isArray(body.updates)) return c.json({ success: false, error: 'updates wajib array' }, 400)
+    const stmts = body.updates.map((u: { id_mesin: number, terpasang: number }) =>
+      c.env.DB.prepare(`UPDATE mesin_cache SET terpasang = ? WHERE id_mesin = ?`).bind(u.terpasang, u.id_mesin)
+    )
+    await c.env.DB.batch(stmts)
+    return c.json({ success: true, updated: body.updates.length })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
 // ============================================================
 // API: MONITORING
 // ============================================================
