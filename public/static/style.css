@@ -261,7 +261,7 @@ tbody tr:hover td { background: #f0f7ff; }
 .th-mesin-name { font-weight: 700; font-size: 0.72rem; white-space: normal; word-break: break-word; line-height: 1.3; }
 .th-mesin-meta { margin-top: 3px; display: flex; flex-direction: column; gap: 1px; }
 .th-id  { font-size: 0.62rem; color: #93c5fd; }
-.th-sn  { font-size: 0.6rem;  color: #7dd3fc; }
+.th-sn  { font-size: 0.6rem;  color: #111827; }
 .param-label { color: #374151; }
 .param-unit  { margin-left: 3px; color: #94a3b8; font-size: 0.68rem; }
 .cell-input {
