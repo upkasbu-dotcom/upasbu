@@ -567,7 +567,7 @@ async function loadData() {
 // Bangun teks WA format LAPORAN BEBAN PUNCAK PLTD
 // Build teks WA untuk SATU unit
 // Build WA dari data memori lokal (records sudah ada, tidak perlu fetch DB lagi)
-async function buildUnitWAFromMemory(tanggal, periode, kodeUnit, records) {
+async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
   if (!records || records.length === 0) return null
 
   // Hitung H-1
