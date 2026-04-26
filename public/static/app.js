@@ -306,7 +306,7 @@ function renderTable() {
         }
         bodyHTML += '</select></td>'
       } else {
-        bodyHTML += '<td><input type="number" step="any" class="cell-input" placeholder="—"'
+        bodyHTML += '<td><input type="number" step="1" min="0" class="cell-input" placeholder="—"'
         bodyHTML += ' data-mesin-id="' + m.id_mesin + '" data-key="' + p2.key + '"'
         bodyHTML += ' value="' + val + '"'
         bodyHTML += ' oninput="setCellValue(' + m.id_mesin + ',\'' + p2.key + '\',this.value)"/></td>'
@@ -319,7 +319,7 @@ function renderTable() {
 
 function setCellValue(mesinId, field, value) {
   if (!currentData[mesinId]) currentData[mesinId] = {}
-  currentData[mesinId][field] = value === '' ? null : (field === 'status_mesin' ? value : parseFloat(value))
+  currentData[mesinId][field] = value === '' ? null : (field === 'status_mesin' ? value : Math.round(parseFloat(value)))
 }
 
 // Update hanya nilai input tanpa re-render seluruh tabel
