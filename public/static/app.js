@@ -874,9 +874,10 @@ async function saveAllData() {
     // Build WA dari records di memori (unit+tanggal+periode aktif)
     var teksMon = await buildWAFromMemory(tanggal, periode, monSelectedUnit, records)
     if (teksMon) {
-      // Tampilkan di modal preview agar user bisa copy/kirim
-      currentTeksLaporan = teksMon
-      document.getElementById('kirim-preview-text').textContent = teksMon
+      // Strip zero-width space — tidak diperlukan di modal/URL, cegah WA memotong teks
+      var teksMonBersih = teksMon.replace(/\u200B/g, '')
+      currentTeksLaporan = teksMonBersih
+      document.getElementById('kirim-preview-text').textContent = teksMonBersih
       document.getElementById('modal-kirim').classList.remove('hidden')
     } else {
       showToast('Tidak ada data untuk dikirim ke WA','info')
@@ -1838,7 +1839,8 @@ function fallbackCopy(teks) {
 }
 
 function kirimWhatsApp() {
-  var teks = document.getElementById('kirim-preview-text').textContent
+  // Hapus zero-width space sebelum encode ke URL agar WA tidak memotong teks
+  var teks = document.getElementById('kirim-preview-text').textContent.replace(/\u200B/g, '')
   window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(teks), '_blank')
 }
 
