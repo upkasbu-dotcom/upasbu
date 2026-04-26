@@ -1014,9 +1014,9 @@ app.get('/', (c) => {
   <title>DILAN [DIGITALISASI LAPORAN]</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
-  <link rel="preload" href="/static/style.css?v=20260426h" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260426h" as="script"/>
-  <link href="/static/style.css?v=20260426h" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260426i" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260426i" as="script"/>
+  <link href="/static/style.css?v=20260426i" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -1071,9 +1071,7 @@ app.get('/', (c) => {
           ${periodeOptions}
         </select>
       </div>
-      <button class="btn btn-outline" onclick="showRiwayat()" id="btn-riwayat" disabled style="opacity:0.5;cursor:not-allowed;">
-        <i class="fas fa-history"></i><span class="btn-text"> Riwayat</span>
-      </button>
+
       <div id="loading-indicator-mesin" class="hidden"><span class="spinner"></span></div>
       <div id="loading-indicator" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-mesin-count"></span>
@@ -1215,7 +1213,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<script src="/static/app.js?v=20260426h" defer></script>
+<script src="/static/app.js?v=20260426i" defer></script>
 </body>
 </html>`
   const resp = c.html(html)
