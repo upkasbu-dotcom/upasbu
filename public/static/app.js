@@ -1835,11 +1835,23 @@ function fallbackCopy(teks) {
   document.body.removeChild(ta); showToast('Teks berhasil disalin!','success')
 }
 
-function kirimWhatsApp() {
+async function kirimWhatsApp() {
   var teks = document.getElementById('kirim-preview-text').textContent
-  // Tambah timestamp agar URL selalu unik - cegah browser/WA pakai cache URL lama
-  var ts = Date.now()
-  window.open('https://api.whatsapp.com/send?phone=6282252147896&text=' + encodeURIComponent(teks) + '&_ts=' + ts, '_blank')
+  try {
+    // Simpan teks ke server dulu, dapat ID pendek
+    var res = await fetch('/api/wa-text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ teks: teks, phone: '6282252147896' })
+    })
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error)
+    // Buka redirect server — teks tidak lewat URL browser
+    window.open('/api/wa-redirect/' + json.id, '_blank')
+  } catch(e) {
+    // Fallback: URL langsung
+    window.open('https://api.whatsapp.com/send?phone=6282252147896&text=' + encodeURIComponent(teks), '_blank')
+  }
 }
 
 async function showRiwayatLap() {
