@@ -391,12 +391,66 @@ function renderTable() {
 // Cek apakah field bertipe decimal
 var DECIMAL_FIELDS = { tek_oli: true, frequency: true, cos_phi: true }
 
+// Auto-fill keterangan dari H-1 saat status berubah ke non Operasi/Standby
+async function autoFillKeteranganH1(mesinId) {
+  // Hanya fill jika keterangan masih kosong
+  var ketNow = currentData[mesinId] ? currentData[mesinId].keterangan : null
+  if (ketNow && String(ketNow).trim() !== '') return  // sudah ada keterangan, skip
+
+  var tanggal = document.getElementById('sel-tanggal').value
+  var periode  = document.getElementById('sel-periode').value
+  if (!tanggal) return
+
+  // Hitung H-1
+  var parts = tanggal.split('-')
+  var d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))
+  d.setDate(d.getDate() - 1)
+  var tanggalH1 = d.getFullYear() + '-'
+    + String(d.getMonth() + 1).padStart(2, '0') + '-'
+    + String(d.getDate()).padStart(2, '0')
+
+  try {
+    // Coba dengan periode dulu
+    var res = await fetch('/api/monitoring?tanggal=' + tanggalH1 + '&periode=' + periode + '&kode_unit=' + monSelectedUnit)
+    var js  = await res.json()
+    var rows = (js.success && js.data) ? js.data : []
+
+    // Jika tidak ada hasil dengan periode, coba tanpa periode
+    if (rows.length === 0) {
+      var res2 = await fetch('/api/monitoring?tanggal=' + tanggalH1 + '&kode_unit=' + monSelectedUnit)
+      var js2  = await res2.json()
+      rows = (js2.success && js2.data) ? js2.data : []
+    }
+
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].mesin_id === mesinId && rows[i].keterangan) {
+        // Isi keterangan di currentData
+        if (!currentData[mesinId]) currentData[mesinId] = {}
+        currentData[mesinId].keterangan = rows[i].keterangan
+        // Isi juga di input element
+        var tbody = document.getElementById('table-body')
+        if (tbody) {
+          var el = tbody.querySelector('[data-mesin-id="' + mesinId + '"][data-key="keterangan"]')
+          if (el) el.value = rows[i].keterangan
+        }
+        break
+      }
+    }
+  } catch(e) { /* abaikan jika gagal */ }
+}
+
 function setCellValue(mesinId, field, value) {
   if (!currentData[mesinId]) currentData[mesinId] = {}
   if (field === 'status_mesin' || field === 'keterangan') {
     currentData[mesinId][field] = value === '' ? null : value
     // Terapkan rule enable/disable saat status berubah
-    if (field === 'status_mesin') applyStatusRule(mesinId, value || 'Operasi')
+    if (field === 'status_mesin') {
+      applyStatusRule(mesinId, value || 'Operasi')
+      // Auto-fill keterangan dari H-1 jika status != Operasi/Standby dan keterangan kosong
+      if (value !== 'Operasi' && value !== 'Standby') {
+        autoFillKeteranganH1(mesinId)
+      }
+    }
   } else if (DECIMAL_FIELDS[field]) {
     // Konversi koma → titik untuk disimpan sebagai float
     var norm = String(value).replace(',', '.')
