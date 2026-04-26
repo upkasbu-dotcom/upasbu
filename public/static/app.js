@@ -466,12 +466,10 @@ function applyStatusRule(mesinId, status) {
       el.classList.remove('cell-required')
       td.classList.add('td-disabled')
       td.classList.remove('td-required')
-      // Kosongkan nilai dan currentData saat di-disable agar tidak ikut tersimpan
-      if (el.value !== '' && el.value !== '—') {
-        el.value = ''
-        if (!currentData[mesinId]) currentData[mesinId] = {}
-        currentData[mesinId][p.key] = null
-      }
+      // Isi 0 dan simpan ke currentData saat di-disable
+      el.value = '0'
+      if (!currentData[mesinId]) currentData[mesinId] = {}
+      currentData[mesinId][p.key] = 0
     } else {
       el.classList.remove('cell-disabled')
       td.classList.remove('td-disabled')
