@@ -566,6 +566,39 @@ async function loadData() {
 
 // Bangun teks WA format LAPORAN BEBAN PUNCAK PLTD
 // Build teks WA untuk SATU unit
+// Build WA dari data memori lokal (records sudah ada, tidak perlu fetch DB lagi)
+async function buildUnitWAFromMemory(tanggal, periode, kodeUnit, records) {
+  if (!records || records.length === 0) return null
+
+  // Hitung H-1
+  var tglDate = new Date(tanggal)
+  tglDate.setDate(tglDate.getDate() - 1)
+  var tanggalH1 = tglDate.toISOString().split('T')[0]
+
+  // Fetch lap-operasional H-1 → nama_operator
+  var lapMap = {}
+  try {
+    var resLap  = await fetch('/api/lap-operasional?tanggal=' + tanggalH1)
+    var jsonLap = await resLap.json()
+    if (jsonLap.success && jsonLap.data) {
+      for (var li = 0; li < jsonLap.data.length; li++) lapMap[jsonLap.data[li].kode_unit] = jsonLap.data[li]
+    }
+  } catch(e) {}
+
+  // Fetch data-stok H-1 → stok_akhir + safety_stock
+  var stokMap = {}
+  try {
+    var resStok  = await fetch('/api/data-stok?tanggal=' + tanggalH1)
+    var jsonStok = await resStok.json()
+    if (jsonStok.success && jsonStok.data) {
+      for (var si = 0; si < jsonStok.data.length; si++) stokMap[jsonStok.data[si].kode_unit] = jsonStok.data[si]
+    }
+  } catch(e) {}
+
+  // Gunakan mesinList (sudah ada di memori) sebagai allMesinCache untuk unit ini
+  return buildUnitWAText(tanggal, periode, kodeUnit, records, mesinList, stokMap, lapMap)
+}
+
 // kodeUnit: integer, allMesinCache: array semua mesin dari cache, stokMap: map kode_unit->stok, lapMap: map kode_unit->lap
 function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, stokMap, lapMap) {
   var namaUnit = ''
@@ -758,8 +791,8 @@ async function saveAllData() {
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
     showToast('Data berhasil disimpan! (' + json.saved + ' mesin). Menyiapkan WA...','success')
-    // Auto kirim ke WA: hanya unit+tanggal+periode yang sedang aktif
-    var teksMon = await buildMonitoringWAText(tanggal, periode, monSelectedUnit)
+    // Build WA langsung dari records di memori (tidak fetch ulang DB)
+    var teksMon = await buildUnitWAFromMemory(tanggal, periode, monSelectedUnit, records)
     if (teksMon) {
       window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(teksMon), '_blank')
     } else {
