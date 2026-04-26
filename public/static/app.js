@@ -1,10 +1,10 @@
-// Blokir karakter non-integer pada input angka
+// Blokir karakter non-integer pada input angka (titik, koma, e, E, +, -)
 function blockDecimal(e) {
   if (e.key === '.' || e.key === ',' || e.key === 'e' || e.key === 'E' || e.key === '+' || e.key === '-') {
     e.preventDefault()
   }
 }
-// Sanitasi value setelah input (hapus titik/koma yang lolos)
+// Sanitasi value setelah input (hapus semua selain angka)
 function sanitizeInt(el) {
   var v = el.value.replace(/[^0-9]/g, '')
   if (el.value !== v) el.value = v
@@ -13,6 +13,35 @@ function sanitizeInt(el) {
 function blockPaste(e) {
   var txt = (e.clipboardData || window.clipboardData).getData('text')
   if (/[^0-9]/.test(txt)) e.preventDefault()
+}
+
+// ── Desimal (TEK. OLI, FREQUENCY, COS PHI) ──
+// Ijinkan angka + satu tanda koma sebagai pemisah desimal
+function blockDecimalField(e) {
+  // Blokir titik, e, E, +, - ; tapi IJINKAN koma
+  if (e.key === '.' || e.key === 'e' || e.key === 'E' || e.key === '+' || e.key === '-') {
+    e.preventDefault()
+  }
+  // Hanya satu koma yang diizinkan
+  if (e.key === ',' && e.target.value.indexOf(',') !== -1) {
+    e.preventDefault()
+  }
+}
+// Sanitasi: hanya angka dan satu koma, tidak boleh diawali koma
+function sanitizeDecimal(el) {
+  var v = el.value
+  // hapus karakter selain angka dan koma
+  v = v.replace(/[^0-9,]/g, '')
+  // hapus koma lebih dari satu
+  var parts = v.split(',')
+  if (parts.length > 2) v = parts[0] + ',' + parts.slice(1).join('')
+  if (el.value !== v) el.value = v
+}
+// Blokir paste desimal yang tidak valid
+function blockPasteDecimal(e) {
+  var txt = (e.clipboardData || window.clipboardData).getData('text')
+  // Ijinkan angka, koma, titik (titik akan dikonversi saat simpan)
+  if (/[^0-9,.]/.test(txt)) e.preventDefault()
 }
 
 // =============================================
@@ -78,11 +107,11 @@ var PARAMS = [
   { key:'phasa_r',            label:'PHASA R',            unit:'A',    type:'number' },
   { key:'phasa_s',            label:'PHASA S',            unit:'A',    type:'number' },
   { key:'phasa_t',            label:'PHASA T',            unit:'A',    type:'number' },
-  { key:'tek_oli',            label:'TEK. OLI',           unit:'bar',  type:'number' },
+  { key:'tek_oli',            label:'TEK. OLI',           unit:'bar',  type:'decimal' },
   { key:'temp_air_pendingin', label:'TEMP. AIR', unit:'°C',   type:'number' },
   { key:'tegangan',           label:'TEGANGAN',           unit:'V',    type:'number' },
-  { key:'frequency',          label:'FREQUENCY',          unit:'Hz',   type:'number' },
-  { key:'cos_phi',            label:'COS PHI',            unit:'',     type:'number' },
+  { key:'frequency',          label:'FREQUENCY',          unit:'Hz',   type:'decimal' },
+  { key:'cos_phi',            label:'COS PHI',            unit:'',     type:'decimal' },
   { key:'jam_kerja_mesin',    label:'JAM KERJA MESIN',    unit:'Jam',  type:'number' },
   { key:'kwh_produksi',       label:'KWH PRODUKSI',       unit:'kWh',  type:'number' },
   { key:'pemakaian_bbm',      label:'PEMAKAIAN BBM',      unit:'ltr',  type:'number' },
@@ -323,6 +352,16 @@ function renderTable() {
           bodyHTML += '<option value="' + sopt + '"' + sel + '>' + sopt + '</option>'
         }
         bodyHTML += '</select></td>'
+      } else if (p2.type === 'decimal') {
+        // Input desimal: koma sebagai pemisah, keyboard desimal di mobile
+        var dispVal = (val !== null && val !== undefined && val !== '') ? String(val).replace('.', ',') : ''
+        bodyHTML += '<td><input type="text" inputmode="decimal" class="cell-input" placeholder="—"'
+        bodyHTML += ' data-mesin-id="' + m.id_mesin + '" data-key="' + p2.key + '"'
+        bodyHTML += ' autocomplete="off" autocorrect="off" spellcheck="false"'
+        bodyHTML += ' value="' + dispVal + '"'
+        bodyHTML += ' onkeydown="blockDecimalField(event)"'
+        bodyHTML += ' onpaste="blockPasteDecimal(event)"'
+        bodyHTML += ' oninput="sanitizeDecimal(this);setCellValue(' + m.id_mesin + ',\'' + p2.key + '\',this.value)"/></td>'
       } else if (p2.type === 'text') {
         bodyHTML += '<td><input type="text" class="cell-input cell-input-text" placeholder="—"'
         bodyHTML += ' data-mesin-id="' + m.id_mesin + '" data-key="' + p2.key + '"'
@@ -346,10 +385,17 @@ function renderTable() {
   tbody.innerHTML = bodyHTML
 }
 
+// Cek apakah field bertipe decimal
+var DECIMAL_FIELDS = { tek_oli: true, frequency: true, cos_phi: true }
+
 function setCellValue(mesinId, field, value) {
   if (!currentData[mesinId]) currentData[mesinId] = {}
   if (field === 'status_mesin' || field === 'keterangan') {
     currentData[mesinId][field] = value === '' ? null : value
+  } else if (DECIMAL_FIELDS[field]) {
+    // Konversi koma → titik untuk disimpan sebagai float
+    var norm = String(value).replace(',', '.')
+    currentData[mesinId][field] = norm === '' || norm === '.' ? null : parseFloat(norm)
   } else {
     var cleaned = String(value).replace(/[^0-9]/g, '')
     currentData[mesinId][field] = cleaned === '' ? null : parseInt(cleaned, 10)
@@ -375,6 +421,9 @@ function updateTableData() {
         el.value = val || 'Operasi'
       } else if (p.type === 'text') {
         el.value = val !== null && val !== undefined ? String(val) : ''
+      } else if (p.type === 'decimal') {
+        // Tampilkan dengan koma sebagai pemisah desimal
+        el.value = val !== null && val !== undefined && val !== '' ? String(val).replace('.', ',') : ''
       } else {
         el.value = val
       }
