@@ -1879,14 +1879,27 @@ async function kirimWhatsApp() {
   if (!teks) { showToast('Tidak ada data','info'); return }
   // Update popup supaya sesuai
   document.getElementById('kirim-preview-text').textContent = teks
-  // Buka WA
-  var a = document.createElement('a')
-  a.href = 'https://api.whatsapp.com/send?phone=6282252147896&text=' + encodeURIComponent(teks)
-  a.target = '_blank'
-  a.rel = 'noopener'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
+  // Simpan ke server lalu buka redirect — teks tidak lewat browser cache
+  try {
+    var res = await fetch('/api/wa-text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ teks: teks, phone: '6282252147896' })
+    })
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error)
+    // Buka via form submit ke tab baru — bypass semua cache browser/WA
+    var form = document.createElement('form')
+    form.method = 'GET'
+    form.action = '/api/wa-redirect/' + json.id
+    form.target = '_blank'
+    document.body.appendChild(form)
+    form.submit()
+    document.body.removeChild(form)
+  } catch(e) {
+    // Fallback langsung
+    window.open('https://api.whatsapp.com/send?phone=6282252147896&text=' + encodeURIComponent(teks), '_blank')
+  }
 }
 
 async function showRiwayatLap() {
