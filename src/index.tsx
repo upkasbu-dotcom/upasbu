@@ -345,12 +345,19 @@ app.get('/api/monitoring', async (c) => {
   try {
     const tanggal   = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
     const periode   = c.req.query('periode') || null
+    const jam       = c.req.query('jam')     || null   // filter jam eksak
     const kode_unit = c.req.query('kode_unit') || null
 
     let query = `SELECT dm.* FROM data_monitoring dm WHERE dm.tanggal = ?`
     const params: any[] = [tanggal]
-    // Filter periode (range jam)
-    query += ` AND ${periodeJamFilter(periode)}`
+    if (jam) {
+      // Filter jam eksak (misal jam=12 atau jam=18)
+      query += ` AND dm.jam = ?`
+      params.push(jam)
+    } else {
+      // Filter periode (range jam)
+      query += ` AND ${periodeJamFilter(periode)}`
+    }
     if (kode_unit) {
       query += ` AND dm.mesin_id IN (SELECT id_mesin FROM mesin_cache WHERE kode_unit = ?)`
       params.push(kode_unit)
@@ -1007,9 +1014,9 @@ app.get('/', (c) => {
   <title>DILAN [DIGITALISASI LAPORAN]</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
-  <link rel="preload" href="/static/style.css?v=20260426d" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260426d" as="script"/>
-  <link href="/static/style.css?v=20260426d" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260426e" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260426e" as="script"/>
+  <link href="/static/style.css?v=20260426e" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -1211,7 +1218,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<script src="/static/app.js?v=20260426d" defer></script>
+<script src="/static/app.js?v=20260426e" defer></script>
 </body>
 </html>`
   const resp = c.html(html)
