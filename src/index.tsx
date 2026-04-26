@@ -1007,9 +1007,9 @@ app.get('/', (c) => {
   <title>DILAN [DIGITALISASI LAPORAN]</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
-  <link rel="preload" href="/static/style.css?v=20260426c" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260426c" as="script"/>
-  <link href="/static/style.css?v=20260426c" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260426d" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260426d" as="script"/>
+  <link href="/static/style.css?v=20260426d" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -1211,7 +1211,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<script src="/static/app.js?v=20260426c" defer></script>
+<script src="/static/app.js?v=20260426d" defer></script>
 </body>
 </html>`
   const resp = c.html(html)

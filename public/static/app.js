@@ -654,12 +654,24 @@ function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, sto
   return lines.join('\n')
 }
 
-// Build teks WA lengkap: fetch semua data tersimpan (semua unit) untuk tanggal+periode
+// Build teks WA lengkap: fetch semua data tersimpan (semua unit) untuk tanggal
+// Tidak filter by periode — ambil semua jam, deduplicate per mesin (ambil record terakhir)
 async function buildMonitoringWAText(tanggal, periode) {
-  // 1. Fetch semua data monitoring untuk tanggal+periode (semua unit)
-  var resData  = await fetch('/api/monitoring?tanggal=' + tanggal + '&periode=' + periode)
+  // 1. Fetch semua data monitoring untuk tanggal (semua unit, semua jam)
+  var resData  = await fetch('/api/monitoring?tanggal=' + tanggal)
   var jsonData = await resData.json()
   if (!jsonData.success || !jsonData.data || jsonData.data.length === 0) return null
+
+  // Deduplicate: per mesin_id ambil record dengan jam terbesar (terbaru)
+  var latestMap = {}
+  for (var di = 0; di < jsonData.data.length; di++) {
+    var row = jsonData.data[di]
+    var mid = row.mesin_id
+    if (!latestMap[mid] || row.jam > latestMap[mid].jam) {
+      latestMap[mid] = row
+    }
+  }
+  jsonData.data = Object.values(latestMap)
 
   // 2. Fetch semua mesin cache (semua unit) untuk lookup nama/sn/dt
   var resMesin  = await fetch('/api/mesin-cache')
