@@ -176,8 +176,9 @@ document.addEventListener('DOMContentLoaded', function() {
   lapTglEl.value = yesterdayStr
   lapTglEl.max   = yesterdayStr
   document.getElementById('data-tanggal').value  = yesterdayStr
-  var hr = String(today.getHours()).padStart(2,'0') + ':00'
-  document.getElementById('sel-jam').value = hr
+  // Auto-set periode: Siang (06-17) atau Malam (18-05)
+  var hr = today.getHours()
+  document.getElementById('sel-periode').value = (hr >= 6 && hr <= 17) ? 'siang' : 'malam'
   // Hapus cache UP3-based lama agar tidak konflik
   try {
     Object.keys(localStorage).forEach(function(k) {
@@ -525,13 +526,13 @@ function updateTableData() {
 
 async function loadData() {
   var tanggal = document.getElementById('sel-tanggal').value
-  var jam     = document.getElementById('sel-jam').value
+  var periode = document.getElementById('sel-periode').value
   if (!tanggal) { showToast('Pilih tanggal terlebih dahulu','info'); return }
   if (!monSelectedUnit) { showToast('Pilih unit terlebih dahulu','info'); return }
 
   showLoading(true,'loading-indicator')
   try {
-    var res  = await fetch('/api/monitoring?tanggal=' + tanggal + '&jam=' + jam + '&kode_unit=' + monSelectedUnit)
+    var res  = await fetch('/api/monitoring?tanggal=' + tanggal + '&periode=' + periode + '&kode_unit=' + monSelectedUnit)
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
 
@@ -558,13 +559,13 @@ async function loadData() {
     var cnt = json.data.length
     document.getElementById('info-record').textContent = cnt > 0
       ? cnt + ' mesin sudah ada data'
-      : 'Belum ada data untuk ' + tanggal + ' ' + jam
+      : 'Belum ada data untuk ' + tanggal + ' (' + periode + ')'
   } catch(e) { showToast('Gagal memuat data: ' + e.message,'error') }
   finally { showLoading(false,'loading-indicator') }
 }
 
 // Bangun teks WA ringkasan LOG SHEET
-function buildMonitoringWAText(tanggal, jam, records) {
+function buildMonitoringWAText(tanggal, periode, records) {
   var namaUnit = ''
   for (var ui = 0; ui < UNIT_DATA.length; ui++) {
     if (UNIT_DATA[ui].kode_unit === monSelectedUnit) { namaUnit = UNIT_DATA[ui].nama_unit; break }
@@ -574,7 +575,8 @@ function buildMonitoringWAText(tanggal, jam, records) {
   lines.push('📊 *LOG SHEET MONITORING PLTD*')
   lines.push('Unit : ' + (namaUnit || monSelectedUnit))
   lines.push('Tanggal : ' + tanggal)
-  lines.push('Jam : ' + jam + ':00')
+  var periodeLabel = periode === 'siang' ? '☀️ Siang (06:00–17:00)' : '🌙 Malam (18:00–05:00)'
+  lines.push('Periode : ' + periodeLabel)
   lines.push('─────────────────────')
   for (var i = 0; i < records.length; i++) {
     var r = records[i]
@@ -600,10 +602,15 @@ function buildMonitoringWAText(tanggal, jam, records) {
   return lines.join('\n')
 }
 
+// Ambil jam sekarang (untuk disimpan ke DB per record)
+function getCurrentJamStr() {
+  return String(new Date().getHours()).padStart(2,'0')
+}
+
 async function saveAllData() {
   var tanggal = document.getElementById('sel-tanggal').value
-  var jam     = document.getElementById('sel-jam').value
-  if (!tanggal || !jam) { showToast('Pilih tanggal dan jam','info'); return }
+  var periode = document.getElementById('sel-periode').value
+  if (!tanggal || !periode) { showToast('Pilih tanggal dan periode','info'); return }
   if (mesinList.length === 0) { showToast('Pilih unit terlebih dahulu','info'); return }
 
   var records = []
@@ -619,13 +626,13 @@ async function saveAllData() {
     var res  = await fetch('/api/monitoring/batch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tanggal: tanggal, jam: jam, records: records })
+      body: JSON.stringify({ tanggal: tanggal, jam: getCurrentJamStr(), records: records })
     })
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
     showToast('Data berhasil disimpan! (' + json.saved + ' mesin). Membuka WA...','success')
     // Auto kirim ke WA setelah simpan berhasil
-    var teksMon = buildMonitoringWAText(tanggal, jam, records)
+    var teksMon = buildMonitoringWAText(tanggal, periode, records)
     window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(teksMon), '_blank')
   } catch(e) { showToast('Gagal menyimpan: ' + e.message,'error') }
   finally { showLoading(false,'loading-indicator') }
@@ -658,13 +665,7 @@ async function showRiwayat() {
 async function selectRiwayat(tanggal) {
   document.getElementById('sel-tanggal').value = tanggal
   closeModal('modal-riwayat')
-  try {
-    var res  = await fetch('/api/monitoring/jam?tanggal=' + tanggal)
-    var json = await res.json()
-    if (json.success && json.data.length > 0) {
-      document.getElementById('sel-jam').value = json.data[0].jam
-    }
-  } catch(e) {}
+  // Periode tetap sesuai pilihan user, tidak perlu auto-detect dari riwayat
   await loadData()
 }
 

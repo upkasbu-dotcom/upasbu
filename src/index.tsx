@@ -323,15 +323,24 @@ app.post('/api/mesin-cache/add', async (c) => {
 // ============================================================
 // API: MONITORING
 // ============================================================
+// Jam range per periode
+// Siang: 06-17, Malam: 18-23 DAN 00-05 (cross-midnight)
+function periodeJamFilter(periode: string | null): string {
+  if (periode === 'siang') return `(CAST(dm.jam AS INTEGER) >= 6 AND CAST(dm.jam AS INTEGER) <= 17)`
+  if (periode === 'malam') return `(CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)`
+  return '1=1'  // tanpa filter
+}
+
 app.get('/api/monitoring', async (c) => {
   try {
-    const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
-    const jam = c.req.query('jam') || null
+    const tanggal   = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
+    const periode   = c.req.query('periode') || null
     const kode_unit = c.req.query('kode_unit') || null
 
     let query = `SELECT dm.* FROM data_monitoring dm WHERE dm.tanggal = ?`
     const params: any[] = [tanggal]
-    if (jam) { query += ' AND dm.jam = ?'; params.push(jam) }
+    // Filter periode (range jam)
+    query += ` AND ${periodeJamFilter(periode)}`
     if (kode_unit) {
       query += ` AND dm.mesin_id IN (SELECT id_mesin FROM mesin_cache WHERE kode_unit = ?)`
       params.push(kode_unit)
@@ -974,10 +983,11 @@ app.get('/api/laporan', async (c) => {
 // SERVE MAIN PAGE
 // ============================================================
 app.get('/', (c) => {
-  const jamOptions = Array.from({length:24}, (_,i) => {
-    const h = String(i).padStart(2,'0') + ':00'
-    return `<option value="${h}">${h}</option>`
-  }).join('')
+  // Periode: Siang (06-17) dan Malam (18-05)
+  const periodeOptions = `
+    <option value="siang">🌤 Siang (06:00 – 17:00)</option>
+    <option value="malam">🌙 Malam (18:00 – 05:00)</option>
+  `
 
   const html = `<!DOCTYPE html>
 <html lang="id">
@@ -1039,9 +1049,9 @@ app.get('/', (c) => {
         <input type="date" id="sel-tanggal" class="toolbar-input"/>
       </div>
       <div class="toolbar-group">
-        <label class="toolbar-label">Jam</label>
-        <select id="sel-jam" class="toolbar-select" style="max-width:100px;">
-          ${jamOptions}
+        <label class="toolbar-label">Periode</label>
+        <select id="sel-periode" class="toolbar-select" style="max-width:200px;">
+          ${periodeOptions}
         </select>
       </div>
       <button class="btn btn-primary" onclick="loadData()" id="btn-tampilkan" disabled style="opacity:0.5;cursor:not-allowed;">
