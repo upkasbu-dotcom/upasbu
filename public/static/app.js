@@ -564,41 +564,118 @@ async function loadData() {
   finally { showLoading(false,'loading-indicator') }
 }
 
-// Bangun teks WA ringkasan LOG SHEET
-function buildMonitoringWAText(tanggal, periode, records) {
+// Bangun teks WA format LAPORAN BEBAN PUNCAK PLTD
+async function buildMonitoringWAText(tanggal, periode, records) {
+  // Cari info unit
   var namaUnit = ''
+  var idUnit   = monSelectedUnit || ''
   for (var ui = 0; ui < UNIT_DATA.length; ui++) {
     if (UNIT_DATA[ui].kode_unit === monSelectedUnit) { namaUnit = UNIT_DATA[ui].nama_unit; break }
   }
-  var now = new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })
+
+  // Ambil operator dari currentLapForm jika tersedia, atau kosong
+  var namaOperator = (typeof currentLapForm !== 'undefined' && currentLapForm.nama_operator)
+    ? currentLapForm.nama_operator : '-'
+
+  var periodeLabel = periode === 'siang' ? 'SIANG' : 'MALAM'
+
   var lines = []
-  lines.push('📊 *LOG SHEET MONITORING PLTD*')
-  lines.push('Unit : ' + (namaUnit || monSelectedUnit))
-  lines.push('Tanggal : ' + tanggal)
-  var periodeLabel = periode === 'siang' ? '☀️ Siang (06:00–17:00)' : '🌙 Malam (18:00–05:00)'
-  lines.push('Periode : ' + periodeLabel)
-  lines.push('─────────────────────')
+  lines.push('LAPORAN BEBAN PUNCAK PLTD')
+  lines.push('(' + periodeLabel + ')')
+  lines.push('(' + (namaUnit || idUnit) + ')')
+  lines.push('id unit: ' + idUnit)
+  lines.push('tgl : ' + tanggal)
+  lines.push('nama operator: ' + namaOperator)
+  lines.push('')
+
+  // Hitung total DM dan beban untuk resume
+  var totalDM    = 0
+  var totalBeban = 0
+  var maxDM      = 0
+
   for (var i = 0; i < records.length; i++) {
-    var r = records[i]
-    // Cari nama mesin dari mesinList
-    var nama = r.mesin_id
+    var r   = records[i]
+    var m   = null
     for (var mi = 0; mi < mesinList.length; mi++) {
-      if (mesinList[mi].id_mesin === r.mesin_id) { nama = mesinList[mi].mesin; break }
+      if (mesinList[mi].id_mesin === r.mesin_id) { m = mesinList[mi]; break }
     }
-    var status = r.status_mesin || 'Operasi'
-    var line = (i + 1) + '. ' + nama + '\n   Status: ' + status
+    var namaMesin = m ? m.mesin  : String(r.mesin_id)
+    var snMesin   = m ? (m.s_n || '-')   : '-'
+    var dtMesin   = m ? (m.terpasang != null ? m.terpasang : (r.terpasang != null ? r.terpasang : '-')) : (r.terpasang != null ? r.terpasang : '-')
+    var status    = r.status_mesin || 'Operasi'
+
+    var dm = (r.daya_mampu != null) ? parseFloat(r.daya_mampu) : 0
+    var bp = (r.beban      != null) ? parseFloat(r.beban)      : 0
     if (status === 'Operasi') {
-      if (r.daya_mampu != null) line += ' | DM: ' + r.daya_mampu + ' kW'
-      if (r.beban != null)      line += ' | Beban: ' + r.beban + ' kW'
+      totalDM    += dm
+      totalBeban += bp
+      if (dm > maxDM) maxDM = dm
     } else if (status === 'Standby') {
-      if (r.daya_mampu != null) line += ' | DM: ' + r.daya_mampu + ' kW'
-    } else {
-      if (r.keterangan)         line += '\n   Ket: ' + r.keterangan
+      totalDM += dm
+      if (dm > maxDM) maxDM = dm
     }
-    lines.push(line)
+
+    lines.push((i + 1) + '. ' + namaMesin)
+    lines.push('id mesin: ' + r.mesin_id)
+    lines.push('sn: ' + snMesin)
+    lines.push('dt: ' + dtMesin)
+    lines.push('dm: ' + (r.daya_mampu != null ? r.daya_mampu : '-'))
+    lines.push('bp: ' + (r.beban != null ? r.beban : '-'))
+    lines.push('br: 0')
+    lines.push('phasa r: ' + (r.phasa_r != null ? r.phasa_r : '-'))
+    lines.push('phasa s: ' + (r.phasa_s != null ? r.phasa_s : '-'))
+    lines.push('phasa t: ' + (r.phasa_t != null ? r.phasa_t : '-'))
+    // Format decimal: simpan dengan koma untuk tampilan
+    var tekOliStr   = (r.tek_oli   != null) ? String(r.tek_oli).replace('.', ',')   : '-'
+    var tempAirStr  = (r.temp_air_pendingin != null) ? r.temp_air_pendingin : '-'
+    var cosPhiStr   = (r.cos_phi   != null) ? String(r.cos_phi).replace('.', ',')   : '-'
+    lines.push('tek oli: ' + tekOliStr)
+    lines.push('temp mesin: ' + tempAirStr)
+    lines.push('cos phi: ' + cosPhiStr)
+    lines.push('jam start: 0')
+    lines.push('jam stop: 0')
+    lines.push('status mesin: ' + status)
+    lines.push('penyebab: ' + (r.keterangan || ''))
+    lines.push('')
   }
-  lines.push('─────────────────────')
-  lines.push('Dikirim: ' + now)
+
+  // Resume
+  var cadangan  = totalDM - totalBeban
+  var padam     = cadangan < 0 ? Math.abs(cadangan) : 0
+  var statusSys = 'normal'
+  if (cadangan < 0) {
+    statusSys = 'defisit'
+  } else if (maxDM > 0 && cadangan < maxDM) {
+    statusSys = 'siaga'
+  }
+
+  // Ambil data stok BBM dari API
+  var stokBbm  = '-'
+  var hopBbm   = '-'
+  try {
+    var resStok  = await fetch('/api/data-stok?tanggal=' + tanggal)
+    var jsonStok = await resStok.json()
+    if (jsonStok.success && jsonStok.data) {
+      for (var si = 0; si < jsonStok.data.length; si++) {
+        if (jsonStok.data[si].kode_unit === monSelectedUnit) {
+          var unitStok = jsonStok.data[si]
+          stokBbm = (unitStok.stok_awal != null) ? unitStok.stok_awal : '-'
+          hopBbm  = (unitStok.safety_stock != null) ? unitStok.safety_stock : '-'
+          break
+        }
+      }
+    }
+  } catch(e) { /* ignore, tetap kirim tanpa stok */ }
+
+  lines.push('resume')
+  lines.push('dm pasok: ' + totalDM)
+  lines.push('bp terlayani: ' + totalBeban)
+  lines.push('padam: ' + padam)
+  lines.push('cadangan: ' + cadangan)
+  lines.push('status: ' + statusSys)
+  lines.push('stok bbm: ' + stokBbm)
+  lines.push('hop bbm: ' + hopBbm)
+
   return lines.join('\n')
 }
 
@@ -632,7 +709,7 @@ async function saveAllData() {
     if (!json.success) throw new Error(json.error)
     showToast('Data berhasil disimpan! (' + json.saved + ' mesin). Membuka WA...','success')
     // Auto kirim ke WA setelah simpan berhasil
-    var teksMon = buildMonitoringWAText(tanggal, periode, records)
+    var teksMon = await buildMonitoringWAText(tanggal, periode, records)
     window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(teksMon), '_blank')
   } catch(e) { showToast('Gagal menyimpan: ' + e.message,'error') }
   finally { showLoading(false,'loading-indicator') }
