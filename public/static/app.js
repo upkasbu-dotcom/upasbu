@@ -433,16 +433,20 @@ function applyStatusRule(mesinId, status) {
     var isRequired = false
 
     if (status === 'Operasi') {
-      // keterangan: disabled; semua lain: wajib
+      // keterangan: aktif opsional; semua lain: wajib
       if (p.key === 'keterangan') {
-        isDisabled = true
+        isDisabled = false
+        isRequired = false
       } else {
         isRequired = true
       }
     } else if (status === 'Standby') {
-      // daya_mampu: wajib; semua lain: disabled (termasuk keterangan)
+      // daya_mampu: wajib; keterangan: aktif opsional; semua lain: disabled
       if (p.key === 'daya_mampu') {
         isRequired = true
+      } else if (p.key === 'keterangan') {
+        isDisabled = false
+        isRequired = false
       } else {
         isDisabled = true
       }
