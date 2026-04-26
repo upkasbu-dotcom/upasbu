@@ -1002,8 +1002,8 @@ app.get('/api/laporan', async (c) => {
 app.get('/', (c) => {
   // Periode: Siang (06-17) dan Malam (18-05)
   const periodeOptions = `
-    <option value="siang">siang</option>
-    <option value="malam">malam</option>
+    <option value="siang">SIANG</option>
+    <option value="malam">MALAM</option>
   `
 
   const html = `<!DOCTYPE html>
@@ -1014,9 +1014,9 @@ app.get('/', (c) => {
   <title>DILAN [DIGITALISASI LAPORAN]</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
-  <link rel="preload" href="/static/style.css?v=20260426f" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260426f" as="script"/>
-  <link href="/static/style.css?v=20260426f" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260426g" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260426g" as="script"/>
+  <link href="/static/style.css?v=20260426g" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -1218,7 +1218,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<script src="/static/app.js?v=20260426f" defer></script>
+<script src="/static/app.js?v=20260426g" defer></script>
 </body>
 </html>`
   const resp = c.html(html)
