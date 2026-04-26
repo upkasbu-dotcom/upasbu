@@ -570,33 +570,109 @@ async function loadData() {
 async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
   if (!records || records.length === 0) return null
 
-  // Hitung H-1
+  // H-1
   var tglDate = new Date(tanggal)
   tglDate.setDate(tglDate.getDate() - 1)
   var tanggalH1 = tglDate.toISOString().split('T')[0]
 
-  // Fetch lap-operasional H-1 → nama_operator
-  var lapMap = {}
+  // Fetch nama_operator dari lap-operasional H-1 unit ini
+  var namaOperator = '-'
   try {
-    var resLap  = await fetch('/api/lap-operasional?tanggal=' + tanggalH1)
-    var jsonLap = await resLap.json()
-    if (jsonLap.success && jsonLap.data) {
-      for (var li = 0; li < jsonLap.data.length; li++) lapMap[jsonLap.data[li].kode_unit] = jsonLap.data[li]
+    var rL = await fetch('/api/lap-operasional?tanggal=' + tanggalH1 + '&kode_unit=' + kodeUnit)
+    var jL = await rL.json()
+    if (jL.success && jL.data && jL.data.length > 0) namaOperator = jL.data[0].nama_operator || '-'
+  } catch(e) {}
+
+  // Fetch stok BBM H-1 untuk unit ini
+  var stokBbm = '-', hopBbm = '-'
+  try {
+    var rS = await fetch('/api/data-stok?tanggal=' + tanggalH1)
+    var jS = await rS.json()
+    if (jS.success && jS.data) {
+      for (var si = 0; si < jS.data.length; si++) {
+        // paksa integer untuk perbandingan
+        if (parseInt(jS.data[si].kode_unit) === parseInt(kodeUnit)) {
+          stokBbm = jS.data[si].stok_awal    != null ? jS.data[si].stok_awal    : '-'
+          hopBbm  = jS.data[si].safety_stock != null ? jS.data[si].safety_stock : '-'
+          break
+        }
+      }
     }
   } catch(e) {}
 
-  // Fetch data-stok H-1 → stok_akhir + safety_stock
-  var stokMap = {}
-  try {
-    var resStok  = await fetch('/api/data-stok?tanggal=' + tanggalH1)
-    var jsonStok = await resStok.json()
-    if (jsonStok.success && jsonStok.data) {
-      for (var si = 0; si < jsonStok.data.length; si++) stokMap[jsonStok.data[si].kode_unit] = jsonStok.data[si]
-    }
-  } catch(e) {}
+  // Nama unit
+  var namaUnit = String(kodeUnit)
+  for (var ui = 0; ui < UNIT_DATA.length; ui++) {
+    if (UNIT_DATA[ui].kode_unit === parseInt(kodeUnit)) { namaUnit = UNIT_DATA[ui].nama_unit; break }
+  }
 
-  // Gunakan mesinList (sudah ada di memori) sebagai allMesinCache untuk unit ini
-  return buildUnitWAText(tanggal, periode, kodeUnit, records, mesinList, stokMap, lapMap)
+  var periodeLabel = periode === 'siang' ? 'siang' : 'malam'
+  var lines = []
+  lines.push('LAPORAN BEBAN PUNCAK PLTD')
+  lines.push('\u200B' + periodeLabel)
+  lines.push('\u200B' + namaUnit)
+  lines.push('id unit: ' + kodeUnit)
+  lines.push('tgl : ' + tanggal)
+  lines.push('nama operator: ' + namaOperator)
+  lines.push('')
+
+  var totalDM = 0, totalBeban = 0, maxDM = 0
+
+  for (var i = 0; i < records.length; i++) {
+    var r = records[i]
+    // cari dari mesinList di memori
+    var m = null
+    for (var mi = 0; mi < mesinList.length; mi++) {
+      if (parseInt(mesinList[mi].id_mesin) === parseInt(r.mesin_id)) { m = mesinList[mi]; break }
+    }
+    var namaMesin = m ? m.mesin : String(r.mesin_id)
+    var snMesin   = m ? (m.s_n || '-') : '-'
+    var dtMesin   = (m && m.terpasang != null) ? m.terpasang : (r.terpasang != null ? r.terpasang : '-')
+    var status    = r.status_mesin || 'Operasi'
+
+    var dm = r.daya_mampu != null ? parseFloat(r.daya_mampu) : 0
+    var bp = r.beban      != null ? parseFloat(r.beban)      : 0
+    if (status === 'Operasi')      { totalDM += dm; totalBeban += bp; if (dm > maxDM) maxDM = dm }
+    else if (status === 'Standby') { totalDM += dm; if (dm > maxDM) maxDM = dm }
+
+    var tekOliStr = r.tek_oli            != null ? String(r.tek_oli).replace('.', ',') : '-'
+    var tempStr   = r.temp_air_pendingin != null ? r.temp_air_pendingin                : '-'
+    var cosPhiStr = r.cos_phi            != null ? String(r.cos_phi).replace('.', ',') : '-'
+
+    lines.push((i + 1) + '. ' + namaMesin)
+    lines.push('\u200bid mesin: ' + r.mesin_id)
+    lines.push('\u200bsn: ' + snMesin)
+    lines.push('\u200bdt: ' + dtMesin)
+    lines.push('\u200bdm: ' + (r.daya_mampu != null ? r.daya_mampu : '-'))
+    lines.push('\u200bbp: ' + (r.beban      != null ? r.beban      : '-'))
+    lines.push('\u200bbr: 0')
+    lines.push('\u200bphasa r: '    + (r.phasa_r != null ? r.phasa_r : '-'))
+    lines.push('\u200bphasa s: '    + (r.phasa_s != null ? r.phasa_s : '-'))
+    lines.push('\u200bphasa t: '    + (r.phasa_t != null ? r.phasa_t : '-'))
+    lines.push('\u200btek oli: '    + tekOliStr)
+    lines.push('\u200btemp mesin: ' + tempStr)
+    lines.push('\u200bcos phi: '    + cosPhiStr)
+    lines.push('\u200bjam start: 0')
+    lines.push('\u200bjam stop: 0')
+    lines.push('\u200bstatus mesin: ' + status.toLowerCase())
+    lines.push('\u200bpenyebab: '    + (r.keterangan || ''))
+    lines.push('')
+  }
+
+  var cadangan  = totalDM - totalBeban
+  var padam     = cadangan < 0 ? Math.abs(cadangan) : 0
+  var statusSys = cadangan < 0 ? 'defisit' : (maxDM > 0 && cadangan < maxDM ? 'siaga' : 'normal')
+
+  lines.push('\u200bresume')
+  lines.push('\u200bdm pasok: '     + totalDM)
+  lines.push('\u200bbp terlayani: ' + totalBeban)
+  lines.push('\u200bpadam: '        + padam)
+  lines.push('\u200bcadangan: '     + cadangan)
+  lines.push('\u200bstatus: '       + statusSys)
+  lines.push('\u200bstok bbm: '     + stokBbm)
+  lines.push('\u200bhop bbm: '      + hopBbm)
+
+  return lines.join('\n')
 }
 
 // kodeUnit: integer, allMesinCache: array semua mesin dari cache, stokMap: map kode_unit->stok, lapMap: map kode_unit->lap
