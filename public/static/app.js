@@ -1,3 +1,20 @@
+// Blokir karakter non-integer pada input angka
+function blockDecimal(e) {
+  if (e.key === '.' || e.key === ',' || e.key === 'e' || e.key === 'E' || e.key === '+' || e.key === '-') {
+    e.preventDefault()
+  }
+}
+// Sanitasi value setelah input (hapus titik/koma yang lolos)
+function sanitizeInt(el) {
+  var v = el.value.replace(/[^0-9]/g, '')
+  if (el.value !== v) el.value = v
+}
+// Blokir paste yang mengandung karakter non-integer
+function blockPaste(e) {
+  var txt = (e.clipboardData || window.clipboardData).getData('text')
+  if (/[^0-9]/.test(txt)) e.preventDefault()
+}
+
 // =============================================
 // DATA UNIT STATIS (fallback / seed awal)
 // =============================================
@@ -309,7 +326,9 @@ function renderTable() {
         bodyHTML += '<td><input type="number" step="1" min="0" class="cell-input" placeholder="—"'
         bodyHTML += ' data-mesin-id="' + m.id_mesin + '" data-key="' + p2.key + '"'
         bodyHTML += ' value="' + val + '"'
-        bodyHTML += ' oninput="setCellValue(' + m.id_mesin + ',\'' + p2.key + '\',this.value)"/></td>'
+        bodyHTML += ' onkeydown="blockDecimal(event)"'
+        bodyHTML += ' onpaste="blockPaste(event)"'
+        bodyHTML += ' oninput="sanitizeInt(this);setCellValue(' + m.id_mesin + ',\'' + p2.key + '\',this.value)"/></td>'
       }
     }
     bodyHTML += '</tr>'
