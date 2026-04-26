@@ -565,118 +565,141 @@ async function loadData() {
 }
 
 // Bangun teks WA format LAPORAN BEBAN PUNCAK PLTD
-async function buildMonitoringWAText(tanggal, periode, records) {
-  // Cari info unit
+// Build teks WA untuk SATU unit
+// kodeUnit: integer, allMesinCache: array semua mesin dari cache, stokMap: map kode_unit->stok
+function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, stokMap) {
   var namaUnit = ''
-  var idUnit   = monSelectedUnit || ''
   for (var ui = 0; ui < UNIT_DATA.length; ui++) {
-    if (UNIT_DATA[ui].kode_unit === monSelectedUnit) { namaUnit = UNIT_DATA[ui].nama_unit; break }
+    if (UNIT_DATA[ui].kode_unit === kodeUnit) { namaUnit = UNIT_DATA[ui].nama_unit; break }
   }
-
-  // Ambil operator dari currentLapForm jika tersedia, atau kosong
-  var namaOperator = (typeof currentLapForm !== 'undefined' && currentLapForm.nama_operator)
-    ? currentLapForm.nama_operator : '-'
-
   var periodeLabel = periode === 'siang' ? 'siang' : 'malam'
 
   var lines = []
   lines.push('LAPORAN BEBAN PUNCAK PLTD')
   lines.push('\u200B' + periodeLabel)
-  lines.push('\u200B' + (namaUnit || idUnit))
-  lines.push('id unit: ' + idUnit)
+  lines.push('\u200B' + (namaUnit || String(kodeUnit)))
+  lines.push('id unit: ' + kodeUnit)
   lines.push('tgl : ' + tanggal)
-  lines.push('nama operator: ' + namaOperator)
+  lines.push('nama operator: 0')
   lines.push('')
 
-  // Hitung total DM dan beban untuk resume
-  var totalDM    = 0
-  var totalBeban = 0
-  var maxDM      = 0
+  var totalDM = 0, totalBeban = 0, maxDM = 0
 
   for (var i = 0; i < records.length; i++) {
-    var r   = records[i]
-    var m   = null
-    for (var mi = 0; mi < mesinList.length; mi++) {
-      if (mesinList[mi].id_mesin === r.mesin_id) { m = mesinList[mi]; break }
+    var r = records[i]
+    // Cari mesin dari allMesinCache (semua unit)
+    var m = null
+    for (var mi = 0; mi < allMesinCache.length; mi++) {
+      if (allMesinCache[mi].id_mesin === r.mesin_id) { m = allMesinCache[mi]; break }
     }
-    var namaMesin = m ? m.mesin  : String(r.mesin_id)
-    var snMesin   = m ? (m.s_n || '-')   : '-'
+    var namaMesin = m ? m.mesin : String(r.mesin_id)
+    var snMesin   = m ? (m.s_n || '-') : '-'
     var dtMesin   = m ? (m.terpasang != null ? m.terpasang : (r.terpasang != null ? r.terpasang : '-')) : (r.terpasang != null ? r.terpasang : '-')
     var status    = r.status_mesin || 'Operasi'
 
     var dm = (r.daya_mampu != null) ? parseFloat(r.daya_mampu) : 0
     var bp = (r.beban      != null) ? parseFloat(r.beban)      : 0
     if (status === 'Operasi') {
-      totalDM    += dm
-      totalBeban += bp
+      totalDM += dm; totalBeban += bp
       if (dm > maxDM) maxDM = dm
     } else if (status === 'Standby') {
       totalDM += dm
       if (dm > maxDM) maxDM = dm
     }
 
+    var tekOliStr = (r.tek_oli   != null) ? String(r.tek_oli).replace('.', ',') : '-'
+    var tempStr   = (r.temp_air_pendingin != null) ? r.temp_air_pendingin : '-'
+    var cosPhiStr = (r.cos_phi   != null) ? String(r.cos_phi).replace('.', ',') : '-'
+
     lines.push((i + 1) + '. ' + namaMesin)
-    lines.push('​id mesin: ' + r.mesin_id)
-    lines.push('​sn: ' + snMesin)
-    lines.push('​dt: ' + dtMesin)
-    lines.push('​dm: ' + (r.daya_mampu != null ? r.daya_mampu : '-'))
-    lines.push('​bp: ' + (r.beban != null ? r.beban : '-'))
-    lines.push('​br: 0')
-    lines.push('​phasa r: ' + (r.phasa_r != null ? r.phasa_r : '-'))
-    lines.push('​phasa s: ' + (r.phasa_s != null ? r.phasa_s : '-'))
-    lines.push('​phasa t: ' + (r.phasa_t != null ? r.phasa_t : '-'))
-    // Format decimal: simpan dengan koma untuk tampilan
-    var tekOliStr   = (r.tek_oli   != null) ? String(r.tek_oli).replace('.', ',')   : '-'
-    var tempAirStr  = (r.temp_air_pendingin != null) ? r.temp_air_pendingin : '-'
-    var cosPhiStr   = (r.cos_phi   != null) ? String(r.cos_phi).replace('.', ',')   : '-'
-    lines.push('​tek oli: ' + tekOliStr)
-    lines.push('​temp mesin: ' + tempAirStr)
-    lines.push('​cos phi: ' + cosPhiStr)
-    lines.push('​jam start: 0')
-    lines.push('​jam stop: 0')
-    lines.push('​status mesin: ' + status.toLowerCase())
-    lines.push('​penyebab: ' + (r.keterangan || ''))
+    lines.push('\u200bid mesin: ' + r.mesin_id)
+    lines.push('\u200bsn: ' + snMesin)
+    lines.push('\u200bdt: ' + dtMesin)
+    lines.push('\u200bdm: ' + (r.daya_mampu != null ? r.daya_mampu : '-'))
+    lines.push('\u200bbp: ' + (r.beban != null ? r.beban : '-'))
+    lines.push('\u200bbr: 0')
+    lines.push('\u200bphasa r: ' + (r.phasa_r != null ? r.phasa_r : '-'))
+    lines.push('\u200bphasa s: ' + (r.phasa_s != null ? r.phasa_s : '-'))
+    lines.push('\u200bphasa t: ' + (r.phasa_t != null ? r.phasa_t : '-'))
+    lines.push('\u200btek oli: ' + tekOliStr)
+    lines.push('\u200btemp mesin: ' + tempStr)
+    lines.push('\u200bcos phi: ' + cosPhiStr)
+    lines.push('\u200bjam start: 0')
+    lines.push('\u200bjam stop: 0')
+    lines.push('\u200bstatus mesin: ' + status.toLowerCase())
+    lines.push('\u200bpenyebab: ' + (r.keterangan || ''))
     lines.push('')
   }
 
   // Resume
   var cadangan  = totalDM - totalBeban
   var padam     = cadangan < 0 ? Math.abs(cadangan) : 0
-  var statusSys = 'normal'
-  if (cadangan < 0) {
-    statusSys = 'defisit'
-  } else if (maxDM > 0 && cadangan < maxDM) {
-    statusSys = 'siaga'
+  var statusSys = cadangan < 0 ? 'defisit' : (maxDM > 0 && cadangan < maxDM ? 'siaga' : 'normal')
+
+  var stokBbm = '-', hopBbm = '-'
+  if (stokMap && stokMap[kodeUnit]) {
+    stokBbm = stokMap[kodeUnit].stok_awal  != null ? stokMap[kodeUnit].stok_awal  : '-'
+    hopBbm  = stokMap[kodeUnit].safety_stock != null ? stokMap[kodeUnit].safety_stock : '-'
   }
 
-  // Ambil data stok BBM dari API
-  var stokBbm  = '-'
-  var hopBbm   = '-'
+  lines.push('\u200bresume')
+  lines.push('\u200bdm pasok: ' + totalDM)
+  lines.push('\u200bbp terlayani: ' + totalBeban)
+  lines.push('\u200bpadam: ' + padam)
+  lines.push('\u200bcadangan: ' + cadangan)
+  lines.push('\u200bstatus: ' + statusSys)
+  lines.push('\u200bstok bbm: ' + stokBbm)
+  lines.push('\u200bhop bbm: ' + hopBbm)
+
+  return lines.join('\n')
+}
+
+// Build teks WA lengkap: fetch semua data tersimpan (semua unit) untuk tanggal+periode
+async function buildMonitoringWAText(tanggal, periode) {
+  // 1. Fetch semua data monitoring untuk tanggal+periode (semua unit)
+  var resData  = await fetch('/api/monitoring?tanggal=' + tanggal + '&periode=' + periode)
+  var jsonData = await resData.json()
+  if (!jsonData.success || !jsonData.data || jsonData.data.length === 0) return null
+
+  // 2. Fetch semua mesin cache (semua unit) untuk lookup nama/sn/dt
+  var resMesin  = await fetch('/api/mesin-cache')
+  var jsonMesin = await resMesin.json()
+  var allMesinCache = (jsonMesin.success && jsonMesin.data) ? jsonMesin.data : []
+
+  // 3. Fetch stok BBM semua unit
+  var stokMap = {}
   try {
     var resStok  = await fetch('/api/data-stok?tanggal=' + tanggal)
     var jsonStok = await resStok.json()
     if (jsonStok.success && jsonStok.data) {
       for (var si = 0; si < jsonStok.data.length; si++) {
-        if (jsonStok.data[si].kode_unit === monSelectedUnit) {
-          var unitStok = jsonStok.data[si]
-          stokBbm = (unitStok.stok_awal != null) ? unitStok.stok_awal : '-'
-          hopBbm  = (unitStok.safety_stock != null) ? unitStok.safety_stock : '-'
-          break
-        }
+        stokMap[jsonStok.data[si].kode_unit] = jsonStok.data[si]
       }
     }
-  } catch(e) { /* ignore, tetap kirim tanpa stok */ }
+  } catch(e) { /* lanjut tanpa stok */ }
 
-  lines.push('​resume')
-  lines.push('​dm pasok: ' + totalDM)
-  lines.push('​bp terlayani: ' + totalBeban)
-  lines.push('​padam: ' + padam)
-  lines.push('​cadangan: ' + cadangan)
-  lines.push('​status: ' + statusSys)
-  lines.push('​stok bbm: ' + stokBbm)
-  lines.push('​hop bbm: ' + hopBbm)
+  // 4. Group records per kode_unit (mesin_id → kode_unit via allMesinCache)
+  var unitMap = {}   // kode_unit -> [records]
+  var unitOrder = [] // urutan unit muncul
+  for (var i = 0; i < jsonData.data.length; i++) {
+    var r = jsonData.data[i]
+    var kodeUnit = null
+    for (var mi = 0; mi < allMesinCache.length; mi++) {
+      if (allMesinCache[mi].id_mesin === r.mesin_id) { kodeUnit = allMesinCache[mi].kode_unit; break }
+    }
+    if (kodeUnit === null) kodeUnit = 0
+    if (!unitMap[kodeUnit]) { unitMap[kodeUnit] = []; unitOrder.push(kodeUnit) }
+    unitMap[kodeUnit].push(r)
+  }
 
-  return lines.join('\n')
+  // 5. Build teks per unit, gabung dengan separator
+  var parts = []
+  for (var ui = 0; ui < unitOrder.length; ui++) {
+    var ku = unitOrder[ui]
+    parts.push(buildUnitWAText(tanggal, periode, ku, unitMap[ku], allMesinCache, stokMap))
+  }
+
+  return parts.join('\n\n---\n\n')
 }
 
 // Ambil jam sekarang (untuk disimpan ke DB per record)
@@ -707,10 +730,14 @@ async function saveAllData() {
     })
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
-    showToast('Data berhasil disimpan! (' + json.saved + ' mesin). Membuka WA...','success')
-    // Auto kirim ke WA setelah simpan berhasil
-    var teksMon = await buildMonitoringWAText(tanggal, periode, records)
-    window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(teksMon), '_blank')
+    showToast('Data berhasil disimpan! (' + json.saved + ' mesin). Menyiapkan WA...','success')
+    // Auto kirim ke WA: fetch semua data tersimpan (semua unit) untuk tanggal+periode
+    var teksMon = await buildMonitoringWAText(tanggal, periode)
+    if (teksMon) {
+      window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(teksMon), '_blank')
+    } else {
+      showToast('Tidak ada data untuk dikirim ke WA','info')
+    }
   } catch(e) { showToast('Gagal menyimpan: ' + e.message,'error') }
   finally { showLoading(false,'loading-indicator') }
 }

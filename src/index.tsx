@@ -300,6 +300,16 @@ app.post('/api/mesin-terpasang', async (c) => {
 })
 
 // Tambah mesin baru ke mesin_cache secara manual
+// GET semua mesin cache (untuk lookup nama/sn/kode_unit di frontend)
+app.get('/api/mesin-cache', async (c) => {
+  try {
+    const rows = await c.env.DB.prepare(
+      `SELECT id_mesin, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, terpasang FROM mesin_cache ORDER BY kode_unit, id_mesin`
+    ).all()
+    return c.json({ success: true, data: rows.results })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
 app.post('/api/mesin-cache/add', async (c) => {
   try {
     const body = await c.req.json() as {
@@ -997,9 +1007,9 @@ app.get('/', (c) => {
   <title>DILAN [DIGITALISASI LAPORAN]</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
-  <link rel="preload" href="/static/style.css?v=20260426b" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260426b" as="script"/>
-  <link href="/static/style.css?v=20260426b" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260426c" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260426c" as="script"/>
+  <link href="/static/style.css?v=20260426c" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -1201,7 +1211,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<script src="/static/app.js?v=20260426b" defer></script>
+<script src="/static/app.js?v=20260426c" defer></script>
 </body>
 </html>`
   const resp = c.html(html)
