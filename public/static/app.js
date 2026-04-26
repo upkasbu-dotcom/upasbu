@@ -326,11 +326,15 @@ function renderTable() {
       } else if (p2.type === 'text') {
         bodyHTML += '<td><input type="text" class="cell-input cell-input-text" placeholder="—"'
         bodyHTML += ' data-mesin-id="' + m.id_mesin + '" data-key="' + p2.key + '"'
+        bodyHTML += ' autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"'
         bodyHTML += ' value="' + (val !== null && val !== undefined ? String(val).replace(/"/g,'&quot;') : '') + '"'
         bodyHTML += ' oninput="setCellValue(' + m.id_mesin + ',\'' + p2.key + '\',this.value)"/></td>'
       } else {
-        bodyHTML += '<td><input type="number" step="1" min="0" class="cell-input" placeholder="—"'
+        // Gunakan type="text" + inputmode="numeric" agar keyboard angka muncul di mobile
+        // dan kita bisa blokir titik secara penuh (type=number di iOS masih bisa input ".")
+        bodyHTML += '<td><input type="text" inputmode="numeric" pattern="[0-9]*" class="cell-input" placeholder="—"'
         bodyHTML += ' data-mesin-id="' + m.id_mesin + '" data-key="' + p2.key + '"'
+        bodyHTML += ' autocomplete="off" autocorrect="off" spellcheck="false"'
         bodyHTML += ' value="' + val + '"'
         bodyHTML += ' onkeydown="blockDecimal(event)"'
         bodyHTML += ' onpaste="blockPaste(event)"'
@@ -347,7 +351,8 @@ function setCellValue(mesinId, field, value) {
   if (field === 'status_mesin' || field === 'keterangan') {
     currentData[mesinId][field] = value === '' ? null : value
   } else {
-    currentData[mesinId][field] = value === '' ? null : Math.round(parseFloat(value))
+    var cleaned = String(value).replace(/[^0-9]/g, '')
+    currentData[mesinId][field] = cleaned === '' ? null : parseInt(cleaned, 10)
   }
 }
 
