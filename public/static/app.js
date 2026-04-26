@@ -459,6 +459,17 @@ function setCellValue(mesinId, field, value) {
     var cleaned = String(value).replace(/[^0-9]/g, '')
     currentData[mesinId][field] = cleaned === '' ? null : parseInt(cleaned, 10)
   }
+  // Hapus highlight error saat user mulai mengisi
+  if (value !== '' && value !== null && value !== undefined) {
+    var tbody = document.getElementById('table-body')
+    if (tbody) {
+      var el = tbody.querySelector('[data-mesin-id="' + mesinId + '"][data-key="' + field + '"]')
+      if (el) {
+        el.classList.remove('cell-error')
+        el.parentElement.classList.remove('td-error')
+      }
+    }
+  }
 }
 
 // =============================================
@@ -975,6 +986,56 @@ async function saveAllData() {
   var periode = document.getElementById('sel-periode').value
   if (!tanggal || !periode) { showToast('Pilih tanggal dan periode','info'); return }
   if (mesinList.length === 0) { showToast('Pilih unit terlebih dahulu','info'); return }
+
+  // Validasi: semua field yang tidak disabled wajib terisi
+  var errors = []
+  var tbody = document.getElementById('table-body')
+  for (var vi = 0; vi < mesinList.length; vi++) {
+    var vm = mesinList[vi]
+    var vd = currentData[vm.id_mesin] || {}
+    var vstatus = vd.status_mesin || 'Operasi'
+    for (var pi = 0; pi < PARAMS.length; pi++) {
+      var vp = PARAMS[pi]
+      if (vp.type === 'readonly' || vp.type === 'select') continue
+      // Tentukan apakah field ini wajib berdasarkan status
+      var vRequired = false
+      if (vstatus === 'Operasi') {
+        vRequired = (vp.key !== 'keterangan')
+      } else if (vstatus === 'Standby') {
+        vRequired = (vp.key === 'daya_mampu' || vp.key === 'jam_kerja_mesin' || vp.key === 'kwh_produksi' || vp.key === 'pemakaian_bbm')
+      } else {
+        vRequired = (vp.key === 'keterangan')
+      }
+      if (!vRequired) continue
+      // Cek nilai di currentData
+      var vval = vd[vp.key]
+      var isEmpty = (vval === null || vval === undefined || String(vval).trim() === '')
+      if (isEmpty) {
+        errors.push(vm.nama_mesin + ': kolom "' + vp.label + '" wajib diisi')
+        // Highlight cell merah
+        if (tbody) {
+          var vel = tbody.querySelector('[data-mesin-id="' + vm.id_mesin + '"][data-key="' + vp.key + '"]')
+          if (vel) {
+            vel.classList.add('cell-error')
+            vel.parentElement.classList.add('td-error')
+          }
+        }
+      } else {
+        // Hapus highlight jika sudah terisi
+        if (tbody) {
+          var vel = tbody.querySelector('[data-mesin-id="' + vm.id_mesin + '"][data-key="' + vp.key + '"]')
+          if (vel) {
+            vel.classList.remove('cell-error')
+            vel.parentElement.classList.remove('td-error')
+          }
+        }
+      }
+    }
+  }
+  if (errors.length > 0) {
+    showToast('Lengkapi data: ' + errors[0] + (errors.length > 1 ? ' (+' + (errors.length-1) + ' lainnya)' : ''), 'error')
+    return
+  }
 
   var records = []
   for (var i = 0; i < mesinList.length; i++) {
