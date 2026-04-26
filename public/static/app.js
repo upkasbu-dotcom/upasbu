@@ -588,25 +588,6 @@ async function loadData() {
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
 
-    // Reset ke default
-    for (var i = 0; i < mesinList.length; i++) {
-      currentData[mesinList[i].id_mesin] = { status_mesin: 'Operasi' }
-    }
-    // Isi dari DB
-    for (var i = 0; i < json.data.length; i++) {
-      var row = json.data[i]
-      currentData[row.mesin_id] = {
-        terpasang: row.terpasang,
-        daya_mampu: row.daya_mampu, beban: row.beban,
-        stand_kwh: row.stand_kwh, stand_bbm: row.stand_bbm,
-        phasa_r: row.phasa_r, phasa_s: row.phasa_s, phasa_t: row.phasa_t,
-        tek_oli: row.tek_oli, temp_air_pendingin: row.temp_air_pendingin,
-        tegangan: row.tegangan, frequency: row.frequency, cos_phi: row.cos_phi,
-        jam_kerja_mesin: row.jam_kerja_mesin, status_mesin: row.status_mesin,
-        kwh_produksi: row.kwh_produksi, pemakaian_bbm: row.pemakaian_bbm,
-        keterangan: row.keterangan
-      }
-    }
     // Hitung tanggal H-1
     var tglParts = tanggal.split('-')
     var tglDate = new Date(parseInt(tglParts[0]), parseInt(tglParts[1]) - 1, parseInt(tglParts[2]))
@@ -615,47 +596,67 @@ async function loadData() {
       + String(tglDate.getMonth() + 1).padStart(2, '0') + '-'
       + String(tglDate.getDate()).padStart(2, '0')
 
-    // Kumpulkan mesin yang belum ada data hari ini (perlu auto-fill status dari H-1)
-    var mesinTodayIds = []
-    for (var i = 0; i < json.data.length; i++) mesinTodayIds.push(json.data[i].mesin_id)
-    var mesinNoData = []
+    // Step 1: Reset semua mesin ke default Operasi
     for (var i = 0; i < mesinList.length; i++) {
-      if (mesinTodayIds.indexOf(mesinList[i].id_mesin) === -1) mesinNoData.push(mesinList[i].id_mesin)
+      currentData[mesinList[i].id_mesin] = { status_mesin: 'Operasi' }
     }
 
-    // Fetch H-1 untuk: auto-fill status semua mesin tanpa data hari ini
-    //                   + auto-fill keterangan mesin non Operasi/Standby yang keterangan kosong
+    // Step 2: Fetch H-1 dan terapkan status + keterangan ke semua mesin
     try {
       var resH1 = await fetch('/api/monitoring?tanggal=' + tanggalH1 + '&periode=' + periode + '&kode_unit=' + monSelectedUnit)
       var jsonH1 = await resH1.json()
       var rowsH1 = (jsonH1.success && jsonH1.data) ? jsonH1.data : []
-
       // Fallback tanpa periode jika tidak ada hasil
       if (rowsH1.length === 0) {
         var resH1b = await fetch('/api/monitoring?tanggal=' + tanggalH1 + '&kode_unit=' + monSelectedUnit)
         var jsonH1b = await resH1b.json()
         rowsH1 = (jsonH1b.success && jsonH1b.data) ? jsonH1b.data : []
       }
-
       for (var hi = 0; hi < rowsH1.length; hi++) {
         var rH1 = rowsH1[hi]
         var mH1 = rH1.mesin_id
-
-        // 1. Mesin tanpa data hari ini → ambil status dari H-1 (default Operasi jika H-1 tidak ada)
-        if (mesinNoData.indexOf(mH1) !== -1) {
-          if (!currentData[mH1]) currentData[mH1] = {}
-          currentData[mH1].status_mesin = rH1.status_mesin || 'Operasi'
-        }
-
-        // 2. Auto-fill keterangan dari H-1 jika status non Operasi/Standby dan keterangan kosong
-        var stNow  = (currentData[mH1] && currentData[mH1].status_mesin) || 'Operasi'
-        var ketNow = currentData[mH1] ? currentData[mH1].keterangan : null
-        if (stNow !== 'Operasi' && stNow !== 'Standby' && (!ketNow || String(ketNow).trim() === '') && rH1.keterangan) {
-          if (!currentData[mH1]) currentData[mH1] = {}
+        if (!currentData[mH1]) currentData[mH1] = {}
+        // Terapkan status dari H-1 sebagai default awal
+        currentData[mH1].status_mesin = rH1.status_mesin || 'Operasi'
+        // Terapkan keterangan dari H-1 jika non Operasi/Standby
+        if (rH1.status_mesin && rH1.status_mesin !== 'Operasi' && rH1.status_mesin !== 'Standby' && rH1.keterangan) {
           currentData[mH1].keterangan = rH1.keterangan
         }
       }
     } catch(e) { /* abaikan jika gagal */ }
+
+    // Step 3: Timpa dengan data hari ini dari DB
+    // Jika data hari ini status='Operasi' dan semua field = 0/null (belum diisi manual),
+    // pertahankan status dari H-1; jika sudah ada nilai isi → pakai data hari ini sepenuhnya
+    for (var i = 0; i < json.data.length; i++) {
+      var row = json.data[i]
+      var mid = row.mesin_id
+      // Deteksi apakah data hari ini "belum diisi" (semua 0 atau null, status Operasi)
+      var isDefaultData = (row.status_mesin === 'Operasi')
+        && !row.daya_mampu && !row.beban && !row.stand_kwh && !row.stand_bbm
+        && !row.phasa_r && !row.phasa_s && !row.phasa_t
+        && !row.tek_oli && !row.temp_air_pendingin && !row.tegangan
+        && !row.frequency && !row.cos_phi && !row.jam_kerja_mesin
+        && !row.kwh_produksi && !row.pemakaian_bbm && !row.keterangan
+      if (isDefaultData) {
+        // Data hari ini belum diisi → pertahankan status dari H-1, abaikan data hari ini
+        if (!currentData[mid]) currentData[mid] = {}
+        currentData[mid].terpasang = row.terpasang
+      } else {
+        // Data hari ini sudah diisi manual → pakai sepenuhnya
+        currentData[mid] = {
+          terpasang: row.terpasang,
+          daya_mampu: row.daya_mampu, beban: row.beban,
+          stand_kwh: row.stand_kwh, stand_bbm: row.stand_bbm,
+          phasa_r: row.phasa_r, phasa_s: row.phasa_s, phasa_t: row.phasa_t,
+          tek_oli: row.tek_oli, temp_air_pendingin: row.temp_air_pendingin,
+          tegangan: row.tegangan, frequency: row.frequency, cos_phi: row.cos_phi,
+          jam_kerja_mesin: row.jam_kerja_mesin, status_mesin: row.status_mesin,
+          kwh_produksi: row.kwh_produksi, pemakaian_bbm: row.pemakaian_bbm,
+          keterangan: row.keterangan
+        }
+      }
+    }
     updateTableData()
     var cnt = json.data.length
     document.getElementById('info-record').textContent = cnt > 0
