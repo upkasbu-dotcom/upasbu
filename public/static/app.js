@@ -563,6 +563,43 @@ async function loadData() {
   finally { showLoading(false,'loading-indicator') }
 }
 
+// Bangun teks WA ringkasan LOG SHEET
+function buildMonitoringWAText(tanggal, jam, records) {
+  var namaUnit = ''
+  for (var ui = 0; ui < UNIT_DATA.length; ui++) {
+    if (UNIT_DATA[ui].kode_unit === monSelectedUnit) { namaUnit = UNIT_DATA[ui].nama_unit; break }
+  }
+  var now = new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })
+  var lines = []
+  lines.push('📊 *LOG SHEET MONITORING PLTD*')
+  lines.push('Unit : ' + (namaUnit || monSelectedUnit))
+  lines.push('Tanggal : ' + tanggal)
+  lines.push('Jam : ' + jam + ':00')
+  lines.push('─────────────────────')
+  for (var i = 0; i < records.length; i++) {
+    var r = records[i]
+    // Cari nama mesin dari mesinList
+    var nama = r.mesin_id
+    for (var mi = 0; mi < mesinList.length; mi++) {
+      if (mesinList[mi].id_mesin === r.mesin_id) { nama = mesinList[mi].mesin; break }
+    }
+    var status = r.status_mesin || 'Operasi'
+    var line = (i + 1) + '. ' + nama + '\n   Status: ' + status
+    if (status === 'Operasi') {
+      if (r.daya_mampu != null) line += ' | DM: ' + r.daya_mampu + ' kW'
+      if (r.beban != null)      line += ' | Beban: ' + r.beban + ' kW'
+    } else if (status === 'Standby') {
+      if (r.daya_mampu != null) line += ' | DM: ' + r.daya_mampu + ' kW'
+    } else {
+      if (r.keterangan)         line += '\n   Ket: ' + r.keterangan
+    }
+    lines.push(line)
+  }
+  lines.push('─────────────────────')
+  lines.push('Dikirim: ' + now)
+  return lines.join('\n')
+}
+
 async function saveAllData() {
   var tanggal = document.getElementById('sel-tanggal').value
   var jam     = document.getElementById('sel-jam').value
@@ -586,7 +623,10 @@ async function saveAllData() {
     })
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
-    showToast('Data berhasil disimpan! (' + json.saved + ' mesin)','success')
+    showToast('Data berhasil disimpan! (' + json.saved + ' mesin). Membuka WA...','success')
+    // Auto kirim ke WA setelah simpan berhasil
+    var teksMon = buildMonitoringWAText(tanggal, jam, records)
+    window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(teksMon), '_blank')
   } catch(e) { showToast('Gagal menyimpan: ' + e.message,'error') }
   finally { showLoading(false,'loading-indicator') }
 }

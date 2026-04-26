@@ -118,6 +118,46 @@ async function initDB(db: D1Database) {
   try { await db.prepare(`ALTER TABLE data_monitoring ADD COLUMN keterangan TEXT`).run() } catch(_){}
   // Tambah kolom terpasang ke mesin_cache jika belum ada (migrasi)
   try { await db.prepare(`ALTER TABLE mesin_cache ADD COLUMN terpasang REAL`).run() } catch(_){}
+
+  // MIGRASI: hapus FOREIGN KEY di data_monitoring (referensi ke tabel mesin yg salah)
+  // Cek apakah tabel masih punya FK dengan melihat sql-nya
+  try {
+    const schemaRow: any = await db.prepare(
+      `SELECT sql FROM sqlite_master WHERE type='table' AND name='data_monitoring'`
+    ).first()
+    if (schemaRow && schemaRow.sql && schemaRow.sql.includes('FOREIGN KEY')) {
+      // Recreate tabel tanpa FK, pertahankan semua data
+      await db.batch([
+        db.prepare(`ALTER TABLE data_monitoring RENAME TO data_monitoring_old`),
+        db.prepare(`CREATE TABLE data_monitoring (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          mesin_id INTEGER NOT NULL,
+          tanggal TEXT NOT NULL,
+          jam TEXT NOT NULL,
+          terpasang REAL,
+          daya_mampu REAL, beban REAL, stand_kwh REAL, stand_bbm REAL,
+          phasa_r REAL, phasa_s REAL, phasa_t REAL, tek_oli REAL,
+          temp_air_pendingin REAL, tegangan REAL, frequency REAL, cos_phi REAL,
+          jam_kerja_mesin REAL, status_mesin TEXT DEFAULT 'Operasi',
+          kwh_produksi REAL, pemakaian_bbm REAL, keterangan TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`),
+        db.prepare(`INSERT INTO data_monitoring
+          (id,mesin_id,tanggal,jam,terpasang,daya_mampu,beban,stand_kwh,stand_bbm,
+           phasa_r,phasa_s,phasa_t,tek_oli,temp_air_pendingin,tegangan,frequency,
+           cos_phi,jam_kerja_mesin,status_mesin,kwh_produksi,pemakaian_bbm,keterangan,
+           created_at,updated_at)
+          SELECT id,mesin_id,tanggal,jam,terpasang,daya_mampu,beban,stand_kwh,stand_bbm,
+           phasa_r,phasa_s,phasa_t,tek_oli,temp_air_pendingin,tegangan,frequency,
+           cos_phi,jam_kerja_mesin,status_mesin,kwh_produksi,pemakaian_bbm,keterangan,
+           created_at,updated_at
+          FROM data_monitoring_old`),
+        db.prepare(`DROP TABLE data_monitoring_old`),
+        db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_mesin_jam ON data_monitoring(mesin_id, tanggal, jam)`),
+      ])
+    }
+  } catch(_) {}
 }
 
 // ============================================================
