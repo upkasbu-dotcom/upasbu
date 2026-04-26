@@ -581,8 +581,8 @@ async function buildMonitoringWAText(tanggal, periode, records) {
 
   var lines = []
   lines.push('LAPORAN BEBAN PUNCAK PLTD')
-  lines.push(periodeLabel)
-  lines.push(namaUnit || idUnit)
+  lines.push('\u200B' + periodeLabel)
+  lines.push('\u200B' + (namaUnit || idUnit))
   lines.push('id unit: ' + idUnit)
   lines.push('tgl : ' + tanggal)
   lines.push('nama operator: ' + namaOperator)
@@ -616,26 +616,26 @@ async function buildMonitoringWAText(tanggal, periode, records) {
     }
 
     lines.push((i + 1) + '. ' + namaMesin)
-    lines.push('id mesin: ' + r.mesin_id)
-    lines.push('sn: ' + snMesin)
-    lines.push('dt: ' + dtMesin)
-    lines.push('dm: ' + (r.daya_mampu != null ? r.daya_mampu : '-'))
-    lines.push('bp: ' + (r.beban != null ? r.beban : '-'))
-    lines.push('br: 0')
-    lines.push('phasa r: ' + (r.phasa_r != null ? r.phasa_r : '-'))
-    lines.push('phasa s: ' + (r.phasa_s != null ? r.phasa_s : '-'))
-    lines.push('phasa t: ' + (r.phasa_t != null ? r.phasa_t : '-'))
+    lines.push('​id mesin: ' + r.mesin_id)
+    lines.push('​sn: ' + snMesin)
+    lines.push('​dt: ' + dtMesin)
+    lines.push('​dm: ' + (r.daya_mampu != null ? r.daya_mampu : '-'))
+    lines.push('​bp: ' + (r.beban != null ? r.beban : '-'))
+    lines.push('​br: 0')
+    lines.push('​phasa r: ' + (r.phasa_r != null ? r.phasa_r : '-'))
+    lines.push('​phasa s: ' + (r.phasa_s != null ? r.phasa_s : '-'))
+    lines.push('​phasa t: ' + (r.phasa_t != null ? r.phasa_t : '-'))
     // Format decimal: simpan dengan koma untuk tampilan
     var tekOliStr   = (r.tek_oli   != null) ? String(r.tek_oli).replace('.', ',')   : '-'
     var tempAirStr  = (r.temp_air_pendingin != null) ? r.temp_air_pendingin : '-'
     var cosPhiStr   = (r.cos_phi   != null) ? String(r.cos_phi).replace('.', ',')   : '-'
-    lines.push('tek oli: ' + tekOliStr)
-    lines.push('temp mesin: ' + tempAirStr)
-    lines.push('cos phi: ' + cosPhiStr)
-    lines.push('jam start: 0')
-    lines.push('jam stop: 0')
-    lines.push('status mesin: ' + status.toLowerCase())
-    lines.push('penyebab: ' + (r.keterangan || ''))
+    lines.push('​tek oli: ' + tekOliStr)
+    lines.push('​temp mesin: ' + tempAirStr)
+    lines.push('​cos phi: ' + cosPhiStr)
+    lines.push('​jam start: 0')
+    lines.push('​jam stop: 0')
+    lines.push('​status mesin: ' + status.toLowerCase())
+    lines.push('​penyebab: ' + (r.keterangan || ''))
     lines.push('')
   }
 
@@ -667,14 +667,14 @@ async function buildMonitoringWAText(tanggal, periode, records) {
     }
   } catch(e) { /* ignore, tetap kirim tanpa stok */ }
 
-  lines.push('resume')
-  lines.push('dm pasok: ' + totalDM)
-  lines.push('bp terlayani: ' + totalBeban)
-  lines.push('padam: ' + padam)
-  lines.push('cadangan: ' + cadangan)
-  lines.push('status: ' + statusSys)
-  lines.push('stok bbm: ' + stokBbm)
-  lines.push('hop bbm: ' + hopBbm)
+  lines.push('​resume')
+  lines.push('​dm pasok: ' + totalDM)
+  lines.push('​bp terlayani: ' + totalBeban)
+  lines.push('​padam: ' + padam)
+  lines.push('​cadangan: ' + cadangan)
+  lines.push('​status: ' + statusSys)
+  lines.push('​stok bbm: ' + stokBbm)
+  lines.push('​hop bbm: ' + hopBbm)
 
   return lines.join('\n')
 }
