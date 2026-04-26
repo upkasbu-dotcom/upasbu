@@ -553,6 +553,50 @@ async function loadData() {
         keterangan: row.keterangan
       }
     }
+    // Auto-fill keterangan dari H-1 untuk mesin non Operasi/Standby yang belum ada keterangan hari ini
+    var tglParts = tanggal.split('-')
+    var tglDate = new Date(parseInt(tglParts[0]), parseInt(tglParts[1]) - 1, parseInt(tglParts[2]))
+    tglDate.setDate(tglDate.getDate() - 1)
+    var tanggalH1 = tglDate.getFullYear() + '-'
+      + String(tglDate.getMonth() + 1).padStart(2, '0') + '-'
+      + String(tglDate.getDate()).padStart(2, '0')
+    var mesinNeedFill = []
+    for (var i = 0; i < mesinList.length; i++) {
+      var mid = mesinList[i].id_mesin
+      var st  = (currentData[mid] && currentData[mid].status_mesin) || 'Operasi'
+      var ket = currentData[mid] ? currentData[mid].keterangan : null
+      if (st !== 'Operasi' && st !== 'Standby' && (!ket || String(ket).trim() === '')) mesinNeedFill.push(mid)
+    }
+    if (mesinNeedFill.length > 0) {
+      try {
+        var resH1 = await fetch('/api/monitoring?tanggal=' + tanggalH1 + '&periode=' + periode + '&kode_unit=' + monSelectedUnit)
+        var jsonH1 = await resH1.json()
+        if (jsonH1.success && jsonH1.data && jsonH1.data.length > 0) {
+          for (var hi = 0; hi < jsonH1.data.length; hi++) {
+            var rowH1 = jsonH1.data[hi]
+            var midH1 = rowH1.mesin_id
+            if (mesinNeedFill.indexOf(midH1) !== -1 && rowH1.keterangan) {
+              if (!currentData[midH1]) currentData[midH1] = {}
+              currentData[midH1].keterangan = rowH1.keterangan
+            }
+          }
+        } else if (jsonH1.success && jsonH1.data && jsonH1.data.length === 0) {
+          // Jika tidak ada data H-1 dengan periode yg sama, coba tanpa filter periode
+          var resH1b = await fetch('/api/monitoring?tanggal=' + tanggalH1 + '&kode_unit=' + monSelectedUnit)
+          var jsonH1b = await resH1b.json()
+          if (jsonH1b.success && jsonH1b.data) {
+            for (var hib = 0; hib < jsonH1b.data.length; hib++) {
+              var rowH1b = jsonH1b.data[hib]
+              var midH1b = rowH1b.mesin_id
+              if (mesinNeedFill.indexOf(midH1b) !== -1 && rowH1b.keterangan) {
+                if (!currentData[midH1b]) currentData[midH1b] = {}
+                currentData[midH1b].keterangan = rowH1b.keterangan
+              }
+            }
+          }
+        }
+      } catch(e) { /* abaikan jika gagal */ }
+    }
     updateTableData()
     var cnt = json.data.length
     document.getElementById('info-record').textContent = cnt > 0
