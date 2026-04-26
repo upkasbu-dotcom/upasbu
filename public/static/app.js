@@ -577,7 +577,7 @@ async function buildMonitoringWAText(tanggal, periode, records) {
   var namaOperator = (typeof currentLapForm !== 'undefined' && currentLapForm.nama_operator)
     ? currentLapForm.nama_operator : '-'
 
-  var periodeLabel = periode === 'siang' ? 'SIANG' : 'MALAM'
+  var periodeLabel = periode === 'siang' ? 'siang' : 'malam'
 
   var lines = []
   lines.push('LAPORAN BEBAN PUNCAK PLTD')
@@ -634,7 +634,7 @@ async function buildMonitoringWAText(tanggal, periode, records) {
     lines.push('cos phi: ' + cosPhiStr)
     lines.push('jam start: 0')
     lines.push('jam stop: 0')
-    lines.push('status mesin: ' + status)
+    lines.push('status mesin: ' + status.toLowerCase())
     lines.push('penyebab: ' + (r.keterangan || ''))
     lines.push('')
   }
