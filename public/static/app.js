@@ -611,11 +611,11 @@ async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
   var periodeLabel = periode === 'siang' ? 'siang' : 'malam'
   var lines = []
   lines.push('LAPORAN BEBAN PUNCAK PLTD')
-  lines.push('\u200B' + periodeLabel)
-  lines.push('\u200B' + namaUnit)
-  lines.push('\u200Bid unit: ' + kodeUnit)
-  lines.push('\u200Btgl : ' + tanggal)
-  lines.push('\u200Bnama operator: ' + namaOperator)
+  lines.push(periodeLabel)
+  lines.push(namaUnit)
+  lines.push('id unit: ' + kodeUnit)
+  lines.push('tgl : ' + tanggal)
+  lines.push('nama operator: ' + namaOperator)
   lines.push('')
 
   var totalDM = 0, totalBeban = 0, maxDM = 0
@@ -641,23 +641,23 @@ async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
     var v0 = function(val) { return val != null ? val : 0 }
     var vd = function(val) { return val != null ? String(val).replace('.', ',') : '0' }
 
-    lines.push('\u200B' + (i + 1) + '. ' + namaMesin)
-    lines.push('\u200bid mesin: ' + r.mesin_id)
-    lines.push('\u200bsn: ' + snMesin)
-    lines.push('\u200bdt: ' + dtMesin)
-    lines.push('\u200bdm: ' + v0(r.daya_mampu))
-    lines.push('\u200bbp: ' + v0(r.beban))
-    lines.push('\u200bbr: 0')
-    lines.push('\u200bphasa r: '    + v0(r.phasa_r))
-    lines.push('\u200bphasa s: '    + v0(r.phasa_s))
-    lines.push('\u200bphasa t: '    + v0(r.phasa_t))
-    lines.push('\u200btek oli: '    + vd(r.tek_oli))
-    lines.push('\u200btemp mesin: ' + v0(r.temp_air_pendingin))
-    lines.push('\u200bcos phi: '    + vd(r.cos_phi))
-    lines.push('\u200bjam start: 0')
-    lines.push('\u200bjam stop: 0')
-    lines.push('\u200bstatus mesin: ' + status.toLowerCase())
-    lines.push('\u200bpenyebab: '    + (r.keterangan || ''))
+    lines.push((i + 1) + '. ' + namaMesin)
+    lines.push('id mesin: ' + r.mesin_id)
+    lines.push('sn: ' + snMesin)
+    lines.push('dt: ' + dtMesin)
+    lines.push('dm: ' + v0(r.daya_mampu))
+    lines.push('bp: ' + v0(r.beban))
+    lines.push('br: 0')
+    lines.push('phasa r: '    + v0(r.phasa_r))
+    lines.push('phasa s: '    + v0(r.phasa_s))
+    lines.push('phasa t: '    + v0(r.phasa_t))
+    lines.push('tek oli: '    + vd(r.tek_oli))
+    lines.push('temp mesin: ' + v0(r.temp_air_pendingin))
+    lines.push('cos phi: '    + vd(r.cos_phi))
+    lines.push('jam start: 0')
+    lines.push('jam stop: 0')
+    lines.push('status mesin: ' + status.toLowerCase())
+    lines.push('penyebab: '    + (r.keterangan || ''))
     lines.push('')
   }
 
@@ -665,14 +665,14 @@ async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
   var padam     = cadangan < 0 ? Math.abs(cadangan) : 0
   var statusSys = cadangan < 0 ? 'defisit' : (maxDM > 0 && cadangan < maxDM ? 'siaga' : 'normal')
 
-  lines.push('\u200bresume')
-  lines.push('\u200bdm pasok: '     + totalDM)
-  lines.push('\u200bbp terlayani: ' + totalBeban)
-  lines.push('\u200bpadam: '        + padam)
-  lines.push('\u200bcadangan: '     + cadangan)
-  lines.push('\u200bstatus: '       + statusSys)
-  lines.push('\u200bstok bbm: '     + stokBbm)
-  lines.push('\u200bhop bbm: '      + hopBbm)
+  lines.push('resume')
+  lines.push('dm pasok: '     + totalDM)
+  lines.push('bp terlayani: ' + totalBeban)
+  lines.push('padam: '        + padam)
+  lines.push('cadangan: '     + cadangan)
+  lines.push('status: '       + statusSys)
+  lines.push('stok bbm: '     + stokBbm)
+  lines.push('hop bbm: '      + hopBbm)
 
   return lines.join('\n')
 }
@@ -872,10 +872,8 @@ async function saveAllData() {
     // Build WA dari records di memori (unit+tanggal+periode aktif)
     var teksMon = await buildWAFromMemory(tanggal, periode, monSelectedUnit, records)
     if (teksMon) {
-      // Strip zero-width space — tidak diperlukan di modal/URL, cegah WA memotong teks
-      var teksMonBersih = teksMon.replace(/\u200B/g, '')
-      currentTeksLaporan = teksMonBersih
-      document.getElementById('kirim-preview-text').textContent = teksMonBersih
+      currentTeksLaporan = teksMon
+      document.getElementById('kirim-preview-text').textContent = teksMon
       document.getElementById('modal-kirim').classList.remove('hidden')
     } else {
       showToast('Tidak ada data untuk dikirim ke WA','info')
@@ -1837,21 +1835,8 @@ function fallbackCopy(teks) {
 }
 
 function kirimWhatsApp() {
-  // Salin teks ke clipboard, lalu buka WA tanpa teks di URL
-  // (WA mengubah/memotong teks panjang dari URL, paste manual lebih akurat)
-  var teks = document.getElementById('kirim-preview-text').textContent.replace(/\u200B/g, '')
-  var doOpen = function() { window.open('https://wa.me/6282252147896', '_blank') }
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(teks)
-      .then(function() {
-        showToast('Teks disalin! Silakan paste di WhatsApp.', 'success')
-        doOpen()
-      })
-      .catch(function() { fallbackCopy(teks); doOpen() })
-  } else {
-    fallbackCopy(teks)
-    doOpen()
-  }
+  var teks = document.getElementById('kirim-preview-text').textContent
+  window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(teks), '_blank')
 }
 
 async function showRiwayatLap() {
