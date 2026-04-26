@@ -581,8 +581,8 @@ async function buildMonitoringWAText(tanggal, periode, records) {
 
   var lines = []
   lines.push('LAPORAN BEBAN PUNCAK PLTD')
-  lines.push('(' + periodeLabel + ')')
-  lines.push('(' + (namaUnit || idUnit) + ')')
+  lines.push(periodeLabel)
+  lines.push(namaUnit || idUnit)
   lines.push('id unit: ' + idUnit)
   lines.push('tgl : ' + tanggal)
   lines.push('nama operator: ' + namaOperator)
