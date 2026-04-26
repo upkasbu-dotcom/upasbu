@@ -566,13 +566,17 @@ async function loadData() {
 
 // Bangun teks WA format LAPORAN BEBAN PUNCAK PLTD
 // Build teks WA untuk SATU unit
-// kodeUnit: integer, allMesinCache: array semua mesin dari cache, stokMap: map kode_unit->stok
-function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, stokMap) {
+// kodeUnit: integer, allMesinCache: array semua mesin dari cache, stokMap: map kode_unit->stok, lapMap: map kode_unit->lap
+function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, stokMap, lapMap) {
   var namaUnit = ''
   for (var ui = 0; ui < UNIT_DATA.length; ui++) {
     if (UNIT_DATA[ui].kode_unit === kodeUnit) { namaUnit = UNIT_DATA[ui].nama_unit; break }
   }
   var periodeLabel = periode === 'siang' ? 'siang' : 'malam'
+
+  // Nama operator dari laporan operasional H-1
+  var namaOperator = (lapMap && lapMap[kodeUnit] && lapMap[kodeUnit].nama_operator)
+    ? lapMap[kodeUnit].nama_operator : '-'
 
   var lines = []
   lines.push('LAPORAN BEBAN PUNCAK PLTD')
@@ -580,7 +584,7 @@ function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, sto
   lines.push('\u200B' + (namaUnit || String(kodeUnit)))
   lines.push('id unit: ' + kodeUnit)
   lines.push('tgl : ' + tanggal)
-  lines.push('nama operator: 0')
+  lines.push('nama operator: ' + namaOperator)
   lines.push('')
 
   var totalDM = 0, totalBeban = 0, maxDM = 0
@@ -636,9 +640,11 @@ function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, sto
   var padam     = cadangan < 0 ? Math.abs(cadangan) : 0
   var statusSys = cadangan < 0 ? 'defisit' : (maxDM > 0 && cadangan < maxDM ? 'siaga' : 'normal')
 
+  // stok bbm = saldo_akhir (stock_akhir) dari tabel DATA H-1
+  // hop bbm  = safety_stock dari tabel DATA H-1
   var stokBbm = '-', hopBbm = '-'
   if (stokMap && stokMap[kodeUnit]) {
-    stokBbm = stokMap[kodeUnit].stok_awal  != null ? stokMap[kodeUnit].stok_awal  : '-'
+    stokBbm = stokMap[kodeUnit].stok_awal    != null ? stokMap[kodeUnit].stok_awal    : '-'
     hopBbm  = stokMap[kodeUnit].safety_stock != null ? stokMap[kodeUnit].safety_stock : '-'
   }
 
@@ -655,7 +661,6 @@ function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, sto
 }
 
 // Build teks WA lengkap: fetch semua data tersimpan (semua unit) untuk tanggal
-// Tidak filter by periode — ambil semua jam, deduplicate per mesin (ambil record terakhir)
 async function buildMonitoringWAText(tanggal, periode) {
   // 1. Fetch data monitoring untuk tanggal+periode (jam tetap: siang=12, malam=18)
   var jamPeriode = periode === 'siang' ? '12' : '18'
@@ -668,10 +673,27 @@ async function buildMonitoringWAText(tanggal, periode) {
   var jsonMesin = await resMesin.json()
   var allMesinCache = (jsonMesin.success && jsonMesin.data) ? jsonMesin.data : []
 
-  // 3. Fetch stok BBM semua unit
+  // 3. Hitung tanggal H-1
+  var tglDate = new Date(tanggal)
+  tglDate.setDate(tglDate.getDate() - 1)
+  var tanggalH1 = tglDate.toISOString().split('T')[0]
+
+  // 4. Fetch lap-operasional H-1 → nama_operator + saldo_akhir per unit
+  var lapMap = {}
+  try {
+    var resLap  = await fetch('/api/lap-operasional?tanggal=' + tanggalH1)
+    var jsonLap = await resLap.json()
+    if (jsonLap.success && jsonLap.data) {
+      for (var li = 0; li < jsonLap.data.length; li++) {
+        lapMap[jsonLap.data[li].kode_unit] = jsonLap.data[li]
+      }
+    }
+  } catch(e) { /* lanjut tanpa lap */ }
+
+  // 5. Fetch data-stok H-1 → stok_akhir (saldo_akhir) + safety_stock per unit
   var stokMap = {}
   try {
-    var resStok  = await fetch('/api/data-stok?tanggal=' + tanggal)
+    var resStok  = await fetch('/api/data-stok?tanggal=' + tanggalH1)
     var jsonStok = await resStok.json()
     if (jsonStok.success && jsonStok.data) {
       for (var si = 0; si < jsonStok.data.length; si++) {
@@ -698,7 +720,7 @@ async function buildMonitoringWAText(tanggal, periode) {
   var parts = []
   for (var ui = 0; ui < unitOrder.length; ui++) {
     var ku = unitOrder[ui]
-    parts.push(buildUnitWAText(tanggal, periode, ku, unitMap[ku], allMesinCache, stokMap))
+    parts.push(buildUnitWAText(tanggal, periode, ku, unitMap[ku], allMesinCache, stokMap, lapMap))
   }
 
   return parts.join('\n\n---\n\n')
