@@ -611,9 +611,9 @@ async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
   lines.push('LAPORAN BEBAN PUNCAK PLTD')
   lines.push('\u200B' + periodeLabel)
   lines.push('\u200B' + namaUnit)
-  lines.push('id unit: ' + kodeUnit)
-  lines.push('tgl : ' + tanggal)
-  lines.push('nama operator: ' + namaOperator)
+  lines.push('\u200Bid unit: ' + kodeUnit)
+  lines.push('\u200Btgl : ' + tanggal)
+  lines.push('\u200Bnama operator: ' + namaOperator)
   lines.push('')
 
   var totalDM = 0, totalBeban = 0, maxDM = 0
@@ -639,7 +639,7 @@ async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
     var tempStr   = r.temp_air_pendingin != null ? r.temp_air_pendingin                : '-'
     var cosPhiStr = r.cos_phi            != null ? String(r.cos_phi).replace('.', ',') : '-'
 
-    lines.push((i + 1) + '. ' + namaMesin)
+    lines.push('\u200B' + (i + 1) + '. ' + namaMesin)
     lines.push('\u200bid mesin: ' + r.mesin_id)
     lines.push('\u200bsn: ' + snMesin)
     lines.push('\u200bdt: ' + dtMesin)
@@ -870,7 +870,10 @@ async function saveAllData() {
     // Build WA dari records di memori (unit+tanggal+periode aktif)
     var teksMon = await buildWAFromMemory(tanggal, periode, monSelectedUnit, records)
     if (teksMon) {
-      window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(teksMon), '_blank')
+      // Tampilkan di modal preview agar user bisa copy/kirim
+      currentTeksLaporan = teksMon
+      document.getElementById('kirim-preview-text').textContent = teksMon
+      document.getElementById('modal-kirim').classList.remove('hidden')
     } else {
       showToast('Tidak ada data untuk dikirim ke WA','info')
     }
