@@ -1861,22 +1861,20 @@ function fallbackCopy(teks) {
 }
 
 async function kirimWhatsApp() {
-  var teks = document.getElementById('kirim-preview-text').textContent
-  try {
-    // Simpan teks ke server dulu, dapat ID pendek
-    var res = await fetch('/api/wa-text', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ teks: teks, phone: '6282252147896' })
-    })
-    var json = await res.json()
-    if (!json.success) throw new Error(json.error)
-    // Buka redirect server — teks tidak lewat URL browser
-    window.open('/api/wa-redirect/' + json.id, '_blank')
-  } catch(e) {
-    // Fallback: URL langsung
-    window.open('https://api.whatsapp.com/send?phone=6282252147896&text=' + encodeURIComponent(teks), '_blank')
+  // Selalu rebuild teks fresh dari currentData+mesinList saat tombol diklik
+  var tanggal = document.getElementById('sel-tanggal').value
+  var periode = document.getElementById('sel-periode').value
+  var records = []
+  for (var i = 0; i < mesinList.length; i++) {
+    var m = mesinList[i]
+    var d = Object.assign({}, currentData[m.id_mesin] || { status_mesin: 'Operasi' })
+    d.mesin_id  = m.id_mesin
+    d.terpasang = m.terpasang !== undefined ? m.terpasang : null
+    records.push(d)
   }
+  var teks = await buildWAFromMemory(tanggal, periode, monSelectedUnit, records)
+  if (!teks) { showToast('Tidak ada data','info'); return }
+  window.open('https://api.whatsapp.com/send?phone=6282252147896&text=' + encodeURIComponent(teks), '_blank')
 }
 
 async function showRiwayatLap() {
