@@ -1861,9 +1861,12 @@ function fallbackCopy(teks) {
 }
 
 async function kirimWhatsApp() {
-  // Selalu rebuild teks fresh dari currentData+mesinList saat tombol diklik
+  // Rebuild teks fresh dari state aktif saat tombol diklik
   var tanggal = document.getElementById('sel-tanggal').value
   var periode = document.getElementById('sel-periode').value
+  if (!tanggal || !periode || !monSelectedUnit || mesinList.length === 0) {
+    showToast('Tidak ada data','info'); return
+  }
   var records = []
   for (var i = 0; i < mesinList.length; i++) {
     var m = mesinList[i]
@@ -1874,7 +1877,16 @@ async function kirimWhatsApp() {
   }
   var teks = await buildWAFromMemory(tanggal, periode, monSelectedUnit, records)
   if (!teks) { showToast('Tidak ada data','info'); return }
-  window.open('https://api.whatsapp.com/send?phone=6282252147896&text=' + encodeURIComponent(teks), '_blank')
+  // Update popup supaya sesuai
+  document.getElementById('kirim-preview-text').textContent = teks
+  // Buka WA
+  var a = document.createElement('a')
+  a.href = 'https://api.whatsapp.com/send?phone=6282252147896&text=' + encodeURIComponent(teks)
+  a.target = '_blank'
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
 }
 
 async function showRiwayatLap() {
