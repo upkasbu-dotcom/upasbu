@@ -1879,8 +1879,23 @@ async function kirimWhatsApp() {
   if (!teks) { showToast('Tidak ada data','info'); return }
   // Update popup supaya sesuai
   document.getElementById('kirim-preview-text').textContent = teks
-  // Buka WhatsApp Web — selalu baca text= dari URL, tidak ada native app cache
-  window.open('https://web.whatsapp.com/send?phone=6282252147896&text=' + encodeURIComponent(teks), '_blank')
+  // Deteksi platform lalu buka WA app dengan cara yang tepat
+  var encoded = encodeURIComponent(teks)
+  var ua = navigator.userAgent || ''
+  var isAndroid = /android/i.test(ua)
+  var isIOS = /iphone|ipad|ipod/i.test(ua)
+  if (isAndroid) {
+    // Android: intent:// force buka WA app, selalu fresh (tidak cache)
+    var intentUrl = 'intent://send?phone=6282252147896&text=' + encoded +
+      '#Intent;scheme=whatsapp;package=com.whatsapp;end'
+    window.location.href = intentUrl
+  } else if (isIOS) {
+    // iOS: whatsapp:// deep link
+    window.location.href = 'whatsapp://send?phone=6282252147896&text=' + encoded
+  } else {
+    // Desktop/PC: wa.me
+    window.open('https://wa.me/6282252147896?text=' + encoded, '_blank')
+  }
 }
 
 async function showRiwayatLap() {
