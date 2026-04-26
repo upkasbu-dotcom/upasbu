@@ -639,23 +639,23 @@ async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
     if (status === 'Operasi')      { totalDM += dm; totalBeban += bp; if (dm > maxDM) maxDM = dm }
     else if (status === 'Standby') { totalDM += dm; if (dm > maxDM) maxDM = dm }
 
-    var tekOliStr = r.tek_oli            != null ? String(r.tek_oli).replace('.', ',') : '-'
-    var tempStr   = r.temp_air_pendingin != null ? r.temp_air_pendingin                : '-'
-    var cosPhiStr = r.cos_phi            != null ? String(r.cos_phi).replace('.', ',') : '-'
+    // Kolom yang di-disable → null → tampilkan 0 di WA
+    var v0 = function(val) { return val != null ? val : 0 }
+    var vd = function(val) { return val != null ? String(val).replace('.', ',') : '0' }
 
     lines.push('\u200B' + (i + 1) + '. ' + namaMesin)
     lines.push('\u200bid mesin: ' + r.mesin_id)
     lines.push('\u200bsn: ' + snMesin)
     lines.push('\u200bdt: ' + dtMesin)
-    lines.push('\u200bdm: ' + (r.daya_mampu != null ? r.daya_mampu : '-'))
-    lines.push('\u200bbp: ' + (r.beban      != null ? r.beban      : '-'))
+    lines.push('\u200bdm: ' + v0(r.daya_mampu))
+    lines.push('\u200bbp: ' + v0(r.beban))
     lines.push('\u200bbr: 0')
-    lines.push('\u200bphasa r: '    + (r.phasa_r != null ? r.phasa_r : '-'))
-    lines.push('\u200bphasa s: '    + (r.phasa_s != null ? r.phasa_s : '-'))
-    lines.push('\u200bphasa t: '    + (r.phasa_t != null ? r.phasa_t : '-'))
-    lines.push('\u200btek oli: '    + tekOliStr)
-    lines.push('\u200btemp mesin: ' + tempStr)
-    lines.push('\u200bcos phi: '    + cosPhiStr)
+    lines.push('\u200bphasa r: '    + v0(r.phasa_r))
+    lines.push('\u200bphasa s: '    + v0(r.phasa_s))
+    lines.push('\u200bphasa t: '    + v0(r.phasa_t))
+    lines.push('\u200btek oli: '    + vd(r.tek_oli))
+    lines.push('\u200btemp mesin: ' + v0(r.temp_air_pendingin))
+    lines.push('\u200bcos phi: '    + vd(r.cos_phi))
     lines.push('\u200bjam start: 0')
     lines.push('\u200bjam stop: 0')
     lines.push('\u200bstatus mesin: ' + status.toLowerCase())
