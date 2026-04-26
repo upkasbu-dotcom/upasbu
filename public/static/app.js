@@ -383,6 +383,8 @@ function renderTable() {
     bodyHTML += '</tr>'
   }
   tbody.innerHTML = bodyHTML
+  // Terapkan aturan enable/disable setelah render
+  applyAllStatusRules()
 }
 
 // Cek apakah field bertipe decimal
@@ -392,6 +394,8 @@ function setCellValue(mesinId, field, value) {
   if (!currentData[mesinId]) currentData[mesinId] = {}
   if (field === 'status_mesin' || field === 'keterangan') {
     currentData[mesinId][field] = value === '' ? null : value
+    // Terapkan rule enable/disable saat status berubah
+    if (field === 'status_mesin') applyStatusRule(mesinId, value || 'Operasi')
   } else if (DECIMAL_FIELDS[field]) {
     // Konversi koma → titik untuk disimpan sebagai float
     var norm = String(value).replace(',', '.')
@@ -399,6 +403,91 @@ function setCellValue(mesinId, field, value) {
   } else {
     var cleaned = String(value).replace(/[^0-9]/g, '')
     currentData[mesinId][field] = cleaned === '' ? null : parseInt(cleaned, 10)
+  }
+}
+
+// =============================================
+// ATURAN STATUS → ENABLE/DISABLE KOLOM
+// =============================================
+// Operasi   : semua wajib diisi, kecuali keterangan (disabled)
+// Standby   : hanya daya_mampu wajib, sisanya disabled (kecuali keterangan disabled juga)
+// Lainnya   : semua disabled kecuali keterangan (wajib)
+
+function applyStatusRule(mesinId, status) {
+  var tbody = document.getElementById('table-body')
+  if (!tbody) return
+  var row = tbody.querySelector('tr[data-mesin="' + mesinId + '"]')
+  if (!row) return
+
+  for (var pi = 0; pi < PARAMS.length; pi++) {
+    var p = PARAMS[pi]
+    if (p.type === 'readonly' || p.type === 'select') continue  // kolom mesin & status tidak disentuh
+
+    var el = row.querySelector('[data-mesin-id="' + mesinId + '"][data-key="' + p.key + '"]')
+    if (!el) continue
+
+    var td = el.parentElement
+
+    var isDisabled = false
+    var isRequired = false
+
+    if (status === 'Operasi') {
+      // keterangan: disabled; semua lain: wajib
+      if (p.key === 'keterangan') {
+        isDisabled = true
+      } else {
+        isRequired = true
+      }
+    } else if (status === 'Standby') {
+      // daya_mampu: wajib; semua lain: disabled (termasuk keterangan)
+      if (p.key === 'daya_mampu') {
+        isRequired = true
+      } else {
+        isDisabled = true
+      }
+    } else {
+      // Pemeliharaan / Gangguan / Rusak Permanen
+      // keterangan: wajib; semua lain: disabled
+      if (p.key === 'keterangan') {
+        isRequired = true
+      } else {
+        isDisabled = true
+      }
+    }
+
+    el.disabled = isDisabled
+    if (isDisabled) {
+      el.classList.add('cell-disabled')
+      el.classList.remove('cell-required')
+      td.classList.add('td-disabled')
+      td.classList.remove('td-required')
+      // Kosongkan nilai dan currentData saat di-disable agar tidak ikut tersimpan
+      if (el.value !== '' && el.value !== '—') {
+        el.value = ''
+        if (!currentData[mesinId]) currentData[mesinId] = {}
+        currentData[mesinId][p.key] = null
+      }
+    } else {
+      el.classList.remove('cell-disabled')
+      td.classList.remove('td-disabled')
+      if (isRequired) {
+        el.classList.add('cell-required')
+        td.classList.add('td-required')
+      } else {
+        el.classList.remove('cell-required')
+        td.classList.remove('td-required')
+      }
+    }
+  }
+}
+
+// Terapkan rule ke semua baris sekaligus (setelah render/updateTable)
+function applyAllStatusRules() {
+  for (var mi = 0; mi < mesinList.length; mi++) {
+    var m = mesinList[mi]
+    var status = (currentData[m.id_mesin] && currentData[m.id_mesin].status_mesin)
+                 ? currentData[m.id_mesin].status_mesin : 'Operasi'
+    applyStatusRule(m.id_mesin, status)
   }
 }
 
@@ -430,6 +519,8 @@ function updateTableData() {
     }
     // Warna nama mesin konsisten (sama dengan cell input lain)
   }
+  // Terapkan aturan enable/disable setelah update nilai
+  applyAllStatusRules()
 }
 
 async function loadData() {

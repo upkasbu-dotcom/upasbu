@@ -280,6 +280,32 @@ tbody tr:hover td { background: #f0f7ff; }
 .cell-input:focus { outline: none; border-color: #3b82f6; background: #eff6ff; box-shadow: 0 0 0 2px #bfdbfe; }
 select.cell-input { width: 112px; cursor: pointer; }
 .cell-input-text { width: 160px; text-align: left; font-size: max(0.8rem, 16px); }
+
+/* Disabled: abu-abu, tidak bisa diklik */
+.cell-input.cell-disabled,
+.cell-input.cell-disabled:focus {
+  background: #f1f5f9 !important;
+  color: #cbd5e1 !important;
+  border-color: transparent !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+  pointer-events: none;
+}
+td.td-disabled {
+  background: #f8fafc !important;
+}
+tbody tr:hover td.td-disabled { background: #f1f5f9 !important; }
+
+/* Required: border biru tipis agar terlihat wajib diisi */
+.cell-input.cell-required {
+  border-color: #bfdbfe !important;
+  background: #fff !important;
+}
+.cell-input.cell-required:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px #bfdbfe !important;
+}
+td.td-required { background: #fff !important; }
 .row-section td { background: #f8fafc !important; font-size: 0.68rem; color: #64748b; font-style: italic; padding: 2px 10px !important; }
 
 /* =============================================
