@@ -629,6 +629,10 @@ async function loadData() {
         if (!currentData[mH1]) currentData[mH1] = {}
         // Terapkan status dari H-1 sebagai default awal
         currentData[mH1].status_mesin = rH1.status_mesin || 'Operasi'
+        // Auto-fill daya_mampu dari H-1
+        if (rH1.daya_mampu !== null && rH1.daya_mampu !== undefined) {
+          currentData[mH1].daya_mampu = rH1.daya_mampu
+        }
         // Terapkan keterangan dari H-1 jika non Operasi/Standby
         if (rH1.status_mesin && rH1.status_mesin !== 'Operasi' && rH1.status_mesin !== 'Standby' && rH1.keterangan) {
           currentData[mH1].keterangan = rH1.keterangan
