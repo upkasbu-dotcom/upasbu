@@ -1029,7 +1029,7 @@ app.get('/api/wa-redirect/:id', async (c) => {
     const row = await db.prepare(`SELECT teks, phone FROM wa_text_temp WHERE id = ?`)
       .bind(id).first() as { teks: string, phone: string } | null
     if (!row) return c.text('Link kadaluarsa atau tidak ditemukan', 404)
-    const url = 'https://api.whatsapp.com/send?phone=' + row.phone + '&text=' + encodeURIComponent(row.teks)
+    const url = 'https://wa.me/' + row.phone + '?text=' + encodeURIComponent(row.teks)
     return c.redirect(url, 302)
   } catch(e: any) {
     return c.text('Error: ' + e.message, 500)
@@ -1054,9 +1054,9 @@ app.get('/', (c) => {
   <title>DILAN [DIGITALISASI LAPORAN]</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
-  <link rel="preload" href="/static/style.css?v=20260427c" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260427c" as="script"/>
-  <link href="/static/style.css?v=20260427c" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260427d" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260427d" as="script"/>
+  <link href="/static/style.css?v=20260427d" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -1253,7 +1253,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<script src="/static/app.js?v=20260427c" defer></script>
+<script src="/static/app.js?v=20260427d" defer></script>
 </body>
 </html>`
   const resp = c.html(html)
