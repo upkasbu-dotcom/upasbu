@@ -433,20 +433,16 @@ function applyStatusRule(mesinId, status) {
     var isRequired = false
 
     if (status === 'Operasi') {
-      // keterangan: aktif opsional; semua lain: wajib
+      // keterangan: disabled; semua lain: wajib
       if (p.key === 'keterangan') {
-        isDisabled = false
-        isRequired = false
+        isDisabled = true
       } else {
         isRequired = true
       }
     } else if (status === 'Standby') {
-      // daya_mampu: wajib; keterangan: aktif opsional; semua lain: disabled
-      if (p.key === 'daya_mampu') {
+      // daya_mampu, kwh_produksi, pemakaian_bbm: wajib; semua lain: disabled
+      if (p.key === 'daya_mampu' || p.key === 'kwh_produksi' || p.key === 'pemakaian_bbm') {
         isRequired = true
-      } else if (p.key === 'keterangan') {
-        isDisabled = false
-        isRequired = false
       } else {
         isDisabled = true
       }
