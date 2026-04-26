@@ -781,7 +781,7 @@ async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
     var v0 = function(val) { return val != null ? val : 0 }
     var vd = function(val) { return val != null ? String(val).replace('.', ',') : '0' }
 
-    lines.push((i + 1) + '. ' + namaMesin)
+    lines.push((i + 1) + ') ' + namaMesin)
     lines.push('id mesin: ' + r.mesin_id)
     lines.push('sn: ' + snMesin)
     lines.push('dt: ' + dtMesin)
@@ -866,7 +866,7 @@ function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, sto
     var tempStr   = (r.temp_air_pendingin != null) ? r.temp_air_pendingin : '-'
     var cosPhiStr = (r.cos_phi   != null) ? String(r.cos_phi).replace('.', ',') : '-'
 
-    lines.push((i + 1) + '. ' + namaMesin)
+    lines.push((i + 1) + ') ' + namaMesin)
     lines.push('\u200bid mesin: ' + r.mesin_id)
     lines.push('\u200bsn: ' + snMesin)
     lines.push('\u200bdt: ' + dtMesin)
