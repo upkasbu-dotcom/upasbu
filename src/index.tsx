@@ -1014,9 +1014,9 @@ app.get('/', (c) => {
   <title>DILAN [DIGITALISASI LAPORAN]</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
-  <link rel="preload" href="/static/style.css?v=20260426o" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260426o" as="script"/>
-  <link href="/static/style.css?v=20260426o" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260426p" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260426p" as="script"/>
+  <link href="/static/style.css?v=20260426p" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -1038,7 +1038,7 @@ app.get('/', (c) => {
       </div>
       <div class="header-actions" id="header-actions-monitoring">
         <button class="btn btn-success" id="btn-simpan-semua" onclick="saveAllData()" disabled style="opacity:0.5;cursor:not-allowed;">
-          <span class="btn-text">Simpan Semua</span>
+          <span class="btn-text">Simpan</span>
         </button>
       </div>
       <div class="header-actions" id="header-actions-data" style="display:none;"></div>
@@ -1213,7 +1213,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<script src="/static/app.js?v=20260426o" defer></script>
+<script src="/static/app.js?v=20260426p" defer></script>
 </body>
 </html>`
   const resp = c.html(html)
