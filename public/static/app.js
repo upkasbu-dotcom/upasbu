@@ -893,13 +893,11 @@ async function saveAllData() {
     })
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
-    showToast('Data berhasil disimpan! (' + json.saved + ' mesin). Menyiapkan WA...','success')
-    // Build WA dari records di memori (unit+tanggal+periode aktif)
+    showToast('Data berhasil disimpan! (' + json.saved + ' mesin)','success')
+    // Langsung buka WA tanpa popup
     var teksMon = await buildWAFromMemory(tanggal, periode, monSelectedUnit, records)
     if (teksMon) {
-      currentTeksLaporan = teksMon
-      document.getElementById('kirim-preview-text').textContent = teksMon
-      document.getElementById('modal-kirim').classList.remove('hidden')
+      window.location.href = 'https://wa.me/6282252147896?text=' + encodeURIComponent(teksMon)
     } else {
       showToast('Tidak ada data untuk dikirim ke WA','info')
     }
