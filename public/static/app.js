@@ -1837,9 +1837,21 @@ function fallbackCopy(teks) {
 }
 
 function kirimWhatsApp() {
-  // Hapus zero-width space sebelum encode ke URL agar WA tidak memotong teks
+  // Salin teks ke clipboard, lalu buka WA tanpa teks di URL
+  // (WA mengubah/memotong teks panjang dari URL, paste manual lebih akurat)
   var teks = document.getElementById('kirim-preview-text').textContent.replace(/\u200B/g, '')
-  window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(teks), '_blank')
+  var doOpen = function() { window.open('https://wa.me/6282252147896', '_blank') }
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(teks)
+      .then(function() {
+        showToast('Teks disalin! Silakan paste di WhatsApp.', 'success')
+        doOpen()
+      })
+      .catch(function() { fallbackCopy(teks); doOpen() })
+  } else {
+    fallbackCopy(teks)
+    doOpen()
+  }
 }
 
 async function showRiwayatLap() {
