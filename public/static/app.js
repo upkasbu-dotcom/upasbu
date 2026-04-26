@@ -465,7 +465,7 @@ function setCellValue(mesinId, field, value) {
 // ATURAN STATUS → ENABLE/DISABLE KOLOM
 // =============================================
 // Operasi   : semua wajib diisi, kecuali keterangan (disabled)
-// Standby   : hanya daya_mampu wajib, sisanya disabled (kecuali keterangan disabled juga)
+// Standby   : daya_mampu, jam_kerja_mesin, kwh_produksi, pemakaian_bbm wajib; sisanya disabled
 // Lainnya   : semua disabled kecuali keterangan (wajib)
 
 function applyStatusRule(mesinId, status) {
@@ -494,8 +494,8 @@ function applyStatusRule(mesinId, status) {
         isRequired = true
       }
     } else if (status === 'Standby') {
-      // daya_mampu, kwh_produksi, pemakaian_bbm: wajib; semua lain: disabled
-      if (p.key === 'daya_mampu' || p.key === 'kwh_produksi' || p.key === 'pemakaian_bbm') {
+      // daya_mampu, jam_kerja_mesin, kwh_produksi, pemakaian_bbm: wajib; semua lain: disabled
+      if (p.key === 'daya_mampu' || p.key === 'jam_kerja_mesin' || p.key === 'kwh_produksi' || p.key === 'pemakaian_bbm') {
         isRequired = true
       } else {
         isDisabled = true
