@@ -114,6 +114,8 @@ async function initDB(db: D1Database) {
   try { await db.prepare(`ALTER TABLE lap_operasional ADD COLUMN dokumen_nama TEXT`).run() } catch(_){}
   // Tambah kolom terpasang ke data_monitoring jika belum ada (migrasi)
   try { await db.prepare(`ALTER TABLE data_monitoring ADD COLUMN terpasang REAL`).run() } catch(_){}
+  // Tambah kolom keterangan ke data_monitoring jika belum ada (migrasi)
+  try { await db.prepare(`ALTER TABLE data_monitoring ADD COLUMN keterangan TEXT`).run() } catch(_){}
   // Tambah kolom terpasang ke mesin_cache jika belum ada (migrasi)
   try { await db.prepare(`ALTER TABLE mesin_cache ADD COLUMN terpasang REAL`).run() } catch(_){}
 }
@@ -334,21 +336,23 @@ app.post('/api/monitoring/batch', async (c) => {
       c.env.DB.prepare(`
         INSERT INTO data_monitoring
           (mesin_id,tanggal,jam,daya_mampu,beban,stand_kwh,stand_bbm,phasa_r,phasa_s,phasa_t,tek_oli,
-           temp_air_pendingin,tegangan,frequency,cos_phi,jam_kerja_mesin,status_mesin,kwh_produksi,pemakaian_bbm,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+           temp_air_pendingin,tegangan,frequency,cos_phi,jam_kerja_mesin,status_mesin,kwh_produksi,pemakaian_bbm,keterangan,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
         ON CONFLICT(mesin_id,tanggal,jam) DO UPDATE SET
           daya_mampu=excluded.daya_mampu,beban=excluded.beban,stand_kwh=excluded.stand_kwh,stand_bbm=excluded.stand_bbm,
           phasa_r=excluded.phasa_r,phasa_s=excluded.phasa_s,phasa_t=excluded.phasa_t,tek_oli=excluded.tek_oli,
           temp_air_pendingin=excluded.temp_air_pendingin,tegangan=excluded.tegangan,frequency=excluded.frequency,
           cos_phi=excluded.cos_phi,jam_kerja_mesin=excluded.jam_kerja_mesin,status_mesin=excluded.status_mesin,
-          kwh_produksi=excluded.kwh_produksi,pemakaian_bbm=excluded.pemakaian_bbm,updated_at=CURRENT_TIMESTAMP
+          kwh_produksi=excluded.kwh_produksi,pemakaian_bbm=excluded.pemakaian_bbm,keterangan=excluded.keterangan,
+          updated_at=CURRENT_TIMESTAMP
       `).bind(
         r.mesin_id, tanggal, jam,
         r.daya_mampu??null, r.beban??null, r.stand_kwh??null, r.stand_bbm??null,
         r.phasa_r??null, r.phasa_s??null, r.phasa_t??null, r.tek_oli??null,
         r.temp_air_pendingin??null, r.tegangan??null, r.frequency??null,
         r.cos_phi??null, r.jam_kerja_mesin??null,
-        r.status_mesin||'Operasi', r.kwh_produksi??null, r.pemakaian_bbm??null
+        r.status_mesin||'Operasi', r.kwh_produksi??null, r.pemakaian_bbm??null,
+        r.keterangan??null
       )
     )
     await c.env.DB.batch(stmts)

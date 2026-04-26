@@ -86,6 +86,7 @@ var PARAMS = [
   { key:'jam_kerja_mesin',    label:'JAM KERJA MESIN',    unit:'Jam',  type:'number' },
   { key:'kwh_produksi',       label:'KWH PRODUKSI',       unit:'kWh',  type:'number' },
   { key:'pemakaian_bbm',      label:'PEMAKAIAN BBM',      unit:'ltr',  type:'number' },
+  { key:'keterangan',         label:'KETERANGAN',         unit:'',     type:'text' },
 ]
 var STATUS_OPTIONS = ['Operasi','Standby','Pemeliharaan','Gangguan','Rusak Permanen']
 
@@ -322,6 +323,11 @@ function renderTable() {
           bodyHTML += '<option value="' + sopt + '"' + sel + '>' + sopt + '</option>'
         }
         bodyHTML += '</select></td>'
+      } else if (p2.type === 'text') {
+        bodyHTML += '<td><input type="text" class="cell-input cell-input-text" placeholder="—"'
+        bodyHTML += ' data-mesin-id="' + m.id_mesin + '" data-key="' + p2.key + '"'
+        bodyHTML += ' value="' + (val !== null && val !== undefined ? String(val).replace(/"/g,'&quot;') : '') + '"'
+        bodyHTML += ' oninput="setCellValue(' + m.id_mesin + ',\'' + p2.key + '\',this.value)"/></td>'
       } else {
         bodyHTML += '<td><input type="number" step="1" min="0" class="cell-input" placeholder="—"'
         bodyHTML += ' data-mesin-id="' + m.id_mesin + '" data-key="' + p2.key + '"'
@@ -338,7 +344,11 @@ function renderTable() {
 
 function setCellValue(mesinId, field, value) {
   if (!currentData[mesinId]) currentData[mesinId] = {}
-  currentData[mesinId][field] = value === '' ? null : (field === 'status_mesin' ? value : Math.round(parseFloat(value)))
+  if (field === 'status_mesin' || field === 'keterangan') {
+    currentData[mesinId][field] = value === '' ? null : value
+  } else {
+    currentData[mesinId][field] = value === '' ? null : Math.round(parseFloat(value))
+  }
 }
 
 // Update hanya nilai input tanpa re-render seluruh tabel
@@ -358,6 +368,8 @@ function updateTableData() {
       if (!el) continue
       if (p.type === 'select') {
         el.value = val || 'Operasi'
+      } else if (p.type === 'text') {
+        el.value = val !== null && val !== undefined ? String(val) : ''
       } else {
         el.value = val
       }
@@ -393,7 +405,8 @@ async function loadData() {
         tek_oli: row.tek_oli, temp_air_pendingin: row.temp_air_pendingin,
         tegangan: row.tegangan, frequency: row.frequency, cos_phi: row.cos_phi,
         jam_kerja_mesin: row.jam_kerja_mesin, status_mesin: row.status_mesin,
-        kwh_produksi: row.kwh_produksi, pemakaian_bbm: row.pemakaian_bbm
+        kwh_produksi: row.kwh_produksi, pemakaian_bbm: row.pemakaian_bbm,
+        keterangan: row.keterangan
       }
     }
     updateTableData()
