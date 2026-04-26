@@ -638,9 +638,9 @@ async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
   lines.push('LAPORAN BEBAN PUNCAK PLTD')
   lines.push(periodeLabel)
   lines.push(namaUnit)
-  lines.push('ID unit: ' + kodeUnit)
+  lines.push('id unit: ' + kodeUnit)
   lines.push('tgl : ' + tanggal)
-  lines.push('Nama Operator: ' + namaOperator)
+  lines.push('nama operator: ' + namaOperator)
   lines.push('')
 
   var totalDM = 0, totalBeban = 0, maxDM = 0
@@ -718,9 +718,9 @@ function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, sto
   lines.push('LAPORAN BEBAN PUNCAK PLTD')
   lines.push('\u200B' + periodeLabel)
   lines.push('\u200B' + (namaUnit || String(kodeUnit)))
-  lines.push('ID unit: ' + kodeUnit)
+  lines.push('id unit: ' + kodeUnit)
   lines.push('tgl : ' + tanggal)
-  lines.push('Nama Operator: ' + namaOperator)
+  lines.push('nama operator: ' + namaOperator)
   lines.push('')
 
   var totalDM = 0, totalBeban = 0, maxDM = 0
