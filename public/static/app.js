@@ -791,14 +791,11 @@ async function saveAllData() {
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
     showToast('Data berhasil disimpan! (' + json.saved + ' mesin). Menyiapkan WA...','success')
-    // Buka tab WA dulu (langsung, sebelum await agar tidak diblokir popup blocker)
-    var waTab = window.open('', '_blank')
-    // Build WA dari records di memori
-    var teksMon = await buildUnitWAFromMemory(tanggal, periode, monSelectedUnit, records)
-    if (teksMon && waTab) {
-      waTab.location.href = 'https://wa.me/6282252147896?text=' + encodeURIComponent(teksMon)
-    } else if (waTab) {
-      waTab.close()
+    // Build WA dari records di memori (unit+tanggal+periode aktif)
+    var teksMon = await buildWAFromMemory(tanggal, periode, monSelectedUnit, records)
+    if (teksMon) {
+      window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(teksMon), '_blank')
+    } else {
       showToast('Tidak ada data untuk dikirim ke WA','info')
     }
   } catch(e) { showToast('Gagal menyimpan: ' + e.message,'error') }
