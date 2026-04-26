@@ -660,11 +660,14 @@ function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, sto
   return lines.join('\n')
 }
 
-// Build teks WA lengkap: fetch semua data tersimpan (semua unit) untuk tanggal
-async function buildMonitoringWAText(tanggal, periode) {
-  // 1. Fetch data monitoring untuk tanggal+periode (jam tetap: siang=12, malam=18)
+// Build teks WA: hanya untuk unit+tanggal+periode yang sedang aktif
+// filterKodeUnit: kode_unit integer (wajib)
+async function buildMonitoringWAText(tanggal, periode, filterKodeUnit) {
+  // 1. Fetch data monitoring untuk tanggal+jam+kode_unit yang dipilih
   var jamPeriode = periode === 'siang' ? '12' : '18'
-  var resData  = await fetch('/api/monitoring?tanggal=' + tanggal + '&jam=' + jamPeriode)
+  var url = '/api/monitoring?tanggal=' + tanggal + '&jam=' + jamPeriode
+  if (filterKodeUnit) url += '&kode_unit=' + filterKodeUnit
+  var resData  = await fetch(url)
   var jsonData = await resData.json()
   if (!jsonData.success || !jsonData.data || jsonData.data.length === 0) return null
 
@@ -755,8 +758,8 @@ async function saveAllData() {
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
     showToast('Data berhasil disimpan! (' + json.saved + ' mesin). Menyiapkan WA...','success')
-    // Auto kirim ke WA: fetch semua data tersimpan (semua unit) untuk tanggal+periode
-    var teksMon = await buildMonitoringWAText(tanggal, periode)
+    // Auto kirim ke WA: hanya unit+tanggal+periode yang sedang aktif
+    var teksMon = await buildMonitoringWAText(tanggal, periode, monSelectedUnit)
     if (teksMon) {
       window.open('https://wa.me/6282252147896?text=' + encodeURIComponent(teksMon), '_blank')
     } else {
