@@ -562,8 +562,33 @@ async function loadData() {
     document.getElementById('info-record').textContent = cnt > 0
       ? cnt + ' mesin sudah ada data'
       : 'Belum ada data untuk ' + tanggal + ' (' + periode + ')'
+    // Jika popup WA sedang terbuka, rebuild teks sesuai filter baru
+    await refreshPopupWA()
   } catch(e) { showToast('Gagal memuat data: ' + e.message,'error') }
   finally { showLoading(false,'loading-indicator') }
+}
+
+// Rebuild teks WA di popup jika sedang terbuka — dipanggil setiap kali filter/data berubah
+async function refreshPopupWA() {
+  var modalKirim = document.getElementById('modal-kirim')
+  if (!modalKirim || modalKirim.classList.contains('hidden')) return  // popup tidak terbuka, skip
+  var tanggal = document.getElementById('sel-tanggal').value
+  var periode = document.getElementById('sel-periode').value
+  if (!tanggal || !periode || !monSelectedUnit || mesinList.length === 0) return
+  // Bangun records dari currentData (data yang sudah ada di memori)
+  var records = []
+  for (var i = 0; i < mesinList.length; i++) {
+    var m = mesinList[i]
+    var d = Object.assign({}, currentData[m.id_mesin] || { status_mesin: 'Operasi' })
+    d.mesin_id  = m.id_mesin
+    d.terpasang = m.terpasang !== undefined ? m.terpasang : null
+    records.push(d)
+  }
+  var teksMon = await buildWAFromMemory(tanggal, periode, monSelectedUnit, records)
+  if (teksMon) {
+    currentTeksLaporan = teksMon
+    document.getElementById('kirim-preview-text').textContent = teksMon
+  }
 }
 
 // Bangun teks WA format LAPORAN BEBAN PUNCAK PLTD
