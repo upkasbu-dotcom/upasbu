@@ -306,6 +306,23 @@ tbody tr:hover td.td-disabled { background: #f1f5f9 !important; }
   box-shadow: 0 0 0 2px #bfdbfe !important;
 }
 td.td-required { background: #fff !important; }
+
+/* Error: border merah jika field wajib kosong saat simpan */
+.cell-input.cell-error,
+.cell-input.cell-error:focus {
+  border-color: #ef4444 !important;
+  background: #fff1f1 !important;
+  box-shadow: 0 0 0 2px #fecaca !important;
+  animation: shake 0.3s ease;
+}
+td.td-error { background: #fff1f1 !important; }
+tbody tr:hover td.td-error { background: #ffe4e4 !important; }
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
 .row-section td { background: #f8fafc !important; font-size: 0.68rem; color: #64748b; font-style: italic; padding: 2px 10px !important; }
 
 /* =============================================

@@ -441,6 +441,15 @@ async function autoFillKeteranganH1(mesinId) {
 
 function setCellValue(mesinId, field, value) {
   if (!currentData[mesinId]) currentData[mesinId] = {}
+  // Hapus highlight error saat user mulai mengisi
+  var tbody = document.getElementById('table-body')
+  if (tbody) {
+    var el = tbody.querySelector('[data-mesin-id="' + mesinId + '"][data-key="' + field + '"]')
+    if (el) {
+      el.classList.remove('cell-error')
+      el.parentElement && el.parentElement.classList.remove('td-error')
+    }
+  }
   if (field === 'status_mesin' || field === 'keterangan') {
     currentData[mesinId][field] = value === '' ? null : value
     // Terapkan rule enable/disable saat status berubah
@@ -1005,6 +1014,39 @@ async function saveAllData() {
   var periode = document.getElementById('sel-periode').value
   if (!tanggal || !periode) { showToast('Pilih tanggal dan periode','info'); return }
   if (mesinList.length === 0) { showToast('Pilih unit terlebih dahulu','info'); return }
+
+  // ── VALIDASI: semua field yang tidak disabled wajib diisi ──
+  var tbody = document.getElementById('table-body')
+  var validationErrors = []
+  for (var vi = 0; vi < mesinList.length; vi++) {
+    var vm = mesinList[vi]
+    var vRow = tbody ? tbody.querySelector('tr[data-mesin="' + vm.id_mesin + '"]') : null
+    if (!vRow) continue
+    var mesinNama = vm.mesin || vm.nama_mesin || ('Mesin ' + vm.id_mesin)
+    for (var pi = 0; pi < PARAMS.length; pi++) {
+      var vp = PARAMS[pi]
+      if (vp.type === 'readonly' || vp.type === 'select') continue
+      var vel = vRow.querySelector('[data-mesin-id="' + vm.id_mesin + '"][data-key="' + vp.key + '"]')
+      if (!vel || vel.disabled) continue  // skip field yang disabled
+      var vval = vel.value.trim()
+      if (vval === '' || vval === null) {
+        // Highlight merah
+        vel.classList.add('cell-error')
+        vel.parentElement && vel.parentElement.classList.add('td-error')
+        validationErrors.push(mesinNama + ' → ' + vp.label)
+      } else {
+        vel.classList.remove('cell-error')
+        vel.parentElement && vel.parentElement.classList.remove('td-error')
+      }
+    }
+  }
+  if (validationErrors.length > 0) {
+    showToast('Field wajib belum diisi: ' + validationErrors.length + ' kolom kosong. Periksa sel merah.', 'error')
+    // Scroll ke baris pertama yang error
+    var firstError = tbody ? tbody.querySelector('.cell-error') : null
+    if (firstError) firstError.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    return
+  }
 
   var records = []
   for (var i = 0; i < mesinList.length; i++) {
