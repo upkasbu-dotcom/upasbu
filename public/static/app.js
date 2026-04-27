@@ -1067,7 +1067,7 @@ async function saveAllData() {
     if (!json.success) throw new Error(json.error)
     showToast('Data berhasil disimpan! (' + json.saved + ' mesin)','success')
 
-    // Backup ke Google Sheets (fire-and-forget, tidak blocking)
+    // Backup ke Google Sheets — tunggu selesai sebelum redirect WA
     try {
       var namaUnit = ''
       var unitEl = document.getElementById('sel-unit')
@@ -1077,7 +1077,7 @@ async function saveAllData() {
         var m = mesinList.find(function(x) { return x.id_mesin == r.mesin_id }) || {}
         return Object.assign({}, r, { nama_mesin: m.mesin || m.nama_mesin || '' })
       })
-      fetch('/api/monitoring/sync-sheets', {
+      await fetch('/api/monitoring/sync-sheets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1085,8 +1085,8 @@ async function saveAllData() {
           kode_unit: monSelectedUnit, nama_unit: namaUnit,
           records: recordsWithNama
         })
-      }).catch(function() {}) // abaikan error sheets, tidak blocking
-    } catch(se) { /* abaikan */ }
+      })
+    } catch(se) { /* abaikan error sheets, tidak blocking simpan utama */ }
 
     // Langsung buka WA tanpa popup
     var teksMon = await buildWAFromMemory(tanggal, periode, monSelectedUnit, records)
