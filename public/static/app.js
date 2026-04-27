@@ -622,9 +622,13 @@ async function loadData() {
         if (rH1.status_mesin && rH1.status_mesin !== 'Operasi' && rH1.status_mesin !== 'Standby' && rH1.keterangan) {
           currentData[mH1].keterangan = rH1.keterangan
         }
-        // Auto-fill daya_mampu dari H-1 jika ada nilainya
+        // Simpan daya_mampu & keterangan H-1 untuk auto-fill
         if (rH1.daya_mampu != null && rH1.daya_mampu !== 0) {
           currentData[mH1].daya_mampu_h1 = rH1.daya_mampu
+        }
+        // Simpan keterangan H-1 untuk semua status
+        if (rH1.keterangan != null && rH1.keterangan !== '' && rH1.keterangan !== '0.0') {
+          currentData[mH1].keterangan_h1 = rH1.keterangan
         }
       }
     } catch(e) { /* abaikan jika gagal */ }
@@ -650,6 +654,10 @@ async function loadData() {
         if (currentData[mid].daya_mampu_h1 != null) {
           currentData[mid].daya_mampu = currentData[mid].daya_mampu_h1
         }
+        // Auto-fill keterangan dari H-1 jika belum ada data hari ini
+        if (!currentData[mid].keterangan && currentData[mid].keterangan_h1) {
+          currentData[mid].keterangan = currentData[mid].keterangan_h1
+        }
       } else {
         // Data hari ini sudah diisi manual → pakai sepenuhnya
         currentData[mid] = {
@@ -672,6 +680,10 @@ async function loadData() {
       if (!currentData[mid2]) currentData[mid2] = { status_mesin: 'Operasi' }
       if (!currentData[mid2].daya_mampu && currentData[mid2].daya_mampu_h1 != null) {
         currentData[mid2].daya_mampu = currentData[mid2].daya_mampu_h1
+      }
+      // Auto-fill keterangan dari H-1 jika belum ada data hari ini
+      if (!currentData[mid2].keterangan && currentData[mid2].keterangan_h1) {
+        currentData[mid2].keterangan = currentData[mid2].keterangan_h1
       }
     }
     updateTableData()
