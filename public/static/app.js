@@ -1070,8 +1070,12 @@ async function saveAllData() {
     // Backup ke Google Sheets — tunggu selesai sebelum redirect WA
     try {
       var namaUnit = ''
-      var unitEl = document.getElementById('sel-unit')
+      var unitEl = document.getElementById('mon-sel-unit')
       if (unitEl) namaUnit = unitEl.options[unitEl.selectedIndex]?.text || ''
+      if (!namaUnit && monSelectedUnit) {
+        var ud = UNIT_DATA.find(function(u) { return u.kode_unit == monSelectedUnit })
+        if (ud) namaUnit = ud.nama_unit
+      }
       // Tambahkan nama_mesin ke setiap record dari mesinList
       var recordsWithNama = records.map(function(r) {
         var m = mesinList.find(function(x) { return x.id_mesin == r.mesin_id }) || {}
