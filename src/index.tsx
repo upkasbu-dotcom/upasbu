@@ -188,14 +188,23 @@ async function syncMesinIfNeeded(db: D1Database): Promise<{ synced: boolean, cou
     r.mesin !== '#N/A' && r.nama_mesin !== '#N/A'
   )
 
+  // Simpan terpasang yang sudah ada sebelum dihapus (agar tidak hilang saat sync)
+  const existingTerpasang = await db.prepare(`SELECT id_mesin, terpasang FROM mesin_cache WHERE terpasang IS NOT NULL`).all()
+  const terpasangMap: Record<number, number> = {}
+  for (const row of existingTerpasang.results as any[]) {
+    terpasangMap[row.id_mesin] = row.terpasang
+  }
+
   // Hapus cache lama, insert batch baru
   await db.prepare(`DELETE FROM mesin_cache`).run()
 
   const BATCH = 50
   for (let i = 0; i < valid.length; i += BATCH) {
     const chunk = valid.slice(i, i + BATCH)
-    const stmts = chunk.map((r: any) =>
-      db.prepare(`
+    const stmts = chunk.map((r: any) => {
+      // Prioritaskan terpasang dari DB (input manual), baru dari Google Sheets
+      const terpasang = terpasangMap[r.id_mesin] ?? (r.terpasang != null ? parseFloat(r.terpasang) : null)
+      return db.prepare(`
         INSERT OR REPLACE INTO mesin_cache
           (id_mesin, up3, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, terpasang, cached_at)
         VALUES (?,?,?,?,?,?,?,?,?,?)
@@ -208,10 +217,10 @@ async function syncMesinIfNeeded(db: D1Database): Promise<{ synced: boolean, cou
         r.type || null,
         String(r.s_n || ''),
         r.nama_mesin || r.mesin,
-        r.terpasang != null ? parseFloat(r.terpasang) : null,
+        terpasang,
         today
       )
-    )
+    })
     await db.batch(stmts)
   }
 
