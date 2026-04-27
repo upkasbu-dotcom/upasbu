@@ -436,18 +436,9 @@ app.post('/api/monitoring/batch', async (c) => {
 })
 
 // ============================================================
-// API: SYNC LOG SHEET → Google Sheets backup
+// API: SYNC LOG SHEET → Google Sheets backup via Apps Script
 // ============================================================
-const LOGSHEET_SHEETS_ID = '1R20Hw2c0tI5JGWlkihOVNFUtGPFGjFBexbnl-l1tzrA'
-const LOGSHEET_HEADERS = [
-  'Timestamp','Tanggal','Periode','Kode Unit','Nama Unit',
-  'ID Mesin','Nama Mesin','Status Mesin','Terpasang (kW)',
-  'Daya Mampu (kW)','Beban (kW)','Stand KWH','Stand BBM',
-  'Phasa R (A)','Phasa S (A)','Phasa T (A)',
-  'Tek Oli (bar)','Temp Air (°C)','Tegangan (V)',
-  'Frequency (Hz)','Cos Phi','Jam Kerja (Jam)',
-  'KWH Produksi','Pemakaian BBM (ltr)','Keterangan'
-]
+const LOGSHEET_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxCQY_Kq41e6v7xCFPdMO5mzgFzXsNGNp6Ohb4mMWyfaE4RQcZbp3cS62hexNQ8SSHq/exec'
 
 app.post('/api/monitoring/sync-sheets', async (c) => {
   try {
@@ -458,53 +449,15 @@ app.post('/api/monitoring/sync-sheets', async (c) => {
     if (!tanggal || !records || !Array.isArray(records))
       return c.json({ success: false, error: 'tanggal dan records wajib' }, 400)
 
-    const token = await getGoogleAccessToken()
-    const now   = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })
-    const sheetName = 'Log Sheet'
-
-    // Pastikan header ada di baris 1
-    const checkResp = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${LOGSHEET_SHEETS_ID}/values/${encodeURIComponent(sheetName)}!A1:Y1`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    )
-    const checkJson: any = await checkResp.json()
-    const hasHeader = checkJson.values && checkJson.values.length > 0
-    if (!hasHeader) {
-      await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${LOGSHEET_SHEETS_ID}/values/${encodeURIComponent(sheetName)}!A1:Y1?valueInputOption=USER_ENTERED`,
-        {
-          method: 'PUT',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ values: [LOGSHEET_HEADERS] })
-        }
-      )
-    }
-
-    // Bangun rows dari records
-    const rows = records.map((r: any) => [
-      now, tanggal, periode, kode_unit || '', nama_unit || '',
-      r.mesin_id || '', r.nama_mesin || '',
-      r.status_mesin || '',
-      r.terpasang ?? '',
-      r.daya_mampu ?? '', r.beban ?? '', r.stand_kwh ?? '', r.stand_bbm ?? '',
-      r.phasa_r ?? '', r.phasa_s ?? '', r.phasa_t ?? '',
-      r.tek_oli ?? '', r.temp_air_pendingin ?? '', r.tegangan ?? '',
-      r.frequency ?? '', r.cos_phi ?? '', r.jam_kerja_mesin ?? '',
-      r.kwh_produksi ?? '', r.pemakaian_bbm ?? '',
-      r.keterangan ?? ''
-    ])
-
-    const appendResp = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${LOGSHEET_SHEETS_ID}/values/${encodeURIComponent(sheetName)}!A:Y:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values: rows })
-      }
-    )
-    const appendJson: any = await appendResp.json()
-    if (appendJson.error) throw new Error(JSON.stringify(appendJson.error))
-    return c.json({ success: true, appended: rows.length, range: appendJson.updates?.updatedRange })
+    // Kirim ke Apps Script (tidak perlu auth, sudah public)
+    const resp = await fetch(LOGSHEET_APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' }, // Apps Script butuh text/plain untuk avoid CORS preflight
+      body: JSON.stringify({ tanggal, periode, kode_unit, nama_unit, records })
+    })
+    const json: any = await resp.json()
+    if (!json.success) throw new Error(json.error || 'Apps Script error')
+    return c.json({ success: true, appended: json.appended })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
