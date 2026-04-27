@@ -4,10 +4,83 @@ import { serveStatic } from 'hono/cloudflare-workers'
 
 type Bindings = {
   DB: D1Database
+  TURSO_URL: string
+  TURSO_TOKEN: string
+}
+
+// ============================================================
+// TURSO SYNC — kirim data ke Turso secara real-time
+// ============================================================
+async function syncToTurso(url: string, token: string, records: any[], tanggal: string, jam: number) {
+  if (!url || !token) return  // skip jika secret belum dikonfigurasi
+  try {
+    const requests = records.map((r: any) => ({
+      type: 'execute',
+      stmt: {
+        sql: `INSERT INTO data_monitoring
+          (mesin_id,tanggal,jam,terpasang,daya_mampu,beban,stand_kwh,stand_bbm,phasa_r,phasa_s,phasa_t,
+           tek_oli,temp_air_pendingin,tegangan,frequency,cos_phi,jam_kerja_mesin,
+           status_mesin,kwh_produksi,pemakaian_bbm,keterangan,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(mesin_id,tanggal,jam) DO UPDATE SET
+          terpasang=excluded.terpasang,daya_mampu=excluded.daya_mampu,beban=excluded.beban,
+          stand_kwh=excluded.stand_kwh,stand_bbm=excluded.stand_bbm,
+          phasa_r=excluded.phasa_r,phasa_s=excluded.phasa_s,phasa_t=excluded.phasa_t,
+          tek_oli=excluded.tek_oli,temp_air_pendingin=excluded.temp_air_pendingin,
+          tegangan=excluded.tegangan,frequency=excluded.frequency,cos_phi=excluded.cos_phi,
+          jam_kerja_mesin=excluded.jam_kerja_mesin,status_mesin=excluded.status_mesin,
+          kwh_produksi=excluded.kwh_produksi,pemakaian_bbm=excluded.pemakaian_bbm,
+          keterangan=excluded.keterangan,updated_at=CURRENT_TIMESTAMP`,
+        args: [
+          { type: 'integer', value: String(r.mesin_id) },
+          { type: 'text',    value: tanggal },
+          { type: 'integer', value: String(jam) },
+          r.terpasang       != null ? { type: 'integer', value: String(r.terpasang) }       : { type: 'null' },
+          r.daya_mampu      != null ? { type: 'integer', value: String(r.daya_mampu) }      : { type: 'null' },
+          r.beban           != null ? { type: 'integer', value: String(r.beban) }           : { type: 'null' },
+          r.stand_kwh       != null ? { type: 'integer', value: String(r.stand_kwh) }       : { type: 'null' },
+          r.stand_bbm       != null ? { type: 'integer', value: String(r.stand_bbm) }       : { type: 'null' },
+          r.phasa_r         != null ? { type: 'integer', value: String(r.phasa_r) }         : { type: 'null' },
+          r.phasa_s         != null ? { type: 'integer', value: String(r.phasa_s) }         : { type: 'null' },
+          r.phasa_t         != null ? { type: 'integer', value: String(r.phasa_t) }         : { type: 'null' },
+          r.tek_oli         != null ? { type: 'float',   value: String(r.tek_oli) }         : { type: 'null' },
+          r.temp_air_pendingin != null ? { type: 'integer', value: String(r.temp_air_pendingin) } : { type: 'null' },
+          r.tegangan        != null ? { type: 'integer', value: String(r.tegangan) }        : { type: 'null' },
+          r.frequency       != null ? { type: 'float',   value: String(r.frequency) }       : { type: 'null' },
+          r.cos_phi         != null ? { type: 'float',   value: String(r.cos_phi) }         : { type: 'null' },
+          r.jam_kerja_mesin != null ? { type: 'integer', value: String(r.jam_kerja_mesin) } : { type: 'null' },
+          { type: 'text',    value: r.status_mesin || 'Operasi' },
+          r.kwh_produksi    != null ? { type: 'integer', value: String(r.kwh_produksi) }    : { type: 'null' },
+          r.pemakaian_bbm   != null ? { type: 'integer', value: String(r.pemakaian_bbm) }   : { type: 'null' },
+          r.keterangan      != null ? { type: 'text',    value: String(r.keterangan) }      : { type: 'null' },
+        ]
+      }
+    }))
+    requests.push({ type: 'close' } as any)
+    const res = await fetch(`${url}/v2/pipeline`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ requests })
+    })
+    if (!res.ok) {
+      const errText = await res.text()
+      console.error('Turso sync HTTP error:', res.status, errText)
+    } else {
+      console.log('Turso sync OK, records:', records.length)
+    }
+  } catch (e) {
+    // Turso sync gagal tidak boleh block response ke client
+    console.error('Turso sync error:', e)
+  }
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
 app.use('/api/*', cors())
+
+
 // Static files: cache 7 hari di browser, 1 jam di edge
 app.use('/static/*', async (c, next) => {
   await next()
@@ -421,7 +494,11 @@ app.post('/api/monitoring/batch', async (c) => {
         r.keterangan??null
       )
     )
-    await c.env.DB.batch(stmts)
+    // Simpan ke D1 dan Turso secara parallel
+    await Promise.all([
+      c.env.DB.batch(stmts),
+      syncToTurso(c.env.TURSO_URL, c.env.TURSO_TOKEN, records, tanggal, parseInt(jam))
+    ])
     return c.json({ success: true, saved: records.length })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
