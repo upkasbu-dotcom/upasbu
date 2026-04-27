@@ -436,6 +436,79 @@ app.post('/api/monitoring/batch', async (c) => {
 })
 
 // ============================================================
+// API: SYNC LOG SHEET → Google Sheets backup
+// ============================================================
+const LOGSHEET_SHEETS_ID = '1R20Hw2c0tI5JGWlkihOVNFUtGPFGjFBexbnl-l1tzrA'
+const LOGSHEET_HEADERS = [
+  'Timestamp','Tanggal','Periode','Kode Unit','Nama Unit',
+  'ID Mesin','Nama Mesin','Status Mesin','Terpasang (kW)',
+  'Daya Mampu (kW)','Beban (kW)','Stand KWH','Stand BBM',
+  'Phasa R (A)','Phasa S (A)','Phasa T (A)',
+  'Tek Oli (bar)','Temp Air (°C)','Tegangan (V)',
+  'Frequency (Hz)','Cos Phi','Jam Kerja (Jam)',
+  'KWH Produksi','Pemakaian BBM (ltr)','Keterangan'
+]
+
+app.post('/api/monitoring/sync-sheets', async (c) => {
+  try {
+    const { tanggal, periode, kode_unit, nama_unit, records } = await c.req.json() as {
+      tanggal: string, periode: string, kode_unit: string, nama_unit: string,
+      records: any[]
+    }
+    if (!tanggal || !records || !Array.isArray(records))
+      return c.json({ success: false, error: 'tanggal dan records wajib' }, 400)
+
+    const token = await getGoogleAccessToken()
+    const now   = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })
+    const sheetName = 'Log Sheet'
+
+    // Pastikan header ada di baris 1
+    const checkResp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${LOGSHEET_SHEETS_ID}/values/${encodeURIComponent(sheetName)}!A1:Y1`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+    const checkJson: any = await checkResp.json()
+    const hasHeader = checkJson.values && checkJson.values.length > 0
+    if (!hasHeader) {
+      await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${LOGSHEET_SHEETS_ID}/values/${encodeURIComponent(sheetName)}!A1:Y1?valueInputOption=USER_ENTERED`,
+        {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [LOGSHEET_HEADERS] })
+        }
+      )
+    }
+
+    // Bangun rows dari records
+    const rows = records.map((r: any) => [
+      now, tanggal, periode, kode_unit || '', nama_unit || '',
+      r.mesin_id || '', r.nama_mesin || '',
+      r.status_mesin || '',
+      r.terpasang ?? '',
+      r.daya_mampu ?? '', r.beban ?? '', r.stand_kwh ?? '', r.stand_bbm ?? '',
+      r.phasa_r ?? '', r.phasa_s ?? '', r.phasa_t ?? '',
+      r.tek_oli ?? '', r.temp_air_pendingin ?? '', r.tegangan ?? '',
+      r.frequency ?? '', r.cos_phi ?? '', r.jam_kerja_mesin ?? '',
+      r.kwh_produksi ?? '', r.pemakaian_bbm ?? '',
+      r.keterangan ?? ''
+    ])
+
+    const appendResp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${LOGSHEET_SHEETS_ID}/values/${encodeURIComponent(sheetName)}!A:Y:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: rows })
+      }
+    )
+    const appendJson: any = await appendResp.json()
+    if (appendJson.error) throw new Error(JSON.stringify(appendJson.error))
+    return c.json({ success: true, appended: rows.length, range: appendJson.updates?.updatedRange })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ============================================================
 // API: OPERASIONAL
 // ============================================================
 app.get('/api/lap-operasional', async (c) => {
@@ -1064,9 +1137,9 @@ app.get('/', (c) => {
   <title>DILAN [DIGITALISASI LAPORAN]</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
-  <link rel="preload" href="/static/style.css?v=20260428d" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260428d" as="script"/>
-  <link href="/static/style.css?v=20260428d" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260428e" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260428e" as="script"/>
+  <link href="/static/style.css?v=20260428e" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -1263,7 +1336,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<script src="/static/app.js?v=20260428d" defer></script>
+<script src="/static/app.js?v=20260428e" defer></script>
 </body>
 </html>`
   const resp = c.html(html)

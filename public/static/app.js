@@ -1066,6 +1066,28 @@ async function saveAllData() {
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
     showToast('Data berhasil disimpan! (' + json.saved + ' mesin)','success')
+
+    // Backup ke Google Sheets (fire-and-forget, tidak blocking)
+    try {
+      var namaUnit = ''
+      var unitEl = document.getElementById('sel-unit')
+      if (unitEl) namaUnit = unitEl.options[unitEl.selectedIndex]?.text || ''
+      // Tambahkan nama_mesin ke setiap record dari mesinList
+      var recordsWithNama = records.map(function(r) {
+        var m = mesinList.find(function(x) { return x.id_mesin == r.mesin_id }) || {}
+        return Object.assign({}, r, { nama_mesin: m.mesin || m.nama_mesin || '' })
+      })
+      fetch('/api/monitoring/sync-sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tanggal: tanggal, periode: periode,
+          kode_unit: monSelectedUnit, nama_unit: namaUnit,
+          records: recordsWithNama
+        })
+      }).catch(function() {}) // abaikan error sheets, tidak blocking
+    } catch(se) { /* abaikan */ }
+
     // Langsung buka WA tanpa popup
     var teksMon = await buildWAFromMemory(tanggal, periode, monSelectedUnit, records)
     if (teksMon) {
