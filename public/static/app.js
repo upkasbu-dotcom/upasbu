@@ -626,8 +626,9 @@ async function loadData() {
         if (rH1.daya_mampu != null && rH1.daya_mampu !== 0) {
           currentData[mH1].daya_mampu_h1 = rH1.daya_mampu
         }
-        // Simpan keterangan H-1 untuk semua status
-        if (rH1.keterangan != null && rH1.keterangan !== '' && rH1.keterangan !== '0.0') {
+        // Simpan keterangan H-1 hanya untuk status non-Operasi/Standby (bukan "0.0")
+        if (rH1.keterangan != null && rH1.keterangan !== '' && rH1.keterangan !== '0.0'
+            && rH1.status_mesin && rH1.status_mesin !== 'Operasi' && rH1.status_mesin !== 'Standby') {
           currentData[mH1].keterangan_h1 = rH1.keterangan
         }
       }
