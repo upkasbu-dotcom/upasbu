@@ -99,7 +99,7 @@ var OPERATOR_DATA = {
 // =============================================
 var PARAMS = [
   { key:'status_mesin',       label:'STATUS MESIN',       unit:'',     type:'select' },
-  { key:'terpasang',          label:'TERPASANG',          unit:'kW',   type:'readonly' },
+  { key:'terpasang',          label:'TERPASANG',          unit:'kW',   type:'number' },
   { key:'daya_mampu',         label:'DAYA MAMPU',         unit:'kW',   type:'number' },
   { key:'beban',              label:'BEBAN',              unit:'kW',   type:'number' },
   { key:'stand_kwh',          label:'STAND KWH',          unit:'kWh',  type:'number' },
@@ -487,7 +487,8 @@ function applyStatusRule(mesinId, status) {
 
   for (var pi = 0; pi < PARAMS.length; pi++) {
     var p = PARAMS[pi]
-    if (p.type === 'readonly' || p.type === 'select') continue  // kolom mesin & status tidak disentuh
+    if (p.type === 'select') continue  // kolom status tidak disentuh
+    if (p.key === 'terpasang') continue  // terpasang selalu bisa diinput di semua status
 
     var el = row.querySelector('[data-mesin-id="' + mesinId + '"][data-key="' + p.key + '"]')
     if (!el) continue
@@ -565,11 +566,10 @@ function updateTableData() {
     if (!row) { renderTable(); return }
     for (var pi = 0; pi < PARAMS.length; pi++) {
       var p   = PARAMS[pi]
-      if (p.type === 'readonly') continue  // nilai tetap dari master, skip
-      var val = (currentData[m.id_mesin] && currentData[m.id_mesin][p.key] !== undefined && currentData[m.id_mesin][p.key] !== null)
-                ? currentData[m.id_mesin][p.key] : ''
       var el  = row.querySelector('[data-mesin-id="' + m.id_mesin + '"][data-key="' + p.key + '"]')
       if (!el) continue
+      var val = (currentData[m.id_mesin] && currentData[m.id_mesin][p.key] !== undefined && currentData[m.id_mesin][p.key] !== null)
+                ? currentData[m.id_mesin][p.key] : ''
       if (p.type === 'select') {
         el.value = val || 'Operasi'
       } else if (p.type === 'text') {
@@ -1000,7 +1000,8 @@ async function saveAllData() {
     var vstatus = vd.status_mesin || 'Operasi'
     for (var pi = 0; pi < PARAMS.length; pi++) {
       var vp = PARAMS[pi]
-      if (vp.type === 'readonly' || vp.type === 'select') continue
+      if (vp.type === 'select') continue
+      if (vp.key === 'terpasang') continue  // terpasang opsional, tidak wajib
       // Tentukan apakah field ini wajib berdasarkan status
       var vRequired = false
       if (vstatus === 'Operasi') {
@@ -1046,7 +1047,10 @@ async function saveAllData() {
     var m = mesinList[i]
     var d = Object.assign({}, currentData[m.id_mesin] || { status_mesin: 'Operasi' })
     d.mesin_id  = m.id_mesin
-    d.terpasang = m.terpasang !== undefined ? m.terpasang : null  // selalu dari master
+    // terpasang: prioritaskan input user, fallback ke master
+    if (d.terpasang === undefined || d.terpasang === null) {
+      d.terpasang = m.terpasang !== undefined ? m.terpasang : null
+    }
     records.push(d)
   }
   showLoading(true,'loading-indicator')

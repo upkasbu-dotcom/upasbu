@@ -499,6 +499,15 @@ app.post('/api/monitoring/batch', async (c) => {
       c.env.DB.batch(stmts),
       syncToTurso(c.env.TURSO_URL, c.env.TURSO_TOKEN, records, tanggal, parseInt(jam))
     ])
+    // Update terpasang ke mesin_cache jika ada yang diisi
+    const terpasangUpdates = records.filter((r: any) => r.terpasang != null)
+    if (terpasangUpdates.length > 0) {
+      const tStmts = terpasangUpdates.map((r: any) =>
+        c.env.DB.prepare(`UPDATE mesin_cache SET terpasang = ? WHERE id_mesin = ?`)
+          .bind(r.terpasang, r.mesin_id)
+      )
+      await c.env.DB.batch(tStmts)
+    }
     return c.json({ success: true, saved: records.length })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
@@ -1131,9 +1140,9 @@ app.get('/', (c) => {
   <title>DILAN [DIGITALISASI LAPORAN]</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
-  <link rel="preload" href="/static/style.css?v=20260427k" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260427k" as="script"/>
-  <link href="/static/style.css?v=20260427k" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260427l" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260427l" as="script"/>
+  <link href="/static/style.css?v=20260427l" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -1330,7 +1339,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<script src="/static/app.js?v=20260427k" defer></script>
+<script src="/static/app.js?v=20260427l" defer></script>
 </body>
 </html>`
   const resp = c.html(html)
