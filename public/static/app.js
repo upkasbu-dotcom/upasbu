@@ -684,14 +684,19 @@ async function loadData() {
       }
     }
     // Step 4: Untuk mesin yang belum ada data hari ini sama sekali,
-    // auto-fill daya_mampu dari H-1 jika tersedia
+    // gunakan status dari H-1 (bukan reset ke Operasi)
     for (var i = 0; i < mesinList.length; i++) {
       var mid2 = mesinList[i].id_mesin
-      if (!currentData[mid2]) currentData[mid2] = { status_mesin: 'Operasi' }
+      if (!currentData[mid2]) currentData[mid2] = {}
+      // Status: pakai H-1 jika ada, fallback Operasi
+      if (!currentData[mid2].status_mesin) {
+        currentData[mid2].status_mesin = 'Operasi'
+      }
+      // Auto-fill daya_mampu dari H-1
       if (!currentData[mid2].daya_mampu && currentData[mid2].daya_mampu_h1 != null) {
         currentData[mid2].daya_mampu = currentData[mid2].daya_mampu_h1
       }
-      // Auto-fill keterangan dari H-1 jika belum ada data hari ini
+      // Auto-fill keterangan dari H-1
       if (!currentData[mid2].keterangan && currentData[mid2].keterangan_h1) {
         currentData[mid2].keterangan = currentData[mid2].keterangan_h1
       }

@@ -438,7 +438,7 @@ app.post('/api/monitoring/batch', async (c) => {
 // ============================================================
 // API: SYNC LOG SHEET → Google Sheets backup via Apps Script
 // ============================================================
-const LOGSHEET_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxCQY_Kq41e6v7xCFPdMO5mzgFzXsNGNp6Ohb4mMWyfaE4RQcZbp3cS62hexNQ8SSHq/exec'
+const LOGSHEET_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx8-uV4vAu2E5nFs_Do3Be9FCzo20daUm7JJBeAxtitObNNebepoNkJbd9DCg_HfwBL/exec'
 
 app.post('/api/monitoring/sync-sheets', async (c) => {
   try {
