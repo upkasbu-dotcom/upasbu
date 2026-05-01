@@ -612,34 +612,60 @@ async function loadData() {
 
     // Step 2: Fetch H-1 dan terapkan status + keterangan ke semua mesin
     try {
+      // Helper terapkan rows H-1 ke currentData
+      function applyH1Rows(rows) {
+        for (var hi = 0; hi < rows.length; hi++) {
+          var rH1 = rows[hi]
+          var mH1 = rH1.mesin_id
+          if (!currentData[mH1]) currentData[mH1] = {}
+          // Hanya terapkan jika belum dapat status dari fetch sebelumnya
+          if (!currentData[mH1]._h1applied) {
+            currentData[mH1].status_mesin = rH1.status_mesin || 'Operasi'
+            if (rH1.status_mesin && rH1.status_mesin !== 'Operasi' && rH1.status_mesin !== 'Standby' && rH1.keterangan) {
+              currentData[mH1].keterangan = rH1.keterangan
+            }
+            if (rH1.daya_mampu != null && rH1.daya_mampu !== 0) {
+              currentData[mH1].daya_mampu_h1 = rH1.daya_mampu
+            }
+            if (rH1.keterangan != null && rH1.keterangan !== '' && rH1.keterangan !== '0.0'
+                && rH1.status_mesin && rH1.status_mesin !== 'Operasi' && rH1.status_mesin !== 'Standby') {
+              currentData[mH1].keterangan_h1 = rH1.keterangan
+            }
+            currentData[mH1]._h1applied = true
+          }
+        }
+      }
+
       var resH1 = await fetch('/api/monitoring?tanggal=' + tanggalH1 + '&periode=' + periode + '&kode_unit=' + monSelectedUnit)
       var jsonH1 = await resH1.json()
       var rowsH1 = (jsonH1.success && jsonH1.data) ? jsonH1.data : []
-      // Fallback tanpa periode jika tidak ada hasil
+      // Fallback tanpa periode jika tidak ada hasil sama sekali
       if (rowsH1.length === 0) {
         var resH1b = await fetch('/api/monitoring?tanggal=' + tanggalH1 + '&kode_unit=' + monSelectedUnit)
         var jsonH1b = await resH1b.json()
         rowsH1 = (jsonH1b.success && jsonH1b.data) ? jsonH1b.data : []
       }
-      for (var hi = 0; hi < rowsH1.length; hi++) {
-        var rH1 = rowsH1[hi]
-        var mH1 = rH1.mesin_id
-        if (!currentData[mH1]) currentData[mH1] = {}
-        // Terapkan status dari H-1 sebagai default awal
-        currentData[mH1].status_mesin = rH1.status_mesin || 'Operasi'
-        // Terapkan keterangan dari H-1 jika non Operasi/Standby
-        if (rH1.status_mesin && rH1.status_mesin !== 'Operasi' && rH1.status_mesin !== 'Standby' && rH1.keterangan) {
-          currentData[mH1].keterangan = rH1.keterangan
+      applyH1Rows(rowsH1)
+
+      // Cek mesin yang belum dapat data H-1 → coba H-2
+      var missingIds = mesinList.filter(function(m) {
+        return !currentData[m.id_mesin] || !currentData[m.id_mesin]._h1applied
+      })
+      if (missingIds.length > 0) {
+        var tglH2Date = new Date(tglDate.getTime())
+        tglH2Date.setDate(tglH2Date.getDate() - 1)
+        var tanggalH2 = tglH2Date.getFullYear() + '-'
+          + String(tglH2Date.getMonth() + 1).padStart(2, '0') + '-'
+          + String(tglH2Date.getDate()).padStart(2, '0')
+        var resH2 = await fetch('/api/monitoring?tanggal=' + tanggalH2 + '&periode=' + periode + '&kode_unit=' + monSelectedUnit)
+        var jsonH2 = await resH2.json()
+        var rowsH2 = (jsonH2.success && jsonH2.data) ? jsonH2.data : []
+        if (rowsH2.length === 0) {
+          var resH2b = await fetch('/api/monitoring?tanggal=' + tanggalH2 + '&kode_unit=' + monSelectedUnit)
+          var jsonH2b = await resH2b.json()
+          rowsH2 = (jsonH2b.success && jsonH2b.data) ? jsonH2b.data : []
         }
-        // Simpan daya_mampu & keterangan H-1 untuk auto-fill
-        if (rH1.daya_mampu != null && rH1.daya_mampu !== 0) {
-          currentData[mH1].daya_mampu_h1 = rH1.daya_mampu
-        }
-        // Simpan keterangan H-1 hanya untuk status non-Operasi/Standby (bukan "0.0")
-        if (rH1.keterangan != null && rH1.keterangan !== '' && rH1.keterangan !== '0.0'
-            && rH1.status_mesin && rH1.status_mesin !== 'Operasi' && rH1.status_mesin !== 'Standby') {
-          currentData[mH1].keterangan_h1 = rH1.keterangan
-        }
+        applyH1Rows(rowsH2)
       }
     } catch(e) { /* abaikan jika gagal */ }
 
