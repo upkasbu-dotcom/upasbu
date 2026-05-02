@@ -1123,6 +1123,13 @@ async function saveAllData() {
       })
     } catch(se) { /* abaikan error sheets, tidak blocking simpan utama */ }
 
+    // Jika unit 919, baca jadwal dari spreadsheet dan simpan ke D1
+    if (parseInt(monSelectedUnit) === 919) {
+      try {
+        fetch('/api/jadwal-wa', { method: 'POST' }).catch(function() {})
+      } catch(sj) {}
+    }
+
     // Kirim WA otomatis via Whacenter + salin teks ke clipboard
     var teksMon = await buildWAFromMemory(tanggal, periode, monSelectedUnit, records)
     if (teksMon) {

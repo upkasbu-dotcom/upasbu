@@ -119,6 +119,18 @@ async function initDB(db: D1Database) {
   // Tambah kolom terpasang ke mesin_cache jika belum ada (migrasi)
   try { await db.prepare(`ALTER TABLE mesin_cache ADD COLUMN terpasang REAL`).run() } catch(_){}
 
+  // Tabel jadwal kirim WA per jam
+  await db.prepare(`CREATE TABLE IF NOT EXISTS jadwal_wa (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kode_unit   INTEGER NOT NULL,
+    tanggal     TEXT NOT NULL,
+    jam         TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'pending',
+    sent_at     TEXT,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`).run()
+  await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_jadwal_wa_unique ON jadwal_wa(kode_unit, tanggal, jam)`).run()
+
   // MIGRASI: hapus FOREIGN KEY di data_monitoring (referensi ke tabel mesin yg salah)
   // Cek apakah tabel masih punya FK dengan melihat sql-nya
   try {
@@ -1101,6 +1113,201 @@ app.post('/api/kirim-wa', async (c) => {
 })
 
 // ============================================================
+// API: JADWAL WA — baca kolom Z dari Sheets, simpan jadwal ke D1
+// ============================================================
+const JADWAL_SHEETS_ID  = '1Z9GUVysMpsEtUxYYTXjDcrTZHD3iG5E8FoRLsHN6ll0'
+const JADWAL_SHEETS_GID = '967712266'
+const JADWAL_KODE_UNIT  = 919
+
+app.post('/api/jadwal-wa', async (c) => {
+  try {
+    const db = c.env.DB
+    // Baca spreadsheet via CSV export (public)
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${JADWAL_SHEETS_ID}/export?format=csv&gid=${JADWAL_SHEETS_GID}`
+    const csvResp = await fetch(csvUrl)
+    const csvText = await csvResp.text()
+
+    // Parse CSV sederhana
+    const lines = csvText.trim().split('\n')
+    if (lines.length < 2) return c.json({ success: false, error: 'Spreadsheet kosong' }, 400)
+
+    // Header row — cari index kolom B (Tanggal) dan Z (Generate Jam)
+    const header = lines[0].split(',').map((h: string) => h.replace(/"/g, '').trim())
+    const idxTanggal = 1  // kolom B = index 1
+    const idxJam     = 25 // kolom Z = index 25
+
+    // Kumpulkan jadwal unik: tanggal + jam dari baris data unit 919
+    const jadwalSet = new Set<string>()
+    for (let i = 1; i < lines.length; i++) {
+      // Split CSV dengan memperhatikan quoted fields
+      const cols = lines[i].split(',').map((v: string) => v.replace(/"/g, '').trim())
+      const tanggal = cols[idxTanggal] || ''
+      const jamRaw  = cols[idxJam]     || ''
+      if (!tanggal || !jamRaw) continue
+      // Format jam: pastikan HH:MM
+      const jam = jamRaw.length === 5 ? jamRaw : jamRaw.padStart(5, '0')
+      jadwalSet.add(`${tanggal}|${jam}`)
+    }
+
+    if (jadwalSet.size === 0) return c.json({ success: false, error: 'Tidak ada jadwal ditemukan di kolom Z' }, 400)
+
+    // Simpan ke tabel jadwal_wa (INSERT OR IGNORE — tidak timpa yang sudah ada)
+    let inserted = 0
+    for (const key of jadwalSet) {
+      const [tanggal, jam] = key.split('|')
+      try {
+        await db.prepare(`INSERT OR IGNORE INTO jadwal_wa (kode_unit, tanggal, jam, status) VALUES (?, ?, ?, 'pending')`)
+          .bind(JADWAL_KODE_UNIT, tanggal, jam).run()
+        inserted++
+      } catch(_) {}
+    }
+
+    return c.json({ success: true, inserted, total: jadwalSet.size })
+  } catch(e: any) {
+    return c.json({ success: false, error: e.message }, 500)
+  }
+})
+
+// Endpoint untuk lihat jadwal (debug)
+app.get('/api/jadwal-wa', async (c) => {
+  try {
+    const db = c.env.DB
+    const rows = await db.prepare(`SELECT * FROM jadwal_wa ORDER BY tanggal, jam`).all()
+    return c.json({ success: true, data: rows.results })
+  } catch(e: any) {
+    return c.json({ success: false, error: e.message }, 500)
+  }
+})
+
+// ============================================================
+// FUNGSI: Build pesan WA per jam untuk unit 919
+// ============================================================
+async function buildPesanJam(db: D1Database, kode_unit: number, tanggal: string, jam: string): Promise<string | null> {
+  try {
+    // Ambil data mesin unit ini
+    const mesinRows = await db.prepare(`SELECT * FROM mesin_cache WHERE kode_unit = ? ORDER BY id_mesin`)
+      .bind(kode_unit).all()
+    if (!mesinRows.results || mesinRows.results.length === 0) return null
+
+    const mesinList: any[] = mesinRows.results
+
+    // Ambil nama unit
+    const namaUnit = mesinList[0] ? (mesinList[0] as any).nama_unit : String(kode_unit)
+
+    // Ambil data monitoring untuk tanggal + jam ini
+    const monRows = await db.prepare(
+      `SELECT * FROM data_monitoring WHERE tanggal = ? AND jam = ? AND mesin_id IN (SELECT id_mesin FROM mesin_cache WHERE kode_unit = ?)`
+    ).bind(tanggal, jam, kode_unit).all()
+
+    const monMap: Record<number, any> = {}
+    for (const r of (monRows.results || [])) {
+      monMap[(r as any).mesin_id] = r
+    }
+
+    // Ambil nama operator dari lap_operasional
+    let namaOperator = '-'
+    try {
+      const lapRow: any = await db.prepare(`SELECT nama_operator FROM lap_operasional WHERE kode_unit = ? AND tanggal = ?`)
+        .bind(kode_unit, tanggal).first()
+      if (lapRow) namaOperator = lapRow.nama_operator || '-'
+    } catch(_) {}
+
+    const lines: string[] = []
+    lines.push('LAPORAN LOGSHEET PLTD')
+    lines.push(namaUnit)
+    lines.push(`id unit: ${String(kode_unit).padStart(4, '0')}`)
+    lines.push(`tgl : ${tanggal}`)
+    lines.push(`jam : ${jam}:00`)
+    lines.push(`nama operator: ${namaOperator}`)
+    lines.push('')
+
+    for (let i = 0; i < mesinList.length; i++) {
+      const m: any = mesinList[i]
+      const d: any = monMap[m.id_mesin] || {}
+      const v0 = (val: any) => val != null ? val : 0
+
+      lines.push(`${i + 1}. ${m.mesin || m.nama_mesin}`)
+      lines.push(`id mesin: ${m.id_mesin}`)
+      lines.push(`kode mesin: 0`)
+      lines.push(`sn: ${m.s_n || '-'}`)
+      lines.push(`dt: ${m.terpasang ?? '-'}`)
+      lines.push(`daya mampu: ${v0(d.daya_mampu)}`)
+      lines.push(`beban: ${v0(d.beban)}`)
+      lines.push(`stand kwh: ${v0(d.stand_kwh)}`)
+      lines.push(`stand bbm: ${v0(d.stand_bbm)}`)
+      lines.push(`phasa r: ${v0(d.phasa_r)}`)
+      lines.push(`phasa s: ${v0(d.phasa_s)}`)
+      lines.push(`phasa t: ${v0(d.phasa_t)}`)
+      lines.push(`tek oli: ${v0(d.tek_oli)}`)
+      lines.push(`temp air pendingin: ${v0(d.temp_air_pendingin)}`)
+      lines.push(`tegangan: ${v0(d.tegangan)}`)
+      lines.push(`frequency: ${v0(d.frequency)}`)
+      lines.push(`cos phi: ${v0(d.cos_phi)}`)
+      lines.push(`jam kerja mesin: ${v0(d.jam_kerja_mesin)}`)
+      lines.push(`status mesin: ${d.status_mesin || 'Operasi'}`)
+      lines.push(`Kwh produksi : ${v0(d.kwh_produksi)}`)
+      lines.push(`pemakaian bbm : ${v0(d.pemakaian_bbm)}`)
+      lines.push(`jenis bahan bakar : B35`)
+      lines.push(`ket: ${d.keterangan || '-'}`)
+      lines.push('')
+    }
+
+    return lines.join('\n').trim()
+  } catch(e) {
+    return null
+  }
+}
+
+// ============================================================
+// API: KIRIM WA TERJADWAL — dipanggil oleh Apps Script scheduler
+// ============================================================
+app.post('/api/kirim-wa-terjadwal', async (c) => {
+  try {
+    const { kode_unit, tanggal, jam } = await c.req.json() as {
+      kode_unit: number, tanggal: string, jam: string
+    }
+    if (!kode_unit || !tanggal || !jam)
+      return c.json({ success: false, error: 'kode_unit, tanggal, jam wajib' }, 400)
+
+    const db = c.env.DB
+
+    // Cek apakah sudah pernah dikirim (idempoten)
+    const existing: any = await db.prepare(
+      `SELECT status FROM jadwal_wa WHERE kode_unit=? AND tanggal=? AND jam=?`
+    ).bind(kode_unit, tanggal, jam).first()
+    if (existing && existing.status === 'sent')
+      return c.json({ success: true, skipped: true, reason: 'Sudah dikirim sebelumnya' })
+
+    // Build pesan
+    const pesan = await buildPesanJam(db, kode_unit, tanggal, jam)
+    if (!pesan)
+      return c.json({ success: false, error: 'Tidak ada data monitoring untuk jam ini' })
+
+    // Kirim via Whacenter
+    const resp = await fetch('https://app.whacenter.com/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        device_id: WHACENTER_DEVICE_ID,
+        number:    WHACENTER_NUMBER,
+        message:   pesan
+      })
+    })
+    const json: any = await resp.json()
+    if (!json.status) throw new Error(json.message || 'Whacenter error')
+
+    // Tandai sudah terkirim di tabel jadwal_wa
+    await db.prepare(`INSERT OR REPLACE INTO jadwal_wa (kode_unit, tanggal, jam, status, sent_at)
+      VALUES (?, ?, ?, 'sent', datetime('now'))`
+    ).bind(kode_unit, tanggal, jam).run()
+
+    return c.json({ success: true, sent: true, jam, tanggal })
+  } catch(e: any) {
+    return c.json({ success: false, error: e.message }, 500)
+  }
+})
+
+// ============================================================
 // SERVE MAIN PAGE
 // ============================================================
 
@@ -1326,4 +1533,66 @@ app.get('/', (c) => {
   return resp
 })
 
-export default app
+// ============================================================
+// CRON HANDLER — cek jadwal WA setiap menit
+// ============================================================
+async function handleCron(env: { DB: D1Database }) {
+  try {
+    const db = env.DB
+    await initDB(db)
+
+    // Waktu sekarang di Asia/Jakarta
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }))
+    const jamNow  = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0')
+    const tanggalNow = now.getFullYear() + '-'
+      + String(now.getMonth() + 1).padStart(2, '0') + '-'
+      + String(now.getDate()).padStart(2, '0')
+
+    // Ambil jadwal pending yang jamnya <= sekarang dan tanggalnya hari ini
+    const pending: any = await db.prepare(`
+      SELECT * FROM jadwal_wa
+      WHERE status = 'pending'
+        AND tanggal = ?
+        AND jam <= ?
+      ORDER BY jam ASC
+    `).bind(tanggalNow, jamNow).all()
+
+    for (const jadwal of (pending.results || [])) {
+      const j = jadwal as any
+      // Build pesan
+      const pesan = await buildPesanJam(db, j.kode_unit, j.tanggal, j.jam)
+      if (!pesan) {
+        // Tandai skip jika tidak ada data
+        await db.prepare(`UPDATE jadwal_wa SET status='skip', sent_at=? WHERE id=?`)
+          .bind(new Date().toISOString(), j.id).run()
+        continue
+      }
+      // Kirim via Whacenter
+      try {
+        const resp = await fetch('https://app.whacenter.com/api/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            device_id: WHACENTER_DEVICE_ID,
+            number:    WHACENTER_NUMBER,
+            message:   pesan
+          })
+        })
+        const json: any = await resp.json()
+        const status = json.status ? 'sent' : 'failed'
+        await db.prepare(`UPDATE jadwal_wa SET status=?, sent_at=? WHERE id=?`)
+          .bind(status, new Date().toISOString(), j.id).run()
+      } catch(_) {
+        await db.prepare(`UPDATE jadwal_wa SET status='failed', sent_at=? WHERE id=?`)
+          .bind(new Date().toISOString(), j.id).run()
+      }
+    }
+  } catch(_) {}
+}
+
+export default {
+  fetch: app.fetch,
+  async scheduled(event: any, env: any, ctx: any) {
+    ctx.waitUntil(handleCron(env))
+  }
+}
