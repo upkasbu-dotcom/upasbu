@@ -1123,12 +1123,26 @@ async function saveAllData() {
       })
     } catch(se) { /* abaikan error sheets, tidak blocking simpan utama */ }
 
-    // Langsung buka WA tanpa popup
+    // Kirim WA otomatis via Whacenter
     var teksMon = await buildWAFromMemory(tanggal, periode, monSelectedUnit, records)
     if (teksMon) {
-      window.location.href = 'https://wa.me/6282252147896?text=' + encodeURIComponent(teksMon)
+      try {
+        var resWa = await fetch('/api/kirim-wa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: teksMon })
+        })
+        var jsonWa = await resWa.json()
+        if (jsonWa.success) {
+          showToast('Pesan WA berhasil dikirim!', 'success')
+        } else {
+          showToast('Gagal kirim WA: ' + (jsonWa.error || 'unknown'), 'error')
+        }
+      } catch(ew) {
+        showToast('Gagal kirim WA: ' + ew.message, 'error')
+      }
     } else {
-      showToast('Tidak ada data untuk dikirim ke WA','info')
+      showToast('Tidak ada data untuk dikirim ke WA', 'info')
     }
   } catch(e) { showToast('Gagal menyimpan: ' + e.message,'error') }
   finally { showLoading(false,'loading-indicator') }

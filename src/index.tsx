@@ -1072,6 +1072,35 @@ app.get('/api/wa-redirect/:id', async (c) => {
 })
 
 // ============================================================
+// API: KIRIM WA VIA WHACENTER
+// ============================================================
+const WHACENTER_DEVICE_ID = '550fd04ee9fc7c4b4e057d0bce6270f3'
+const WHACENTER_NUMBER    = '6282252147896'
+
+app.post('/api/kirim-wa', async (c) => {
+  try {
+    const { message } = await c.req.json() as { message: string }
+    if (!message) return c.json({ success: false, error: 'message wajib' }, 400)
+
+    const resp = await fetch('https://app.whacenter.com/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        device_id: WHACENTER_DEVICE_ID,
+        number:    WHACENTER_NUMBER,
+        message:   message
+      })
+    })
+    const json: any = await resp.json()
+    // Whacenter return { status: true } jika berhasil
+    if (!json.status) throw new Error(json.message || 'Whacenter error')
+    return c.json({ success: true })
+  } catch(e: any) {
+    return c.json({ success: false, error: e.message }, 500)
+  }
+})
+
+// ============================================================
 // SERVE MAIN PAGE
 // ============================================================
 
