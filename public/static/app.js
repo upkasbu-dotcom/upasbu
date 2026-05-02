@@ -1123,9 +1123,13 @@ async function saveAllData() {
       })
     } catch(se) { /* abaikan error sheets, tidak blocking simpan utama */ }
 
-    // Kirim WA otomatis via Whacenter
+    // Kirim WA otomatis via Whacenter + salin teks ke clipboard
     var teksMon = await buildWAFromMemory(tanggal, periode, monSelectedUnit, records)
     if (teksMon) {
+      // Salin teks ke clipboard otomatis
+      try { await navigator.clipboard.writeText(teksMon) } catch(ec) {}
+
+      // Kirim via Whacenter
       try {
         var resWa = await fetch('/api/kirim-wa', {
           method: 'POST',
@@ -1134,12 +1138,12 @@ async function saveAllData() {
         })
         var jsonWa = await resWa.json()
         if (jsonWa.success) {
-          showToast('Pesan WA berhasil dikirim!', 'success')
+          showToast('Data tersimpan, pesan WA terkirim & teks disalin!', 'success')
         } else {
-          showToast('Gagal kirim WA: ' + (jsonWa.error || 'unknown'), 'error')
+          showToast('Tersimpan & teks disalin, tapi gagal kirim WA: ' + (jsonWa.error || 'unknown'), 'error')
         }
       } catch(ew) {
-        showToast('Gagal kirim WA: ' + ew.message, 'error')
+        showToast('Tersimpan & teks disalin, tapi gagal kirim WA: ' + ew.message, 'error')
       }
     } else {
       showToast('Tidak ada data untuk dikirim ke WA', 'info')
