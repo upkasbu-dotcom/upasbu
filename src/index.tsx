@@ -1106,7 +1106,7 @@ app.get('/', (c) => {
           <span class="btn-text">OPERASIONAL</span>
         </button>
         <button id="tab-btn-monitoring" class="tab-btn" onclick="switchTab('monitoring')">
-          <span class="btn-text">LOG SHEET</span>
+          <span class="btn-text">BEBAN PUNCAK</span>
         </button>
         <button id="tab-btn-data" class="tab-btn" onclick="switchTab('data')">
           <span class="btn-text">DATA</span>
