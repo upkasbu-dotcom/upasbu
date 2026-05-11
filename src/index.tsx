@@ -41,8 +41,11 @@ async function initDB(db: D1Database) {
     s_n         TEXT,
     nama_mesin  TEXT,
     terpasang   REAL,
-    cached_at   TEXT NOT NULL
+    cached_at   TEXT NOT NULL,
+    is_manual   INTEGER DEFAULT 0
   )`).run()
+  // Tambah kolom is_manual jika belum ada (untuk DB lama)
+  try { await db.prepare(`ALTER TABLE mesin_cache ADD COLUMN is_manual INTEGER DEFAULT 0`).run() } catch(_) {}
 
   await db.prepare(`CREATE INDEX IF NOT EXISTS idx_mesin_cache_kode_unit ON mesin_cache(kode_unit)`).run()
   await db.prepare(`CREATE INDEX IF NOT EXISTS idx_mesin_cache_up3 ON mesin_cache(up3)`).run()
@@ -118,6 +121,17 @@ async function initDB(db: D1Database) {
   try { await db.prepare(`ALTER TABLE data_monitoring ADD COLUMN keterangan TEXT`).run() } catch(_){}
   // Tambah kolom terpasang ke mesin_cache jika belum ada (migrasi)
   try { await db.prepare(`ALTER TABLE mesin_cache ADD COLUMN terpasang REAL`).run() } catch(_){}
+  // Tambah kolom kode_mesin ke mesin_cache jika belum ada (migrasi)
+  try { await db.prepare(`ALTER TABLE mesin_cache ADD COLUMN kode_mesin TEXT`).run() } catch(_){}
+
+  // Tabel event padam per unit per tanggal
+  await db.prepare(`CREATE TABLE IF NOT EXISTS event_padam (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kode_unit   INTEGER NOT NULL,
+    tanggal     TEXT NOT NULL,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(kode_unit, tanggal)
+  )`).run()
 
   // Tabel jadwal kirim WA per jam
   await db.prepare(`CREATE TABLE IF NOT EXISTS jadwal_wa (
@@ -200,15 +214,17 @@ async function syncMesinIfNeeded(db: D1Database): Promise<{ synced: boolean, cou
     r.mesin !== '#N/A' && r.nama_mesin !== '#N/A'
   )
 
-  // Simpan terpasang yang sudah ada sebelum dihapus (agar tidak hilang saat sync)
-  const existingTerpasang = await db.prepare(`SELECT id_mesin, terpasang FROM mesin_cache WHERE terpasang IS NOT NULL`).all()
+  // Simpan terpasang + mesin manual yang sudah ada sebelum dihapus
+  const existingRows = await db.prepare(`SELECT id_mesin, terpasang, is_manual, up3, kode_unit, nama_unit, mesin, type, s_n, nama_mesin FROM mesin_cache`).all()
   const terpasangMap: Record<number, number> = {}
-  for (const row of existingTerpasang.results as any[]) {
-    terpasangMap[row.id_mesin] = row.terpasang
+  const manualRows: any[] = []
+  for (const row of existingRows.results as any[]) {
+    if (row.terpasang != null) terpasangMap[row.id_mesin] = row.terpasang
+    if (row.is_manual === 1) manualRows.push(row)
   }
 
-  // Hapus cache lama, insert batch baru
-  await db.prepare(`DELETE FROM mesin_cache`).run()
+  // Hapus cache lama (kecuali mesin manual), insert batch baru
+  await db.prepare(`DELETE FROM mesin_cache WHERE is_manual = 0 OR is_manual IS NULL`).run()
 
   const BATCH = 50
   for (let i = 0; i < valid.length; i += BATCH) {
@@ -234,6 +250,23 @@ async function syncMesinIfNeeded(db: D1Database): Promise<{ synced: boolean, cou
       )
     })
     await db.batch(stmts)
+  }
+
+  // Re-insert mesin manual yang tidak ada di Google Sheets
+  for (const mr of manualRows) {
+    const inValid = valid.some((r: any) => r.id_mesin === mr.id_mesin)
+    if (!inValid) {
+      // Mesin manual tidak ada di Google Sheets → pertahankan
+      await db.prepare(`
+        INSERT OR IGNORE INTO mesin_cache
+          (id_mesin, up3, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, terpasang, cached_at, is_manual)
+        VALUES (?,?,?,?,?,?,?,?,?,?,1)
+      `).bind(
+        mr.id_mesin, mr.up3, mr.kode_unit, mr.nama_unit,
+        mr.mesin, mr.type, mr.s_n, mr.nama_mesin,
+        terpasangMap[mr.id_mesin] ?? mr.terpasang, today
+      ).run()
+    }
   }
 
   // Update sync log
@@ -320,6 +353,19 @@ app.post('/api/mesin-terpasang', async (c) => {
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
+// Update kode_mesin per mesin (batch)
+app.post('/api/mesin-kode', async (c) => {
+  try {
+    const body = await c.req.json() as { updates: { id_mesin: number, kode_mesin: string }[] }
+    if (!body.updates || !Array.isArray(body.updates)) return c.json({ success: false, error: 'updates wajib array' }, 400)
+    const stmts = body.updates.map((u: { id_mesin: number, kode_mesin: string }) =>
+      c.env.DB.prepare(`UPDATE mesin_cache SET kode_mesin = ? WHERE id_mesin = ?`).bind(u.kode_mesin, u.id_mesin)
+    )
+    await c.env.DB.batch(stmts)
+    return c.json({ success: true, updated: body.updates.length })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
 // Tambah mesin baru ke mesin_cache secara manual
 // GET semua mesin cache (untuk lookup nama/sn/kode_unit di frontend)
 app.get('/api/mesin-cache', async (c) => {
@@ -338,16 +384,50 @@ app.post('/api/mesin-cache/add', async (c) => {
       mesin: string, type?: string, s_n?: string, nama_mesin?: string, terpasang?: number
     }
     const today = new Date().toISOString().slice(0,10)
+    // is_manual=1 agar mesin ini tidak terhapus saat sync dari Google Sheets
     await c.env.DB.prepare(`
       INSERT OR REPLACE INTO mesin_cache
-        (id_mesin, up3, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, terpasang, cached_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?)
+        (id_mesin, up3, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, terpasang, cached_at, is_manual)
+      VALUES (?,?,?,?,?,?,?,?,?,?,1)
     `).bind(
       body.id_mesin, body.up3 || '', body.kode_unit, body.nama_unit,
       body.mesin, body.type || null, body.s_n || null,
       body.nama_mesin || body.mesin, body.terpasang || null, today
     ).run()
     return c.json({ success: true, id_mesin: body.id_mesin })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+app.delete('/api/mesin-cache/:id_mesin', async (c) => {
+  try {
+    const id = Number(c.req.param('id_mesin'))
+    const r = await c.env.DB.prepare(`DELETE FROM mesin_cache WHERE id_mesin = ?`).bind(id).run()
+    return c.json({ success: true, deleted: r.meta.changes })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ─── DELETE data_monitoring by date range ───────────────────
+// WAJIB sertakan kode_unit dan jam agar tidak hapus data unit/periode lain
+app.delete('/api/monitoring/by-date', async (c) => {
+  try {
+    const db         = c.env.DB
+    const tgl_dari   = c.req.query('dari')
+    const tgl_sampai = c.req.query('sampai')
+    const kode_unit  = c.req.query('kode_unit')
+    const jam        = c.req.query('jam')
+    if (!tgl_dari || !tgl_sampai) return c.json({ success: false, error: 'dari dan sampai wajib diisi' }, 400)
+    if (!kode_unit)  return c.json({ success: false, error: 'kode_unit wajib diisi' }, 400)
+    if (!jam)        return c.json({ success: false, error: 'jam wajib diisi (12=siang, 18=malam)' }, 400)
+    // JOIN ke mesin_cache agar filter by kode_unit
+    const r = await db.prepare(`
+      DELETE FROM data_monitoring
+      WHERE tanggal BETWEEN ? AND ?
+        AND jam = ?
+        AND mesin_id IN (
+          SELECT id_mesin FROM mesin_cache WHERE kode_unit = ?
+        )
+    `).bind(tgl_dari, tgl_sampai, jam, kode_unit).run()
+    return c.json({ success: true, deleted: r.meta.changes, dari: tgl_dari, sampai: tgl_sampai, kode_unit, jam })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
@@ -660,6 +740,17 @@ app.post('/api/log-sheets', async (c) => {
 // ============================================================
 // API: DEBUG — cek info spreadsheet (nama sheet, dll)
 // ============================================================
+// Preview pesan WA logsheet (sementara untuk verifikasi)
+app.get('/api/preview-pesan', async (c) => {
+  try {
+    const kode_unit = Number(c.req.query('kode_unit'))
+    const tanggal   = c.req.query('tanggal') || ''
+    const jam       = c.req.query('jam') || ''
+    const pesan = await buildPesanJam(c.env.DB, kode_unit, tanggal, jam)
+    return c.text(pesan || '(null — tidak ada data)')
+  } catch (e: any) { return c.text('ERROR: ' + e.message) }
+})
+
 app.get('/api/debug-sheets', async (c) => {
   try {
     const token = await getGoogleAccessToken()
@@ -824,12 +915,327 @@ const UNIT_META: Record<number, { no: number, jalur: string, kapasitas_tangki: n
   399: { no: 14, jalur: 'DARAT - SUNGAI - DARAT', kapasitas_tangki: 38000, stock_mati: 10000 }, // TUMBANG SENAMANG
   390: { no: 15, jalur: 'DARAT - SUNGAI',       kapasitas_tangki: 20000, stock_mati: 1000 }, // TELAGA
   382: { no: 16, jalur: 'DARAT - LAUT - SUNGAI', kapasitas_tangki: 49000, stock_mati: 4500 }, // PAGATAN
-  391: { no: 17, jalur: 'DARAT',                kapasitas_tangki: 20000, stock_mati: 1000 }, // TELAGA PULANG
+  391: { no: 17, jalur: 'DARAT',                kapasitas_tangki: 20000, stock_mati: 1500 }, // TELAGA PULANG
   376: { no: 18, jalur: 'DARAT - LAUT - SUNGAI', kapasitas_tangki: 83000, stock_mati: 5000 }, // MENDAWAI
   373: { no: 19, jalur: 'DARAT',                kapasitas_tangki: 20000, stock_mati: 2000 }, // KENAMBUI
   395: { no: 20, jalur: 'DARAT - SUNGAI',       kapasitas_tangki: 46000, stock_mati: 1000 }, // TUMBANG MANJUL
-  375: { no: 21, jalur: 'DARAT',                kapasitas_tangki: 46000, stock_mati: 1000 }, // KUDANGAN
+  375: { no: 21, jalur: 'DARAT',                kapasitas_tangki: 46000, stock_mati: 1500 }, // KUDANGAN
 }
+
+// ─── PADAM ─────────────────────────────────────────────────────────────────
+// Hitung: nilai_per_mesin = (Total BP tanggal terakhir ada data - beban non-padam) / jumlah mesin padam yang terakhir Operasi
+// "Tanggal terakhir ada data" = tanggal MAX di data_monitoring untuk unit ini, sebelum tanggal dipilih
+// Hanya mesin yang record terakhirnya berstatus Operasi yang mendapat nilai, jika negatif → 0
+app.get('/api/padam', async (c) => {
+  try {
+    const db               = c.env.DB
+    const tanggal          = c.req.query('tanggal')          || new Date().toISOString().split('T')[0]
+    const kode_unit        = c.req.query('kode_unit')        || ''
+    const mesinIdsRaw      = c.req.query('mesin_ids')        || '[]'
+    const bebanNonPadamRaw = c.req.query('beban_non_padam')  || '0'
+    const jam              = c.req.query('jam')              || '18'  // periode: siang=12, malam=18
+
+    let mesinIds: number[] = []
+    try { mesinIds = JSON.parse(mesinIdsRaw) } catch { mesinIds = [] }
+    if (mesinIds.length === 0) return c.json({ success: true, total_bp_last: 0, nilai_per_mesin: 0, mesin_eligible: [] })
+
+    const bebanNonPadam = parseFloat(bebanNonPadamRaw) || 0
+
+    // Cari tanggal TERAKHIR yang ada datanya di DB untuk unit ini, sebelum tanggal dipilih
+    // Filter juga berdasarkan jam periode yang sama
+    const lastTglRow = await db.prepare(
+      `SELECT MAX(dm.tanggal) as last_tanggal
+       FROM data_monitoring dm
+       INNER JOIN mesin_cache mc ON mc.id_mesin = dm.mesin_id
+       WHERE mc.kode_unit = ? AND dm.tanggal < ? AND dm.jam = ?`
+    ).bind(kode_unit, tanggal, jam).first() as any
+
+    const tanggalLast = lastTglRow?.last_tanggal || null
+
+    // Ambil total BP H-1 hanya dari jam/periode yang sama
+    const totalBpLast = tanggalLast ? (() => {
+      return db.prepare(
+        `SELECT COALESCE(SUM(dm.beban), 0) as total_bp
+         FROM data_monitoring dm
+         INNER JOIN mesin_cache mc ON mc.id_mesin = dm.mesin_id
+         WHERE mc.kode_unit = ? AND dm.tanggal = ? AND dm.jam = ? AND dm.status_mesin = 'Operasi'`
+      ).bind(kode_unit, tanggalLast, jam).first()
+    })() : Promise.resolve(null)
+
+    const bpLastRow      = await totalBpLast as any
+    const totalBpLastVal = bpLastRow ? (parseFloat(bpLastRow.total_bp) || 0) : 0
+
+    // Cek tiap mesin padam — eligible hanya jika record TERAKHIR periode sama sebelum tanggal ini berstatus Operasi
+    const mesinEligible: number[] = []
+    for (const mesinId of mesinIds) {
+      const lastRow = await db.prepare(
+        `SELECT status_mesin FROM data_monitoring
+         WHERE mesin_id = ? AND tanggal < ? AND jam = ?
+         ORDER BY tanggal DESC
+         LIMIT 1`
+      ).bind(mesinId, tanggal, jam).first() as any
+      // Eligible hanya jika record terakhir periode sama sebelum tanggal ini adalah Operasi
+      if (lastRow && lastRow.status_mesin === 'Operasi') mesinEligible.push(mesinId)
+    }
+
+    const jumlahEligible = mesinEligible.length
+    const sisa           = totalBpLastVal - bebanNonPadam
+    const nilaiPerMesin  = jumlahEligible > 0 ? Math.max(0, Math.round(sisa / jumlahEligible)) : 0
+
+    return c.json({
+      success:          true,
+      total_bp_last:    totalBpLastVal,
+      tanggal_last:     tanggalLast,
+      nilai_per_mesin:  nilaiPerMesin,
+      mesin_eligible:   mesinEligible,
+    })
+  } catch(e: any) {
+    return c.json({ success: false, error: e.message }, 500)
+  }
+})
+
+// Simpan event padam (dipanggil saat tombol PADAM berhasil diklik)
+app.post('/api/event-padam', async (c) => {
+  try {
+    const { kode_unit, tanggal } = await c.req.json()
+    if (!kode_unit || !tanggal) return c.json({ success: false, error: 'kode_unit dan tanggal wajib' }, 400)
+    await c.env.DB.prepare(
+      `INSERT OR IGNORE INTO event_padam (kode_unit, tanggal) VALUES (?, ?)`
+    ).bind(kode_unit, tanggal).run()
+    return c.json({ success: true })
+  } catch(e: any) {
+    return c.json({ success: false, error: e.message }, 500)
+  }
+})
+
+// Hapus event padam (jika ingin reset status defisit)
+app.delete('/api/event-padam', async (c) => {
+  try {
+    // Baca dari query string (DELETE /api/event-padam?kode_unit=919&tanggal=2026-05-02)
+    const kode_unit = c.req.query('kode_unit') || ''
+    const tanggal   = c.req.query('tanggal')   || ''
+    if (!kode_unit || !tanggal) return c.json({ success: false, error: 'kode_unit dan tanggal wajib' }, 400)
+    await c.env.DB.prepare(
+      `DELETE FROM event_padam WHERE kode_unit = ? AND tanggal = ?`
+    ).bind(kode_unit, tanggal).run()
+    return c.json({ success: true })
+  } catch(e: any) {
+    return c.json({ success: false, error: e.message }, 500)
+  }
+})
+
+// Cek apakah ada event padam untuk unit+tanggal tertentu
+app.get('/api/event-padam', async (c) => {
+  try {
+    const kode_unit = c.req.query('kode_unit') || ''
+    const tanggal   = c.req.query('tanggal')   || ''
+    if (!kode_unit || !tanggal) return c.json({ success: false, error: 'kode_unit dan tanggal wajib' }, 400)
+    const row = await c.env.DB.prepare(
+      `SELECT id FROM event_padam WHERE kode_unit = ? AND tanggal = ?`
+    ).bind(kode_unit, tanggal).first()
+    return c.json({ success: true, ada_padam: !!row })
+  } catch(e: any) {
+    return c.json({ success: false, error: e.message }, 500)
+  }
+})
+
+// Ambil semua event padam dalam satu bulan
+app.get('/api/event-padam-bulanan', async (c) => {
+  try {
+    const bulan = c.req.query('bulan') || new Date().toISOString().slice(0, 7)
+    const rows = await c.env.DB.prepare(
+      `SELECT kode_unit, tanggal FROM event_padam WHERE tanggal LIKE ?`
+    ).bind(`${bulan}-%`).all<{ kode_unit: number, tanggal: string }>()
+    return c.json({ success: true, data: rows.results })
+  } catch(e: any) {
+    return c.json({ success: false, error: e.message }, 500)
+  }
+})
+
+// ─── NERACA DAYA ───────────────────────────────────────────────────────────
+app.get('/api/neraca-daya', async (c) => {
+  try {
+    const db      = c.env.DB
+    const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
+
+    // Hitung tanggal H-1
+    const tglDate = new Date(tanggal)
+    tglDate.setDate(tglDate.getDate() - 1)
+    const tanggalH1 = tglDate.toISOString().split('T')[0]
+
+    // Ambil semua unit dari mesin_cache
+    const units = await db.prepare(
+      `SELECT DISTINCT kode_unit, nama_unit FROM mesin_cache ORDER BY nama_unit`
+    ).all<{ kode_unit: number, nama_unit: string }>()
+
+    // DM terpasang per unit (SUM terpasang dari mesin_cache)
+    const terpasangRows = await db.prepare(
+      `SELECT kode_unit, SUM(terpasang) as dm_terpasang FROM mesin_cache WHERE terpasang IS NOT NULL GROUP BY kode_unit`
+    ).all<{ kode_unit: number, dm_terpasang: number }>()
+    const terpasangMap: Record<number, number> = {}
+    for (const r of terpasangRows.results) terpasangMap[r.kode_unit] = Math.round(r.dm_terpasang || 0)
+
+    // Data monitoring pada tanggal tersebut: dm_pasok = SUM daya_mampu (Operasi+Standby), beban = SUM beban (Operasi), max_dm = MAX daya_mampu
+    const monRows = await db.prepare(`
+      SELECT
+        mc.kode_unit,
+        -- Kolom utama: hanya dari data MALAM (jam >= 18 atau jam <= 5)
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin IN ('Operasi','Standby') THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak,
+        MAX(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin IN ('Operasi','Standby') THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as max_dm,
+        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Operasi' THEN 1 END) as jumlah_operasi,
+        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Standby' THEN 1 END) as jumlah_standby,
+        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Pemeliharaan' THEN 1 END) as jumlah_pemeliharaan,
+        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Gangguan' THEN 1 END) as jumlah_gangguan,
+        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Rusak' THEN 1 END) as jumlah_rusak,
+        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) THEN 1 END) as jumlah_mesin,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.jam_kerja_mesin,0) ELSE 0 END) as jam_operasi,
+        -- BP Siang: hanya dari data SIANG (jam 6-17)
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 6 AND CAST(dm.jam AS INTEGER) <= 17) AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak_siang,
+        -- BP Malam: hanya dari data MALAM (jam >= 18 atau jam <= 5)
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak_malam
+      FROM data_monitoring dm
+      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+      WHERE dm.tanggal = ?
+      GROUP BY mc.kode_unit
+    `).bind(tanggal).all<{ kode_unit: number, dm_pasok: number, beban_puncak: number, max_dm: number, jumlah_operasi: number, jumlah_standby: number, jumlah_pemeliharaan: number, jumlah_gangguan: number, jumlah_rusak: number, jumlah_mesin: number, jam_operasi: number, beban_puncak_siang: number, beban_puncak_malam: number }>()
+    const monMap: Record<number, { dm_pasok: number, beban_puncak: number, max_dm: number, jumlah_operasi: number, jumlah_standby: number, jumlah_pemeliharaan: number, jumlah_gangguan: number, jumlah_rusak: number, jumlah_mesin: number, jam_operasi: number, beban_puncak_siang: number, beban_puncak_malam: number, has_malam: boolean }> = {}
+    for (const r of monRows.results) {
+      monMap[r.kode_unit] = {
+        dm_pasok:            Math.round(r.dm_pasok      || 0),
+        beban_puncak:        Math.round(r.beban_puncak  || 0),
+        max_dm:              Math.round(r.max_dm        || 0),
+        jumlah_operasi:      r.jumlah_operasi      || 0,
+        jumlah_standby:      r.jumlah_standby      || 0,
+        jumlah_pemeliharaan: r.jumlah_pemeliharaan || 0,
+        jumlah_gangguan:     r.jumlah_gangguan     || 0,
+        jumlah_rusak:        r.jumlah_rusak        || 0,
+        jumlah_mesin:        r.jumlah_mesin        || 0,
+        jam_operasi:         Math.round((r.jam_operasi || 0) * 100) / 100,
+        beban_puncak_siang:  Math.round(r.beban_puncak_siang  || 0),
+        beban_puncak_malam:  Math.round(r.beban_puncak_malam  || 0),
+        // has_malam: ada data malam jika dm_pasok > 0 (artinya ada mesin Operasi/Standby di jam malam)
+        has_malam:           (r.dm_pasok || 0) > 0
+      }
+    }
+
+    // Query DMN dan MAKS dari data malam H-1 (sebagai fallback jika belum ada data malam hari ini)
+    const h1Rows = await db.prepare(`
+      SELECT
+        mc.kode_unit,
+        SUM(CASE WHEN dm.status_mesin IN ('Operasi','Standby') AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok_h1,
+        MAX(CASE WHEN dm.status_mesin IN ('Operasi','Standby') AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as max_dm_h1
+      FROM data_monitoring dm
+      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+      WHERE dm.tanggal = ?
+      GROUP BY mc.kode_unit
+    `).bind(tanggalH1).all<{ kode_unit: number, dm_pasok_h1: number, max_dm_h1: number }>()
+    const h1Map: Record<number, { dm_pasok_h1: number, max_dm_h1: number }> = {}
+    for (const r of h1Rows.results) {
+      h1Map[r.kode_unit] = {
+        dm_pasok_h1: Math.round(r.dm_pasok_h1 || 0),
+        max_dm_h1:   Math.round(r.max_dm_h1   || 0)
+      }
+    }
+
+    const rows = units.results.map(u => {
+      const mon = monMap[u.kode_unit]
+      const h1  = h1Map[u.kode_unit]
+
+      // DMN & MAKS: gunakan data malam hari ini jika sudah ada, fallback ke H-1 malam
+      const hasMalam = mon?.has_malam ?? false
+      const dmn  = hasMalam ? (mon?.dm_pasok ?? null) : (h1?.dm_pasok_h1 ?? null)
+      const maks = hasMalam ? (mon?.max_dm   ?? null) : (h1?.max_dm_h1   ?? null)
+
+      return {
+        kode_unit:      u.kode_unit,
+        nama_unit:      u.nama_unit,
+        dm_terpasang:   terpasangMap[u.kode_unit] ?? null,
+        jumlah_operasi:      mon ? mon.jumlah_operasi      : null,
+        jumlah_standby:      mon ? mon.jumlah_standby      : null,
+        jumlah_pemeliharaan: mon ? mon.jumlah_pemeliharaan : null,
+        jumlah_gangguan:     mon ? mon.jumlah_gangguan     : null,
+        jumlah_rusak:        mon ? mon.jumlah_rusak        : null,
+        jumlah_mesin:        mon ? mon.jumlah_mesin        : null,
+        jam_operasi:         mon ? mon.jam_operasi         : null,
+        dm_pasok:            dmn,
+        beban_puncak:        mon ? mon.beban_puncak        : null,
+        max_dm:              maks,
+        beban_puncak_siang:  mon ? mon.beban_puncak_siang  : null,
+        beban_puncak_malam:  mon ? mon.beban_puncak_malam  : null
+      }
+    })
+
+    return c.json({ success: true, data: rows })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ─── NERACA DAYA BULANAN ────────────────────────────────────────────────────
+app.get('/api/neraca-daya-bulanan', async (c) => {
+  try {
+    const db    = c.env.DB
+    // bulan format YYYY-MM
+    const bulan = c.req.query('bulan') || new Date().toISOString().slice(0, 7)
+    const [yr, mo] = bulan.split('-').map(Number)
+    const daysInMonth = new Date(yr, mo, 0).getDate()
+
+    // Semua unit
+    const units = await db.prepare(
+      `SELECT DISTINCT kode_unit, nama_unit FROM mesin_cache ORDER BY nama_unit`
+    ).all<{ kode_unit: number, nama_unit: string }>()
+
+    // Query status per unit per tanggal dalam bulan
+    // dm_pasok = SUM daya_mampu Operasi+Standby, beban_malam = SUM beban Operasi malam, max_dm = MAX daya_mampu
+    const rows = await db.prepare(`
+      SELECT
+        mc.kode_unit,
+        dm.tanggal,
+        SUM(CASE WHEN dm.status_mesin IN ('Operasi','Standby') AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok,
+        SUM(CASE WHEN dm.status_mesin = 'Operasi' AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+            THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_malam,
+        MAX(CASE WHEN dm.status_mesin IN ('Operasi','Standby') AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as max_dm
+      FROM data_monitoring dm
+      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+      WHERE dm.tanggal LIKE ?
+      GROUP BY mc.kode_unit, dm.tanggal
+    `).bind(`${bulan}-%`).all<{ kode_unit: number, tanggal: string, dm_pasok: number, beban_malam: number, max_dm: number }>()
+
+    // Query event_padam bulan ini
+    const padamRows = await db.prepare(
+      `SELECT kode_unit, tanggal FROM event_padam WHERE tanggal LIKE ?`
+    ).bind(`${bulan}-%`).all<{ kode_unit: number, tanggal: string }>()
+    // Build set padam: "kode_unit_tanggal"
+    const padamSet = new Set<string>()
+    for (const p of padamRows.results) padamSet.add(`${p.kode_unit}_${p.tanggal}`)
+
+    // Build map: kode_unit → { tanggal → status }
+    // Hanya isi status jika ada data malam (beban_malam > 0)
+    const statusMap: Record<number, Record<string, string>> = {}
+    for (const r of rows.results) {
+      if (!r.beban_malam || r.beban_malam <= 0) continue  // skip jika tidak ada data malam
+      if (!statusMap[r.kode_unit]) statusMap[r.kode_unit] = {}
+      const cadangan = (r.dm_pasok || 0) - (r.beban_malam || 0)
+      let status: string
+      // DEFISIT jika ada event padam untuk unit+tanggal ini
+      if (padamSet.has(`${r.kode_unit}_${r.tanggal}`))    status = 'DEFISIT'
+      else if (cadangan >= 0 && cadangan < (r.max_dm || 0)) status = 'SIAGA'
+      else                                                   status = 'NORMAL'
+      statusMap[r.kode_unit][r.tanggal] = status
+    }
+
+    // Build result: satu baris per unit, kolom per tanggal
+    const result = units.results.map(u => {
+      const daily: Record<string, string | null> = {}
+      for (let d = 1; d <= daysInMonth; d++) {
+        const tgl = `${bulan}-${String(d).padStart(2, '0')}`
+        daily[tgl] = statusMap[u.kode_unit]?.[tgl] ?? null
+      }
+      return { kode_unit: u.kode_unit, nama_unit: u.nama_unit, daily }
+    })
+
+    return c.json({ success: true, bulan, days_in_month: daysInMonth, data: result })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
 
 app.get('/api/data-stok', async (c) => {
   try {
@@ -860,6 +1266,19 @@ app.get('/api/data-stok', async (c) => {
     `).bind(tanggal, tanggal).all<{ kode_unit: number, avg_pemakaian: number }>()
     const avgMap: Record<number, number> = {}
     for (const row of avgResult.results) avgMap[row.kode_unit] = row.avg_pemakaian
+
+    // Ambil rata-rata pemakaian BBM 30 hari terakhir per unit (AVG)
+    const avgRataResult = await c.env.DB.prepare(`
+      SELECT kode_unit,
+             AVG(CASE WHEN (saldo_awal - saldo_akhir + COALESCE(penerimaan_bbm,0)) > 0
+                      THEN (saldo_awal - saldo_akhir + COALESCE(penerimaan_bbm,0))
+                      ELSE NULL END) AS rata_pemakaian
+      FROM lap_operasional
+      WHERE tanggal >= date(?, '-30 days') AND tanggal <= ?
+      GROUP BY kode_unit
+    `).bind(tanggal, tanggal).all<{ kode_unit: number, rata_pemakaian: number }>()
+    const avgRataMap: Record<number, number> = {}
+    for (const row of avgRataResult.results) avgRataMap[row.kode_unit] = row.rata_pemakaian
 
     // Stok awal bulan aktual (April 2026) — data referensi dari dokumen resmi
     const STOK_AWAL_APRIL_2026: Record<number, number> = {
@@ -936,14 +1355,27 @@ app.get('/api/data-stok', async (c) => {
     })
 
     const rows = sortedUnits.map((u) => {
-      const meta      = UNIT_META[u.kode_unit]
-      const lap       = lapMap[u.kode_unit]
-      const avgPakai  = avgMap[u.kode_unit] || null
+      const meta         = UNIT_META[u.kode_unit]
+      const lap          = lapMap[u.kode_unit]
+      const avgPakai     = avgMap[u.kode_unit] || null
+      const rataaPakai   = avgRataMap[u.kode_unit] || null
 
       const stokAwalBln  = stokAwalBulanMap[u.kode_unit] ?? null
       const stokAwal     = lap?.saldo_akhir ?? null   // STOCK AWAL = Saldo Akhir dari lap. operasional
       const stokAkhir    = lap?.saldo_akhir ?? null
       const penerimaanBbm = lap?.penerimaan_bbm ?? null
+      const lapSaldoAwal  = lap?.saldo_awal ?? null
+      const lapSaldoAkhir = lap?.saldo_akhir ?? null
+      const lapKwhProd    = lap?.kwh_produksi ?? null
+      // PEMAKAIAN BBM = Saldo Awal + Penerimaan - Saldo Akhir
+      const penerimaan   = penerimaanBbm ?? 0
+      const pemakaianBbm = (lapSaldoAwal !== null && lapSaldoAkhir !== null)
+                           ? lapSaldoAwal + penerimaan - lapSaldoAkhir
+                           : null
+      // SFC = (Saldo Awal + Penerimaan - Saldo Akhir) / kWh Produksi
+      const sfc = (lapSaldoAwal !== null && lapSaldoAkhir !== null && lapKwhProd !== null && lapKwhProd > 0)
+                  ? Math.round((lapSaldoAwal + penerimaan - lapSaldoAkhir) / lapKwhProd * 1000) / 1000
+                  : null
 
       const jalur        = meta?.jalur ?? '-'
       const kapasitasTangki = meta?.kapasitas_tangki ?? null
@@ -991,12 +1423,15 @@ app.get('/api/data-stok', async (c) => {
         stok_awal: stokAwal,
         stock_mati: stockMati,
         stock_bersih: stockBersih,
+        pemakaian_rata_rata: rataaPakai !== null ? Math.round(rataaPakai) : null,
         rata_rata_harian: avgPakai !== null ? Math.round(avgPakai) : null,
         daya_tampung_storage: dayaTampung,
         bbm_siap_kirim: bbmSiapKirim,
         safety_stock: safetyStock,
         estimasi_bbm_habis: estimasiBbmHabis,
-        kondisi_stock: kondisi
+        kondisi_stock: kondisi,
+        pemakaian_bbm: pemakaianBbm,
+        sfc
       }
     })
 
@@ -1115,15 +1550,46 @@ app.post('/api/kirim-wa', async (c) => {
 // ============================================================
 // API: JADWAL WA — baca kolom Z dari Sheets, simpan jadwal ke D1
 // ============================================================
-const JADWAL_SHEETS_ID  = '1Z9GUVysMpsEtUxYYTXjDcrTZHD3iG5E8FoRLsHN6ll0'
-const JADWAL_SHEETS_GID = '967712266'
-const JADWAL_KODE_UNIT  = 919
+// Multi-unit spreadsheet config: kode_unit → { id, gid }
+const UNIT_SHEETS: Record<number, { id: string, gid: string }> = {
+  919: { id: '1Z9GUVysMpsEtUxYYTXjDcrTZHD3iG5E8FoRLsHN6ll0', gid: '967712266' },
+  918: { id: '1M2JOXWK4Q-LP1vlyL15YuTbM2dkW6shOpj1ehSkfbko', gid: '0'         },
+  917: { id: '1JnExvPvj3dW75bJSwmcz7Hu9At4MAY8_SFn_6h6r-ck',  gid: '967712266' },
+  920: { id: '1_TLzT_-rrtZYRTGinl5wA6XTQgsS722WJHgIAkds_EM',  gid: '967712266' },
+  915: { id: '1NqK9-si1ljB4NSdFfzoQOX3Y0TpwG-sy-uIYrsQY3wU',  gid: '967712266' },
+  390: { id: '1D1CBsjxQ4jHxNCI_5LUXqCrG92rls4_XTwdmCk4F5_s',  gid: '967712266' },
+  399: { id: '1oMNZUph4KLB8LS-N23f4mD2VbA5ZeBUDlz4VqSKE620',  gid: '967712266' },
+  395: { id: '1q9eDZGdg-AI42xkpIIgyR95B-GdlkAnksNw5KofJcqo',   gid: '967712266' },
+  391: { id: '12cee_bWeFjVhH0ZpyoLmSHaBhWfIaTMLAZnWPvGO74U',   gid: '967712266' },
+  373: { id: '1KjYrM-FysfrpKv3LUaMnZxoDS8ENHFZecCBAaTSTMPk',   gid: '967712266' },
+  376: { id: '1bMROUJT6Mh8HtoKxaVAClzmZqG3x0XZJ6yIiXxEidvc',   gid: '967712266' },
+  382: { id: '1UXSL2bIlcKKNrFI14D13KAhlKPt3bZ2L0eeupPFGzc0',   gid: '967712266' },
+  375: { id: '17-vy4DZsG-X0QbgGUyWyQH_fWcELztL9ukVuVu5XR9g',   gid: '967712266' },
+  913: { id: '1B8WS2SqB8pjUtZiY7fg8I2yow1DVjGat_mGq7SJ_mtM',   gid: '967712266' },
+  910: { id: '1ogcKzhOptTuMUgf18XLpoqvBn1QvFynD-Omp-kgPj4w',   gid: '967712266' },
+  385: { id: '1T38eNZ8a02B2SiIzjsGG-kAVUCvPtwpq8SP6m8bmEtQ',   gid: '967712266' },
+  366: { id: '1mgPRQnFMGw0ugdZTapUjz3kkVMGScuHCMCCbpg3SSBE',   gid: '967712266' },
+  372: { id: '109mi5EnZzhw5Q25orDJiLcb6FhV3PtjF939Fna2qAP8',   gid: '967712266' },
+  911: { id: '1xJPP81LffMzVIDX_73-SxIkoXiD39degdWibRB-xyFE',   gid: '967712266' },
+}
 
 app.post('/api/jadwal-wa', async (c) => {
   try {
     const db = c.env.DB
+    // Ambil kode_unit dari body atau query, default 919
+    let kode_unit_req = 919
+    try {
+      const body = await c.req.json().catch(() => ({})) as any
+      if (body?.kode_unit) kode_unit_req = Number(body.kode_unit)
+    } catch(_) {}
+    if (!kode_unit_req) {
+      const q = c.req.query('kode_unit')
+      if (q) kode_unit_req = Number(q)
+    }
+    const sheetCfg = UNIT_SHEETS[kode_unit_req]
+    if (!sheetCfg) return c.json({ success: false, error: `Spreadsheet untuk unit ${kode_unit_req} belum dikonfigurasi` }, 400)
     // Baca spreadsheet via CSV export (public)
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${JADWAL_SHEETS_ID}/export?format=csv&gid=${JADWAL_SHEETS_GID}`
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetCfg.id}/export?format=csv&gid=${sheetCfg.gid}`
     const csvResp = await fetch(csvUrl)
     const csvText = await csvResp.text()
 
@@ -1131,25 +1597,64 @@ app.post('/api/jadwal-wa', async (c) => {
     const lines = csvText.trim().split('\n')
     if (lines.length < 2) return c.json({ success: false, error: 'Spreadsheet kosong' }, 400)
 
-    // Header row — cari index kolom B (Tanggal) dan Z (Generate Jam)
-    const header = lines[0].split(',').map((h: string) => h.replace(/"/g, '').trim())
     const idxTanggal = 1  // kolom B = index 1
     const idxJam     = 25 // kolom Z = index 25
 
-    // Kumpulkan jadwal unik: tanggal + jam dari baris data unit 919
+    // Helper: konversi M/D/YYYY atau M/D/YY → YYYY-MM-DD, lalu tambah 1 hari (H+1)
+    const parseAndNextDay = (raw: string): string | null => {
+      const s = raw.replace(/"/g, '').trim()
+      // Coba format M/D/YYYY atau M/D/YY
+      const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+      if (mdy) {
+        let yr = parseInt(mdy[3])
+        if (yr < 100) yr += 2000
+        const mo = parseInt(mdy[1])
+        const dy = parseInt(mdy[2])
+        const d = new Date(yr, mo - 1, dy + 1) // +1 = H+1
+        const yy = d.getFullYear()
+        const mm = String(d.getMonth() + 1).padStart(2, '0')
+        const dd = String(d.getDate()).padStart(2, '0')
+        return `${yy}-${mm}-${dd}`
+      }
+      // Coba format YYYY-MM-DD
+      const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (ymd) {
+        const d = new Date(parseInt(ymd[1]), parseInt(ymd[2]) - 1, parseInt(ymd[3]) + 1)
+        const yy = d.getFullYear()
+        const mm = String(d.getMonth() + 1).padStart(2, '0')
+        const dd = String(d.getDate()).padStart(2, '0')
+        return `${yy}-${mm}-${dd}`
+      }
+      return null
+    }
+
+    // Helper: validasi format jam HH:MM
+    const parseJam = (raw: string): string | null => {
+      const s = raw.replace(/"/g, '').trim()
+      const m = s.match(/^(\d{1,2}):(\d{2})$/)
+      if (!m) return null
+      const h = parseInt(m[1])
+      const mi = parseInt(m[2])
+      if (h < 0 || h > 23 || mi < 0 || mi > 59) return null
+      return `${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}`
+    }
+
+    // Kumpulkan jadwal unik: tanggal H+1 + jam valid dari kolom Z
     const jadwalSet = new Set<string>()
     for (let i = 1; i < lines.length; i++) {
-      // Split CSV dengan memperhatikan quoted fields
       const cols = lines[i].split(',').map((v: string) => v.replace(/"/g, '').trim())
-      const tanggal = cols[idxTanggal] || ''
-      const jamRaw  = cols[idxJam]     || ''
-      if (!tanggal || !jamRaw) continue
-      // Format jam: pastikan HH:MM
-      const jam = jamRaw.length === 5 ? jamRaw : jamRaw.padStart(5, '0')
+      const tanggalRaw = cols[idxTanggal] || ''
+      const jamRaw     = cols[idxJam]     || ''
+      if (!tanggalRaw || !jamRaw) continue
+
+      const tanggal = parseAndNextDay(tanggalRaw)
+      const jam     = parseJam(jamRaw)
+      if (!tanggal || !jam) continue  // skip baris dengan format tidak valid
+
       jadwalSet.add(`${tanggal}|${jam}`)
     }
 
-    if (jadwalSet.size === 0) return c.json({ success: false, error: 'Tidak ada jadwal ditemukan di kolom Z' }, 400)
+    if (jadwalSet.size === 0) return c.json({ success: false, error: 'Tidak ada jadwal valid ditemukan di kolom Z' }, 400)
 
     // Simpan ke tabel jadwal_wa (INSERT OR IGNORE — tidak timpa yang sudah ada)
     let inserted = 0
@@ -1157,7 +1662,7 @@ app.post('/api/jadwal-wa', async (c) => {
       const [tanggal, jam] = key.split('|')
       try {
         await db.prepare(`INSERT OR IGNORE INTO jadwal_wa (kode_unit, tanggal, jam, status) VALUES (?, ?, ?, 'pending')`)
-          .bind(JADWAL_KODE_UNIT, tanggal, jam).run()
+          .bind(kode_unit_req, tanggal, jam).run()
         inserted++
       } catch(_) {}
     }
@@ -1179,76 +1684,176 @@ app.get('/api/jadwal-wa', async (c) => {
   }
 })
 
+// Endpoint cleanup: hapus jadwal dengan format tanggal atau jam salah
+app.delete('/api/jadwal-wa/cleanup', async (c) => {
+  try {
+    const db = c.env.DB
+    const r1 = await db.prepare(`DELETE FROM jadwal_wa WHERE tanggal NOT GLOB '????-??-??'`).run()
+    const r2 = await db.prepare(`DELETE FROM jadwal_wa WHERE jam NOT GLOB '??:??'`).run()
+    return c.json({ success: true, deleted_bad_tanggal: r1.meta.changes, deleted_bad_jam: r2.meta.changes })
+  } catch(e: any) {
+    return c.json({ success: false, error: e.message }, 500)
+  }
+})
+
 // ============================================================
 // FUNGSI: Build pesan WA per jam untuk unit 919
 // ============================================================
 async function buildPesanJam(db: D1Database, kode_unit: number, tanggal: string, jam: string): Promise<string | null> {
   try {
-    // Ambil data mesin unit ini
-    const mesinRows = await db.prepare(`SELECT * FROM mesin_cache WHERE kode_unit = ? ORDER BY id_mesin`)
-      .bind(kode_unit).all()
+    // Normalisasi jam → "HH:MM" dan integer
+    const jamHHMM = (() => {
+      const s = String(jam).trim()
+      const m = s.match(/^(\d{1,2}):(\d{2})$/)
+      if (m) return `${m[1].padStart(2,'0')}:${m[2]}`
+      const h = parseInt(s, 10)
+      return `${String(h).padStart(2,'0')}:00`
+    })()
+    const jamInt = parseInt(jamHHMM.split(':')[0], 10)
+
+    // ── Ambil data dari spreadsheet ──────────────────────────────
+    // Kolom: B=Tanggal(1), D=KodeUnit(3), F=IDMesin(5), G=NamaMesin(6),
+    //        H=Status(7), I=Terpasang(8), J=DM(9), K=Beban(10),
+    //        L=StandKWH(11), M=StandBBM(12), N=PhasaR(13), O=PhasaS(14),
+    //        P=PhasaT(15), Q=TekOli(16), R=TempAir(17), S=Tegangan(18),
+    //        T=Frequency(19), U=CosPhi(20), V=JamKerja(21),
+    //        W=KwhProd(22), X=PakaiBBM(23), Y=Ket(24), Z=GenerateJam(25)
+    const sheetCfgPesan = UNIT_SHEETS[kode_unit] ?? UNIT_SHEETS[919]
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetCfgPesan.id}/export?format=csv&gid=${sheetCfgPesan.gid}`
+    const csvResp = await fetch(csvUrl)
+    const csvText = await csvResp.text()
+
+    // Parse CSV — filter baris sesuai kode_unit + jam kolom Z
+    const csvLines = csvText.trim().split('\n')
+    // Map: id_mesin → row data dari spreadsheet
+    const sheetMap: Record<string, string[]> = {}
+    let namaUnitSheet = ''
+
+    for (let i = 1; i < csvLines.length; i++) {
+      // Parse CSV dengan memperhatikan quoted fields
+      const cols: string[] = []
+      let cur = '', inQ = false
+      for (const ch of csvLines[i]) {
+        if (ch === '"') { inQ = !inQ }
+        else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = '' }
+        else cur += ch
+      }
+      cols.push(cur.trim())
+
+      const rowKode = (cols[3] || '').replace(/"/g,'').trim()
+      const rowJam  = (cols[25] || '').replace(/"/g,'').trim()
+      const rowId   = (cols[5] || '').replace(/"/g,'').trim()
+
+      if (rowKode !== String(kode_unit)) continue
+      if (rowJam !== jamHHMM) continue
+      if (!rowId) continue
+
+      if (!namaUnitSheet) namaUnitSheet = (cols[4] || '').replace(/"/g,'').trim()
+      sheetMap[rowId] = cols
+    }
+
+    // ── Ambil data mesin dari mesin_cache (untuk urutan & SN) ───
+    const mesinRows = await db.prepare(
+      `SELECT * FROM mesin_cache WHERE kode_unit = ? ORDER BY id_mesin`
+    ).bind(kode_unit).all()
     if (!mesinRows.results || mesinRows.results.length === 0) return null
 
     const mesinList: any[] = mesinRows.results
+    const namaUnit = namaUnitSheet || (mesinList[0] ? (mesinList[0] as any).nama_unit : String(kode_unit))
 
-    // Ambil nama unit
-    const namaUnit = mesinList[0] ? (mesinList[0] as any).nama_unit : String(kode_unit)
-
-    // Ambil data monitoring untuk tanggal + jam ini
-    const monRows = await db.prepare(
-      `SELECT * FROM data_monitoring WHERE tanggal = ? AND jam = ? AND mesin_id IN (SELECT id_mesin FROM mesin_cache WHERE kode_unit = ?)`
-    ).bind(tanggal, jam, kode_unit).all()
-
-    const monMap: Record<number, any> = {}
-    for (const r of (monRows.results || [])) {
-      monMap[(r as any).mesin_id] = r
-    }
-
-    // Ambil nama operator dari lap_operasional
+    // ── Ambil nama operator dari lap_operasional tanggal H-1 ──────
+    // Sama seperti LAPORAN BEBAN PUNCAK: gunakan operator hari sebelumnya
+    const tglDate = new Date(tanggal)
+    tglDate.setDate(tglDate.getDate() - 1)
+    const tanggalH1 = tglDate.toISOString().split('T')[0]
     let namaOperator = '-'
     try {
-      const lapRow: any = await db.prepare(`SELECT nama_operator FROM lap_operasional WHERE kode_unit = ? AND tanggal = ?`)
-        .bind(kode_unit, tanggal).first()
+      const lapRow: any = await db.prepare(
+        `SELECT nama_operator FROM lap_operasional WHERE kode_unit = ? AND tanggal = ?`
+      ).bind(kode_unit, tanggalH1).first()
       if (lapRow) namaOperator = lapRow.nama_operator || '-'
     } catch(_) {}
 
+    // ── Susun teks pesan ─────────────────────────────────────────
     const lines: string[] = []
     lines.push('LAPORAN LOGSHEET PLTD')
     lines.push(namaUnit)
     lines.push(`id unit: ${String(kode_unit).padStart(4, '0')}`)
     lines.push(`tgl : ${tanggal}`)
-    lines.push(`jam : ${jam}:00`)
+    lines.push(`jam : ${jamHHMM}`)
     lines.push(`nama operator: ${namaOperator}`)
     lines.push('')
 
+    // Helper: ambil nilai kolom, kembalikan string kosong jika null/kosong
+    const col = (cols: string[], idx: number): string => {
+      const v = (cols[idx] || '').replace(/"/g, '').trim()
+      return v
+    }
+    // Helper: nilai numerik — tampilkan 0 jika kosong
+    const num = (v: string): string => v !== '' ? v.replace(',', '.') : '0'
+
     for (let i = 0; i < mesinList.length; i++) {
       const m: any = mesinList[i]
-      const d: any = monMap[m.id_mesin] || {}
-      const v0 = (val: any) => val != null ? val : 0
+      const idStr  = String(m.id_mesin)
+      const cols   = sheetMap[idStr] || []        // data dari spreadsheet
+      const hasSheet = cols.length > 0
 
-      lines.push(`${i + 1}. ${m.mesin || m.nama_mesin}`)
-      lines.push(`id mesin: ${m.id_mesin}`)
-      lines.push(`kode mesin: 0`)
+      // Nama mesin: dari sheet jika ada, fallback ke cache
+      const namaMesin = hasSheet ? col(cols, 6) || m.mesin || m.nama_mesin : m.mesin || m.nama_mesin
+
+      lines.push(`${i + 1}. ${namaMesin}`)
+      lines.push(`id mesin: ${idStr.padStart(6, '0')}`)
+      lines.push(`kode mesin: ${m.kode_mesin || '-'}`)
       lines.push(`sn: ${m.s_n || '-'}`)
       lines.push(`dt: ${m.terpasang ?? '-'}`)
-      lines.push(`daya mampu: ${v0(d.daya_mampu)}`)
-      lines.push(`beban: ${v0(d.beban)}`)
-      lines.push(`stand kwh: ${v0(d.stand_kwh)}`)
-      lines.push(`stand bbm: ${v0(d.stand_bbm)}`)
-      lines.push(`phasa r: ${v0(d.phasa_r)}`)
-      lines.push(`phasa s: ${v0(d.phasa_s)}`)
-      lines.push(`phasa t: ${v0(d.phasa_t)}`)
-      lines.push(`tek oli: ${v0(d.tek_oli)}`)
-      lines.push(`temp air pendingin: ${v0(d.temp_air_pendingin)}`)
-      lines.push(`tegangan: ${v0(d.tegangan)}`)
-      lines.push(`frequency: ${v0(d.frequency)}`)
-      lines.push(`cos phi: ${v0(d.cos_phi)}`)
-      lines.push(`jam kerja mesin: ${v0(d.jam_kerja_mesin)}`)
-      lines.push(`status mesin: ${d.status_mesin || 'Operasi'}`)
-      lines.push(`Kwh produksi : ${v0(d.kwh_produksi)}`)
-      lines.push(`pemakaian bbm : ${v0(d.pemakaian_bbm)}`)
-      lines.push(`jenis bahan bakar : B35`)
-      lines.push(`ket: ${d.keterangan || '-'}`)
+
+      if (hasSheet) {
+        // Data dari spreadsheet sesuai mapping kolom
+        lines.push(`daya mampu: ${num(col(cols, 9))}`)           // J
+        lines.push(`beban: ${num(col(cols, 26))}`)               // AA (Generate Daya)
+        lines.push(`stand kwh: ${num(col(cols, 11))}`)           // L
+        lines.push(`stand bbm: ${num(col(cols, 12))}`)           // M
+        lines.push(`phasa r: ${num(col(cols, 13))}`)             // N
+        lines.push(`phasa s: ${num(col(cols, 14))}`)             // O
+        lines.push(`phasa t: ${num(col(cols, 15))}`)             // P
+        lines.push(`tek oli: ${num(col(cols, 16))}`)             // Q
+        lines.push(`temp air pendingin: ${num(col(cols, 17))}`)  // R
+        lines.push(`tegangan: ${num(col(cols, 18))}`)            // S
+        lines.push(`frequency: ${num(col(cols, 19))}`)           // T
+        lines.push(`cos phi: ${num(col(cols, 20))}`)             // U
+        lines.push(`jam kerja mesin: ${num(col(cols, 21))}`)     // V
+        lines.push(`status mesin: ${(col(cols, 7) || 'Operasi').toLowerCase()}`) // H
+        lines.push(`Kwh produksi : ${num(col(cols, 22))}`)       // W
+        lines.push(`pemakaian bbm : ${num(col(cols, 23))}`)      // X
+        lines.push(`jenis bahan bakar : B35`)
+        const ket = col(cols, 24)                                 // Y
+        lines.push(`ket: ${ket}`)                                // kosong jika null, tapi baris tetap ada
+      } else {
+        // Fallback ke DB jika tidak ada di spreadsheet
+        const dbRow = await db.prepare(
+          `SELECT * FROM data_monitoring WHERE mesin_id = ? AND tanggal = ? AND CAST(jam AS INTEGER) = ?`
+        ).bind(m.id_mesin, tanggal, jamInt).first() as any || {}
+        const v0 = (val: any) => val != null ? val : 0
+        lines.push(`daya mampu: ${v0(dbRow.daya_mampu)}`)
+        lines.push(`beban: ${v0(dbRow.beban)}`)
+        lines.push(`stand kwh: ${v0(dbRow.stand_kwh)}`)
+        lines.push(`stand bbm: ${v0(dbRow.stand_bbm)}`)
+        lines.push(`phasa r: ${v0(dbRow.phasa_r)}`)
+        lines.push(`phasa s: ${v0(dbRow.phasa_s)}`)
+        lines.push(`phasa t: ${v0(dbRow.phasa_t)}`)
+        lines.push(`tek oli: ${v0(dbRow.tek_oli)}`)
+        lines.push(`temp air pendingin: ${v0(dbRow.temp_air_pendingin)}`)
+        lines.push(`tegangan: ${v0(dbRow.tegangan)}`)
+        lines.push(`frequency: ${v0(dbRow.frequency)}`)
+        lines.push(`cos phi: ${v0(dbRow.cos_phi)}`)
+        lines.push(`jam kerja mesin: ${v0(dbRow.jam_kerja_mesin)}`)
+        lines.push(`status mesin: ${(dbRow.status_mesin || 'Operasi').toLowerCase()}`)
+        lines.push(`Kwh produksi : ${v0(dbRow.kwh_produksi)}`)
+        lines.push(`pemakaian bbm : ${v0(dbRow.pemakaian_bbm)}`)
+        lines.push(`jenis bahan bakar : B35`)
+        const ket = dbRow.keterangan || ''
+        lines.push(`ket: ${ket}`)
+      }
       lines.push('')
     }
 
@@ -1326,9 +1931,9 @@ app.get('/', (c) => {
   <title>DILAN [DIGITALISASI LAPORAN]</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
-  <link rel="preload" href="/static/style.css?v=20260428e" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260428e" as="script"/>
-  <link href="/static/style.css?v=20260428e" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260508z4" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260509e" as="script"/>
+  <link href="/static/style.css?v=20260508z4" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -1348,11 +1953,7 @@ app.get('/', (c) => {
           <span class="btn-text">DATA</span>
         </button>
       </div>
-      <div class="header-actions" id="header-actions-monitoring">
-        <button class="btn btn-success" id="btn-simpan-semua" onclick="saveAllData()" disabled style="opacity:0.5;cursor:not-allowed;">
-          <span class="btn-text">Simpan</span>
-        </button>
-      </div>
+      <div class="header-actions" id="header-actions-monitoring"></div>
       <div class="header-actions" id="header-actions-data" style="display:none;"></div>
       <div class="header-actions" id="header-actions-laporan" style="display:none;">
 
@@ -1377,24 +1978,30 @@ app.get('/', (c) => {
         <label class="toolbar-label">Tanggal</label>
         <input type="date" id="sel-tanggal" class="toolbar-input" onchange="loadData()"/>
       </div>
-      <div class="toolbar-group">
+      <div class="toolbar-group" id="toolbar-group-periode">
         <label class="toolbar-label">Periode</label>
         <select id="sel-periode" class="toolbar-select" style="max-width:200px;" onchange="loadData()">
           ${periodeOptions}
         </select>
+        <button onclick="onPadamClick()" class="btn-toolbar-mobile btn-padam-mobile" style="background:#dc2626;color:#fff;border:none;border-radius:6px;font-weight:700;font-size:0.75rem;cursor:pointer;letter-spacing:0.05em;flex-shrink:0;">PADAM</button>
+        <button id="btn-simpan-semua-mobile" onclick="saveAllData()" disabled class="btn-toolbar-mobile btn-simpan-mobile" style="background:#16a34a;color:#fff;border:none;border-radius:6px;font-weight:700;font-size:0.75rem;cursor:not-allowed;letter-spacing:0.05em;flex-shrink:0;opacity:0.5;">SIMPAN</button>
       </div>
-
       <div id="loading-indicator-mesin" class="hidden"><span class="spinner"></span></div>
       <div id="loading-indicator" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-mesin-count"></span>
       <span class="toolbar-info" id="info-record"></span>
+      <button id="btn-padam-desktop" onclick="onPadamClick()" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:6px 18px;font-weight:700;font-size:0.85rem;cursor:pointer;letter-spacing:0.05em;flex-shrink:0;margin-left:8px;">PADAM</button>
+      <button id="btn-simpan-semua" onclick="saveAllData()" disabled style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 18px;font-weight:700;font-size:0.85rem;cursor:not-allowed;letter-spacing:0.05em;flex-shrink:0;margin-left:8px;opacity:0.5;">SIMPAN</button>
     </div>
   </div>
 
   <!-- Data toolbar -->
   <div id="toolbar-data" class="hidden">
-    <!-- Sub-tab row: HOP BBM | STOCK OLI | REKAP | Tanggal/Filter | info -->
+    <!-- Sub-tab row: NERACA DAYA | HOP BBM | STOCK OLI | Tanggal/Filter | info -->
     <div class="data-subtab-row" style="flex-wrap:wrap;gap:4px;">
+      <button id="subtab-btn-neraca-daya" class="data-subtab-btn" onclick="switchDataView('neraca-daya')">
+        NERACA DAYA
+      </button>
       <button id="subtab-btn-hop-bbm" class="data-subtab-btn active" onclick="switchDataView('hop-bbm')">
         HOP BBM
       </button>
@@ -1407,8 +2014,10 @@ app.get('/', (c) => {
         <input type="date" id="data-tanggal" class="toolbar-input" onchange="onDataTanggalChange()"/>
       </div>
 
+
       <div id="loading-indicator-data" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-data-record"></span>
+      <button id="btn-resume-data" onclick="onResumeDataClick()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:6px 18px;font-weight:700;font-size:0.85rem;cursor:pointer;letter-spacing:0.05em;flex-shrink:0;margin-left:8px;">RESUME</button>
     </div>
   </div>
 
@@ -1457,10 +2066,19 @@ app.get('/', (c) => {
 <!-- ===== TAB: DATA ===== -->
 <div id="tab-data" class="tab-content" style="padding:10px 12px;">
   <div id="data-state-empty" style="display:flex;"></div>
+  <!-- NERACA DAYA -->
+  <div id="neraca-table-wrap" class="hidden">
+    <div class="table-wrap">
+      <table id="neraca-table" style="min-width:100%;border-collapse:collapse;">
+        <thead id="neraca-table-head"></thead>
+        <tbody id="neraca-table-body"></tbody>
+      </table>
+    </div>
+  </div>
   <!-- HOP BBM -->
   <div id="data-table-wrap" class="hidden">
     <div class="table-wrap">
-      <table id="data-table" style="width:100%;border-collapse:collapse;">
+      <table id="data-table" style="min-width:100%;border-collapse:collapse;">
         <thead id="data-table-head"></thead>
         <tbody id="data-table-body"></tbody>
       </table>
@@ -1469,7 +2087,7 @@ app.get('/', (c) => {
   <!-- STOCK OLI -->
   <div id="oli-table-wrap" class="hidden">
     <div class="table-wrap">
-      <table id="oli-table" style="width:100%;border-collapse:collapse;">
+      <table id="oli-table" style="min-width:100%;border-collapse:collapse;">
         <thead id="oli-table-head"></thead>
         <tbody id="oli-table-body"></tbody>
       </table>
@@ -1525,7 +2143,7 @@ app.get('/', (c) => {
   </div>
 </div>
 
-<script src="/static/app.js?v=20260428e" defer></script>
+<script src="/static/app.js?v=20260509e"></script>
 </body>
 </html>`
   const resp = c.html(html)
@@ -1591,8 +2209,6 @@ async function handleCron(env: { DB: D1Database }) {
 }
 
 export default {
-  fetch: app.fetch,
-  async scheduled(event: any, env: any, ctx: any) {
-    ctx.waitUntil(handleCron(env))
-  }
+  fetch: app.fetch
 }
+

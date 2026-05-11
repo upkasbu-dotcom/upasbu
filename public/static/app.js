@@ -117,7 +117,30 @@ var PARAMS = [
   { key:'pemakaian_bbm',      label:'PEMAKAIAN BBM',      unit:'ltr',  type:'number' },
   { key:'keterangan',         label:'KETERANGAN',         unit:'',     type:'text' },
 ]
-var STATUS_OPTIONS = ['Operasi','Standby','Pemeliharaan','Gangguan','Rusak Permanen']
+var STATUS_OPTIONS = ['Operasi','Standby','Pemeliharaan','Gangguan','Rusak']
+
+// POLA per kode_unit (jam operasi sistem per hari)
+var POLA_MAP = {
+  399: 24, // ULD TUMBANG SENAMANG
+  390: 24, // ULD TELAGA
+  382: 24, // ULD PAGATAN
+  391: 24, // ULD TELAGA PULANG
+  376: 24, // ULD MENDAWAI
+  373: 24, // ULD KENAMBUI
+  395: 24, // ULD TUMBANG MANJUL
+  375: 24, // ULD KUDANGAN
+  366: 14, // ULD BABAI
+  385: 12, // ULD RANGGA ILUNG
+  913: 14, // ULD TUMPUNG LAUNG
+  372: 12, // ULD GUNUNG PUREI
+  910: 14, // ULD MANGKATIP
+  911: 24, // ULD TELUK BETUNG
+  915: 24, // ULD SUNGAI BALI
+  920: 24, // ULD MARABATUAN
+  917: 24, // ULD KERASIAN
+  918: 24, // ULD KERAYAAN
+  919: 24, // ULD KERUMPUTAN
+}
 
 // =============================================
 // STATE MONITORING
@@ -163,21 +186,22 @@ function lsGet(key) {
 // INIT
 // =============================================
 document.addEventListener('DOMContentLoaded', function() {
-  var today   = new Date()
-  var todayStr = today.toISOString().split('T')[0]
-  // H-1 untuk tab DATA
-  var yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
-  var yesterdayStr = yesterday.toISOString().split('T')[0]
+  var pad = function(n){ return String(n).padStart(2,'0') }
+  // Gunakan timezone UTC+7 (WIB)
+  var nowWIB = new Date(new Date().getTime() + 7 * 60 * 60 * 1000)
+  var todayStr = nowWIB.getUTCFullYear() + '-' + pad(nowWIB.getUTCMonth()+1) + '-' + pad(nowWIB.getUTCDate())
+  // H-1 WIB
+  var yWIB = new Date(nowWIB.getTime() - 24 * 60 * 60 * 1000)
+  var yesterdayStr = yWIB.getUTCFullYear() + '-' + pad(yWIB.getUTCMonth()+1) + '-' + pad(yWIB.getUTCDate())
 
   document.getElementById('sel-tanggal').value   = todayStr
-  // Tab OPERASIONAL: default H-1, max = H-1 (tidak boleh pilih hari ini atau setelahnya)
+  // Tab OPERASIONAL: default H-1, max = hari ini
   var lapTglEl = document.getElementById('lap-tanggal')
   lapTglEl.value = yesterdayStr
   lapTglEl.max   = yesterdayStr
   document.getElementById('data-tanggal').value  = yesterdayStr
   // Auto-set periode: Siang (06-17) atau Malam (18-05)
-  var hr = today.getHours()
+  var hr = nowWIB.getUTCHours()
   document.getElementById('sel-periode').value = (hr >= 6 && hr <= 17) ? 'siang' : 'malam'
   // Hapus cache UP3-based lama agar tidak konflik
   try {
@@ -269,12 +293,12 @@ async function onMonUnitChange(kodeUnit) {
       return
     }
 
-    document.getElementById('info-mesin-count').textContent = mesinList.length + ' mesin ditemukan'
-
     // Inisialisasi currentData dengan default
     for (var i = 0; i < mesinList.length; i++) {
       currentData[mesinList[i].id_mesin] = { status_mesin: 'Operasi' }
     }
+
+    updateSummaryBar()
 
     renderTable()
     setBtnMonEnabled(true)
@@ -292,7 +316,7 @@ async function onMonUnitChange(kodeUnit) {
 }
 
 function setBtnMonEnabled(enabled) {
-  var btns = ['btn-tampilkan','btn-riwayat','btn-simpan-semua']
+  var btns = ['btn-tampilkan','btn-riwayat','btn-simpan-semua','btn-simpan-semua-mobile']
   btns.forEach(function(id) {
     var el = document.getElementById(id)
     if (!el) return
@@ -306,9 +330,10 @@ function renderTable() {
   var thead = document.getElementById('table-head')
   var tbody = document.getElementById('table-body')
 
-  // ── HEADER: kolom pertama = "Mesin", lalu satu kolom per parameter ──
+  // ── HEADER: kolom pertama = "NO", kolom kedua = "Mesin", lalu satu kolom per parameter ──
   var headHTML = '<tr>'
-  headHTML += '<th class="th-param" style="min-width:200px;text-align:center;">MESIN</th>'
+  headHTML += '<th class="th-param" style="width:1px;white-space:nowrap;text-align:center;font-size:0.75rem;font-weight:700;padding:8px 6px;">NO</th>'
+  headHTML += '<th class="th-param" style="min-width:200px;text-align:center;font-size:0.75rem;font-weight:700;">MESIN</th>'
   for (var pi = 0; pi < PARAMS.length; pi++) {
     var p = PARAMS[pi]
     headHTML += '<th class="th-mesin">'
@@ -326,9 +351,12 @@ function renderTable() {
     var sn = m.s_n ? String(m.s_n) : '-'
 
     bodyHTML += '<tr style="background:#fff;" data-mesin="' + m.id_mesin + '">'
-    // Kolom pertama: info mesin (sticky)
+    // Kolom NO
+    bodyHTML += '<td style="width:1px;white-space:nowrap;text-align:center;font-size:0.75rem;font-weight:600;color:#64748b;padding:4px 6px;background:#fff;">' + (mi + 1) + '</td>'
+    // Kolom MESIN (sticky)
     bodyHTML += '<td style="text-align:left;background:#fff;">'
-    bodyHTML += '<div class="th-mesin-name" style="font-size:0.78rem;color:#374151;font-weight:700;">' + m.mesin + '</div>'
+
+    bodyHTML += '<div class="th-mesin-name" style="font-size:0.75rem;color:#374151;font-weight:700;">' + m.mesin + '</div>'
     bodyHTML += '<div class="th-mesin-meta">'
     bodyHTML += '<span class="th-sn">S/N: ' + sn + '</span>'
     bodyHTML += '</div>'
@@ -340,7 +368,7 @@ function renderTable() {
       if (p2.type === 'readonly') {
         // Nilai tetap dari master mesin, tidak bisa diubah
         var masterVal = (m[p2.key] !== undefined && m[p2.key] !== null) ? m[p2.key] : '—'
-        bodyHTML += '<td style="text-align:center;font-size:0.8rem;color:#374151;font-weight:600;">' + masterVal + '</td>'
+        bodyHTML += '<td style="text-align:center;font-size:0.75rem;color:#374151;font-weight:600;">' + masterVal + '</td>'
         continue
       }
       var val = (currentData[m.id_mesin] && currentData[m.id_mesin][p2.key] !== undefined && currentData[m.id_mesin][p2.key] !== null)
@@ -372,7 +400,9 @@ function renderTable() {
       } else {
         // Gunakan type="text" + inputmode="numeric" agar keyboard angka muncul di mobile
         // dan kita bisa blokir titik secara penuh (type=number di iOS masih bisa input ".")
-        bodyHTML += '<td><input type="text" inputmode="numeric" pattern="[0-9]*" class="cell-input" placeholder="—"'
+        var WIDE_KEYS = ['stand_kwh','jam_kerja_mesin','kwh_produksi','pemakaian_bbm']
+        var kwh_class = (WIDE_KEYS.indexOf(p2.key) >= 0) ? 'cell-input cell-input-kwh' : 'cell-input'
+        bodyHTML += '<td><input type="text" inputmode="numeric" pattern="[0-9]*" class="' + kwh_class + '" placeholder="—"'
         bodyHTML += ' data-mesin-id="' + m.id_mesin + '" data-key="' + p2.key + '"'
         bodyHTML += ' autocomplete="off" autocorrect="off" spellcheck="false"'
         bodyHTML += ' value="' + val + '"'
@@ -468,6 +498,80 @@ function setCellValue(mesinId, field, value) {
     var cleaned = String(value).replace(/[^0-9]/g, '')
     currentData[mesinId][field] = cleaned === '' ? null : parseInt(cleaned, 10)
   }
+  updateSummaryBar()
+}
+
+// =============================================
+// SUMMARY BAR — real-time: DM Pasok, Beban Puncak, Padam, Cadangan, Status
+// =============================================
+async function updateSummaryBar() {
+  var el = document.getElementById('info-mesin-count')
+  if (!el) return
+
+  if (!mesinList || mesinList.length === 0) return
+
+  var totalDM = 0, totalBeban = 0, maxDM = 0
+
+  for (var i = 0; i < mesinList.length; i++) {
+    var mid = mesinList[i].id_mesin
+    var d   = currentData[mid] || {}
+    var status = d.status_mesin || 'Operasi'
+    var dm = parseFloat(d.daya_mampu) || 0
+    var bp = parseFloat(d.beban) || 0
+
+    if (status === 'Operasi') {
+      totalDM    += dm
+      totalBeban += bp
+      if (dm > maxDM) maxDM = dm
+    } else if (status === 'Standby') {
+      totalDM += dm
+      if (dm > maxDM) maxDM = dm
+    } else {
+      // Gangguan/Pemeliharaan/Rusak: tetap hitung beban jika nilai > 0
+      if (bp > 0) totalBeban += bp
+    }
+  }
+
+  var cadangan = totalDM - totalBeban
+
+  // Cek event padam untuk unit+tanggal ini
+  var adaPadam = false
+  try {
+    var tanggal = document.getElementById('sel-tanggal') ? document.getElementById('sel-tanggal').value : ''
+    if (monSelectedUnit && tanggal) {
+      var epRes  = await fetch('/api/event-padam?kode_unit=' + monSelectedUnit + '&tanggal=' + tanggal)
+      var epJson = await epRes.json()
+      adaPadam   = epJson.ada_padam === true
+    }
+  } catch(ep) {}
+
+  var statusSys
+  if (adaPadam) {
+    statusSys = 'DEFISIT'
+  } else if (cadangan >= 0 && cadangan < maxDM) {
+    statusSys = 'SIAGA'
+  } else if (cadangan >= maxDM) {
+    statusSys = 'NORMAL'
+  } else {
+    statusSys = 'DEFISIT'
+  }
+  // DEFISIT = ada event padam ATAU cadangan < 0
+  // SIAGA   = 0 <= cadangan < maxDM
+  // NORMAL  = cadangan >= maxDM
+
+  var padam = cadangan < 0 ? Math.abs(cadangan) : 0
+  var cadanganDisplay = cadangan < 0 ? 0 : cadangan
+
+  var statusColor = statusSys === 'DEFISIT' ? 'color:#c0392b;font-weight:bold'
+                  : statusSys === 'SIAGA'   ? 'color:#e67e22;font-weight:bold'
+                  : 'color:#27ae60;font-weight:bold'
+
+  el.innerHTML =
+    'DM Pasok: <b>' + totalDM + '</b> kW &nbsp;|&nbsp; ' +
+    'Beban Puncak: <b>' + totalBeban + '</b> kW &nbsp;|&nbsp; ' +
+    'Padam: <b>' + padam + '</b> kW &nbsp;|&nbsp; ' +
+    'Cadangan: <b>' + cadanganDisplay + '</b> kW &nbsp;|&nbsp; ' +
+    'Status: <b style="' + statusColor + '">' + statusSys + '</b>'
 }
 
 // =============================================
@@ -495,7 +599,14 @@ function applyStatusRule(mesinId, status) {
     var isDisabled = false
     var isRequired = false
 
-    if (status === 'Operasi') {
+    // Periode SIANG: jam_kerja_mesin, kwh_produksi, pemakaian_bbm selalu disabled
+    var periodeEl = document.getElementById('sel-periode')
+    var isSiang = periodeEl && periodeEl.value === 'siang'
+    var SIANG_DISABLED_KEYS = ['jam_kerja_mesin', 'kwh_produksi', 'pemakaian_bbm']
+    if (isSiang && SIANG_DISABLED_KEYS.indexOf(p.key) >= 0) {
+      isDisabled = true
+      isRequired = false
+    } else if (status === 'Operasi') {
       // keterangan: disabled; semua lain: wajib
       if (p.key === 'keterangan') {
         isDisabled = true
@@ -519,17 +630,34 @@ function applyStatusRule(mesinId, status) {
       }
     }
 
-    el.disabled = isDisabled
     if (isDisabled) {
-      el.classList.add('cell-disabled')
-      el.classList.remove('cell-required')
-      td.classList.add('td-disabled')
-      td.classList.remove('td-required')
-      // Isi 0 dan simpan ke currentData saat di-disable
-      el.value = '0'
-      if (!currentData[mesinId]) currentData[mesinId] = {}
-      currentData[mesinId][p.key] = 0
+      if (p.key === 'beban') {
+        // BEBAN: readonly bukan disabled agar nilai tetap tampil di semua browser/mobile
+        el.disabled = false
+        el.readOnly = true
+        el.setAttribute('tabindex', '-1')
+        el.classList.add('cell-disabled')
+        el.classList.remove('cell-required')
+        td.classList.add('td-disabled')
+        td.classList.remove('td-required')
+        // Jangan reset nilai — pertahankan untuk fungsi PADAM
+      } else {
+        // Set value SEBELUM disabled agar berlaku di semua browser (Firefox, Safari, Chrome)
+        el.value = '0'
+        if (!currentData[mesinId]) currentData[mesinId] = {}
+        currentData[mesinId][p.key] = 0
+        el.disabled = true
+        el.readOnly = true  // tambahan untuk iOS Safari
+        el.setAttribute('tabindex', '-1')
+        el.classList.add('cell-disabled')
+        el.classList.remove('cell-required')
+        td.classList.add('td-disabled')
+        td.classList.remove('td-required')
+      }
     } else {
+      el.disabled = false
+      el.readOnly = false
+      el.removeAttribute('tabindex')
       el.classList.remove('cell-disabled')
       td.classList.remove('td-disabled')
       if (isRequired) {
@@ -583,6 +711,249 @@ function updateTableData() {
   }
   // Terapkan aturan enable/disable setelah update nilai
   applyAllStatusRules()
+}
+
+async function onResumeDataClick() {
+  var tanggal = document.getElementById('data-tanggal').value
+  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu', 'info'); return }
+
+  // ── Format tanggal → "Kamis, 12 Maret 2026" ────────────────────────────
+  var HARI_ID  = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu']
+  var BULAN_ID = ['Januari','Februari','Maret','April','Mei','Juni',
+                  'Juli','Agustus','September','Oktober','November','Desember']
+  var tglParts = tanggal.split('-')
+  var tglObj   = new Date(parseInt(tglParts[0]), parseInt(tglParts[1]) - 1, parseInt(tglParts[2]))
+  var hariStr  = HARI_ID[tglObj.getDay()]
+  var tglStr   = parseInt(tglParts[2], 10) + ' ' + BULAN_ID[parseInt(tglParts[1], 10) - 1] + ' ' + tglParts[0]
+  var tglFull  = hariStr + ', ' + tglStr
+
+  var btnResume = document.getElementById('btn-resume-data')
+  if (btnResume) { btnResume.disabled = true; btnResume.textContent = 'Memuat...' }
+
+  try {
+    // ── Fetch 3 API secara paralel ───────────────────────────────────────
+    var results = await Promise.all([
+      fetch('/api/neraca-daya?tanggal=' + tanggal).then(function(r){ return r.json() }),
+      fetch('/api/data-stok?tanggal='   + tanggal).then(function(r){ return r.json() }),
+      fetch('/api/stock-oli?tanggal='   + tanggal).then(function(r){ return r.json() })
+    ])
+    var jsonNeraca = results[0]
+    var jsonStok   = results[1]
+    var jsonOli    = results[2]
+
+    // ── Neraca Daya: hitung kondisi tiap unit ───────────────────────────
+    var neracaRows  = (jsonNeraca.success && jsonNeraca.data) ? jsonNeraca.data : []
+    var totalUnit   = neracaRows.length
+    var countNormal = 0, countSiaga  = 0, countDefisit = 0
+    var totalDMP    = 0, totalBP     = 0
+    var defisitList = []   // nama unit yang DEFISIT
+
+    for (var ni = 0; ni < neracaRows.length; ni++) {
+      var nr      = neracaRows[ni]
+      var cadMalam = (nr.dm_pasok != null && nr.beban_puncak_malam != null && nr.beban_puncak_malam > 0)
+                     ? (nr.dm_pasok - nr.beban_puncak_malam) : null
+      var kondisi
+      if (cadMalam === null) {
+        kondisi = '-'
+      } else if (cadMalam < 0) {
+        kondisi = 'DEFISIT'
+      } else if (cadMalam >= 0 && cadMalam < (nr.max_dm || 0)) {
+        kondisi = 'SIAGA'
+      } else {
+        kondisi = 'NORMAL'
+      }
+
+      if (kondisi === 'NORMAL')  countNormal++
+      else if (kondisi === 'SIAGA')   countSiaga++
+      else if (kondisi === 'DEFISIT') { countDefisit++; defisitList.push(nr.nama_unit || '-') }
+
+      totalDMP += nr.dm_pasok          || 0
+      totalBP  += nr.beban_puncak_malam || 0
+    }
+    var totalCAD = totalDMP - totalBP
+
+    // ── HOP BBM rata-rata (sama seperti di loadDataTab) ─────────────────
+    var stokRows = (jsonStok.success && jsonStok.data) ? jsonStok.data : []
+    var totalStockBersih = 0, totalPemTertinggi = 0, hasStok = false
+    for (var si = 0; si < stokRows.length; si++) {
+      if (stokRows[si].stock_bersih   != null) { totalStockBersih  += stokRows[si].stock_bersih;    hasStok = true }
+      if (stokRows[si].rata_rata_harian != null) { totalPemTertinggi += stokRows[si].rata_rata_harian }
+    }
+    var hopBbm = (hasStok && totalPemTertinggi > 0)
+      ? Math.round(totalStockBersih / totalPemTertinggi)
+      : null
+    var hopBbmStr = hopBbm !== null ? hopBbm + ' hari' : '...'
+
+    // ── Baris kondisi defisit ───────────────────────────────────────────
+    var defisitLines = ''
+    if (defisitList.length === 0) {
+      defisitLines = '    Tidak ada sistem dalam kondisi defisit'
+    } else {
+      for (var di = 0; di < defisitList.length; di++) {
+        var huruf = String.fromCharCode(97 + di)   // a, b, c, ...
+        defisitLines += '    ' + huruf + '. ' + defisitList[di]
+        if (di < defisitList.length - 1) defisitLines += '\n'
+      }
+    }
+
+    // ── Format angka MW (pakai titik ribuan) ────────────────────────────
+    function fmtMW(n) {
+      if (n == null || isNaN(n)) return '...'
+      return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' MW'
+    }
+
+    // ── Build teks laporan ───────────────────────────────────────────────
+    var teks =
+'Assalamualaikum Wr. Wb,\n' +
+'Yth. Pak DIROP\n' +
+'Yth. Pak VP OPHARKIT\n' +
+'Yth. Pak VP RENKINKIT\n' +
+'\n' +
+'Berikut kami laporkan Kondisi Pembangkit BP Malam\n' +
+'Sistem AMC UP ......\n' +
+tglFull + ', sebagai berikut:\n' +
+'Kondisi :\n' +
+'1. Rekap Kondisi Sistem\n' +
+'    Total    : ' + totalUnit   + '\n' +
+'    Normal   : ' + countNormal + ' \uD83D\uDFE2\n' +
+'    Siaga    : ' + countSiaga  + ' \uD83D\uDFE1\n' +
+'    Defisit  : ' + countDefisit + ' \uD83D\uDD34\n' +
+'\n' +
+'2. Total Realisasi Beban Sistem Siang/Malam\n' +
+'    DMP  : ' + fmtMW(totalDMP) + '\n' +
+'    BP   : ' + fmtMW(totalBP)  + '\n' +
+'    CAD  : ' + fmtMW(totalCAD) + '\n' +
+'\n' +
+'3. Realisasi Daya Mampu Pembangkit Sewa\n' +
+'    Daya Kontrak  : \u2026 MW\n' +
+'    Daya Mampu    : \u2026 MW\n' +
+'\n' +
+'4. BBM dan Pelumas\n' +
+'   HOP BBM Rata-rata        : ' + hopBbmStr + '\n' +
+'   HOP Pelumas Rata-rata    :        hari\n' +
+'   (Tambahkan pasokan / stock berjalan)\n' +
+'\n' +
+'5. Kondisi Defisit\n' +
+'    Sistem ........\n' +
+defisitLines + '\n' +
+'\n' +
+'Demikian, mohon petunjuk dan arahan \uD83D\uDE4F'
+
+    // ── Copy ke clipboard ────────────────────────────────────────────────
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(teks)
+      showToast('Teks laporan berhasil disalin!', 'success')
+    } else {
+      // Fallback untuk browser lama / iOS Safari tanpa clipboard API
+      var ta = document.createElement('textarea')
+      ta.value = teks
+      ta.style.position = 'fixed'
+      ta.style.top = '-9999px'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      try {
+        document.execCommand('copy')
+        showToast('Teks laporan berhasil disalin!', 'success')
+      } catch(e2) {
+        showToast('Gagal menyalin: ' + e2.message, 'error')
+      }
+      document.body.removeChild(ta)
+    }
+
+  } catch(e) {
+    showToast('Gagal memuat data: ' + e.message, 'error')
+  } finally {
+    if (btnResume) { btnResume.disabled = false; btnResume.textContent = 'RESUME' }
+  }
+}
+
+async function onPadamClick() {
+  var tanggal = document.getElementById('sel-tanggal').value
+  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu', 'info'); return }
+  if (!monSelectedUnit) { showToast('Pilih unit terlebih dahulu', 'info'); return }
+
+  // Scan currentData — pisahkan mesin padam dan mesin non-padam
+  var STATUS_PADAM = ['Pemeliharaan', 'Gangguan', 'Rusak']
+  var padamIds     = []
+  var bebanNonPadam = 0
+
+  for (var id in currentData) {
+    var status = currentData[id].status_mesin || 'Operasi'
+    var beban  = parseFloat(currentData[id].beban) || 0
+    if (STATUS_PADAM.indexOf(status) !== -1) {
+      padamIds.push(parseInt(id))
+    } else {
+      // Operasi atau Standby — hitung total beban non-padam hari ini
+      bebanNonPadam += beban
+    }
+  }
+
+  if (padamIds.length === 0) {
+    showToast('Tidak ada mesin dengan status Pemeliharaan/Gangguan/Rusak', 'info')
+    return
+  }
+
+  try {
+    var periode = document.getElementById('sel-periode') ? document.getElementById('sel-periode').value : 'malam'
+    var jamPadam = periode === 'siang' ? '12' : '18'
+    var url = '/api/padam'
+      + '?tanggal='         + tanggal
+      + '&kode_unit='       + monSelectedUnit
+      + '&mesin_ids='       + encodeURIComponent(JSON.stringify(padamIds))
+      + '&beban_non_padam=' + bebanNonPadam
+      + '&jam='             + jamPadam
+
+    var res  = await fetch(url)
+    var json = await res.json()
+    if (!json.success) { showToast('Gagal: ' + (json.error || ''), 'error'); return }
+
+    var nilaiPerMesin  = json.nilai_per_mesin  || 0
+    var totalBpLast    = json.total_bp_last     || 0
+    var tanggalLast    = json.tanggal_last      || '-'
+    var mesinEligible  = json.mesin_eligible    || []
+    var tbody          = document.getElementById('table-body')
+
+    if (totalBpLast === 0) {
+      showToast('Tidak ada data beban puncak di database sebelum tanggal ini', 'info')
+      return
+    }
+
+    if (mesinEligible.length === 0) {
+      showToast('Tidak ada mesin padam yang sebelumnya berstatus Operasi', 'info')
+      return
+    }
+
+    // Hanya isi ke mesin yang eligible (H-1 Operasi)
+    mesinEligible.forEach(function(mesinId) {
+      if (!currentData[mesinId]) currentData[mesinId] = {}
+      currentData[mesinId]['beban'] = nilaiPerMesin
+
+      if (tbody) {
+        var inp = tbody.querySelector('[data-mesin-id="' + mesinId + '"][data-key="beban"]')
+        if (inp) {
+          inp.readOnly = false
+          inp.value    = nilaiPerMesin
+          inp.readOnly = true
+        }
+      }
+    })
+
+    // Simpan event padam ke database
+    try {
+      await fetch('/api/event-padam', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kode_unit: monSelectedUnit, tanggal: tanggal })
+      })
+    } catch(ep) {}
+
+    updateSummaryBar()
+    showToast(mesinEligible.length + ' mesin diisi ' + nilaiPerMesin + ' kW (BP terakhir [' + tanggalLast + ']: ' + totalBpLast + ' - non-padam: ' + bebanNonPadam + ') / ' + mesinEligible.length, 'success')
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error')
+  }
 }
 
 async function loadData() {
@@ -728,6 +1099,7 @@ async function loadData() {
       }
     }
     updateTableData()
+    updateSummaryBar()
     var cnt = json.data.length
     document.getElementById('info-record').textContent = cnt > 0
       ? cnt + ' mesin sudah ada data'
@@ -808,12 +1180,12 @@ async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
   lines.push('LAPORAN BEBAN PUNCAK PLTD')
   lines.push(periodeLabel)
   lines.push(namaUnit)
-  lines.push('id unit: ' + kodeUnit)
+  lines.push('id unit: ' + String(kodeUnit).padStart(4, '0'))
   lines.push('tgl : ' + tanggal)
   lines.push('nama operator: ' + namaOperator)
   lines.push('')
 
-  var totalDM = 0, totalBeban = 0, maxDM = 0
+  var totalDM = 0, totalBebanOperasi = 0, totalBebanPadam = 0, maxDM = 0
 
   for (var i = 0; i < records.length; i++) {
     var r = records[i]
@@ -829,15 +1201,16 @@ async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
 
     var dm = r.daya_mampu != null ? parseFloat(r.daya_mampu) : 0
     var bp = r.beban      != null ? parseFloat(r.beban)      : 0
-    if (status === 'Operasi')      { totalDM += dm; totalBeban += bp; if (dm > maxDM) maxDM = dm }
+    if (status === 'Operasi')      { totalDM += dm; totalBebanOperasi += bp; if (dm > maxDM) maxDM = dm }
     else if (status === 'Standby') { totalDM += dm; if (dm > maxDM) maxDM = dm }
+    else { if (bp > 0) totalBebanPadam += bp }
 
     // Kolom yang di-disable → null → tampilkan 0 di WA
     var v0 = function(val) { return val != null ? val : 0 }
     var vd = function(val) { return val != null ? String(val).replace('.', ',') : '0' }
 
     lines.push((i + 1) + '. ' + namaMesin)
-    lines.push('id mesin: ' + r.mesin_id)
+    lines.push('id mesin: ' + String(r.mesin_id).padStart(6, '0'))
     lines.push('sn: ' + snMesin)
     lines.push('dt: ' + dtMesin)
     lines.push('dm: ' + v0(r.daya_mampu))
@@ -856,15 +1229,23 @@ async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
     lines.push('')
   }
 
-  var cadangan  = totalDM - totalBeban
-  var padam     = cadangan < 0 ? Math.abs(cadangan) : 0
-  var statusSys = cadangan < 0 ? 'defisit' : (maxDM > 0 && cadangan < maxDM ? 'siaga' : 'normal')
+  var totalBeban    = totalBebanOperasi + totalBebanPadam
+  var cadangan      = totalDM - totalBebanOperasi
+  var cadanganDisplay = cadangan < 0 ? 0 : cadangan
+  // Cek event padam
+  var adaPadam1 = false
+  try {
+    var ep1 = await fetch('/api/event-padam?kode_unit=' + kodeUnit + '&tanggal=' + tanggal)
+    var ej1 = await ep1.json()
+    adaPadam1 = ej1.ada_padam === true
+  } catch(e) {}
+  var statusSys = adaPadam1 ? 'defisit' : (cadangan >= maxDM ? 'normal' : (cadangan >= 0 ? 'siaga' : 'defisit'))
 
   lines.push('resume')
   lines.push('dm pasok: '     + totalDM)
-  lines.push('bp terlayani: ' + totalBeban)
-  lines.push('padam: '        + padam)
-  lines.push('cadangan: '     + cadangan)
+  lines.push('bp terlayani: ' + totalBebanOperasi)
+  lines.push('padam: '        + totalBebanPadam)
+  lines.push('cadangan: '     + cadanganDisplay)
   lines.push('status: '       + statusSys)
   lines.push('stok bbm: '     + stokBbm)
   lines.push('hop bbm: '      + hopBbm)
@@ -873,7 +1254,7 @@ async function buildWAFromMemory(tanggal, periode, kodeUnit, records) {
 }
 
 // kodeUnit: integer, allMesinCache: array semua mesin dari cache, stokMap: map kode_unit->stok, lapMap: map kode_unit->lap
-function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, stokMap, lapMap) {
+async function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, stokMap, lapMap) {
   var namaUnit = ''
   for (var ui = 0; ui < UNIT_DATA.length; ui++) {
     if (UNIT_DATA[ui].kode_unit === kodeUnit) { namaUnit = UNIT_DATA[ui].nama_unit; break }
@@ -888,12 +1269,12 @@ function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, sto
   lines.push('LAPORAN BEBAN PUNCAK PLTD')
   lines.push('\u200B' + periodeLabel)
   lines.push('\u200B' + (namaUnit || String(kodeUnit)))
-  lines.push('id unit: ' + kodeUnit)
+  lines.push('id unit: ' + String(kodeUnit).padStart(4, '0'))
   lines.push('tgl : ' + tanggal)
   lines.push('nama operator: ' + namaOperator)
   lines.push('')
 
-  var totalDM = 0, totalBeban = 0, maxDM = 0
+  var totalDM = 0, totalBebanOperasi = 0, totalBebanPadam = 0, maxDM = 0
 
   for (var i = 0; i < records.length; i++) {
     var r = records[i]
@@ -910,19 +1291,19 @@ function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, sto
     var dm = (r.daya_mampu != null) ? parseFloat(r.daya_mampu) : 0
     var bp = (r.beban      != null) ? parseFloat(r.beban)      : 0
     if (status === 'Operasi') {
-      totalDM += dm; totalBeban += bp
+      totalDM += dm; totalBebanOperasi += bp
       if (dm > maxDM) maxDM = dm
     } else if (status === 'Standby') {
       totalDM += dm
       if (dm > maxDM) maxDM = dm
-    }
+    } else { if (bp > 0) totalBebanPadam += bp }
 
     var tekOliStr = (r.tek_oli   != null) ? String(r.tek_oli).replace('.', ',') : '-'
     var tempStr   = (r.temp_air_pendingin != null) ? r.temp_air_pendingin : '-'
     var cosPhiStr = (r.cos_phi   != null) ? String(r.cos_phi).replace('.', ',') : '-'
 
     lines.push((i + 1) + '. ' + namaMesin)
-    lines.push('\u200bid mesin: ' + r.mesin_id)
+    lines.push('\u200bid mesin: ' + String(r.mesin_id).padStart(6, '0'))
     lines.push('\u200bsn: ' + snMesin)
     lines.push('\u200bdt: ' + dtMesin)
     lines.push('\u200bdm: ' + (r.daya_mampu != null ? r.daya_mampu : '-'))
@@ -941,10 +1322,21 @@ function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, sto
     lines.push('')
   }
 
-  // Resume
-  var cadangan  = totalDM - totalBeban
-  var padam     = cadangan < 0 ? Math.abs(cadangan) : 0
-  var statusSys = cadangan < 0 ? 'defisit' : (maxDM > 0 && cadangan < maxDM ? 'siaga' : 'normal')
+  // Resume — rumus sesuai format LAPORAN BEBAN PUNCAK
+  // bp terlayani = beban operasi + beban padam (jika > 0)
+  // padam        = total beban mesin Gangguan/Pemeliharaan/Rusak
+  // cadangan     = totalDM - totalBebanOperasi (tidak dikurangi beban padam)
+  var totalBeban      = totalBebanOperasi + totalBebanPadam
+  var cadangan        = totalDM - totalBebanOperasi
+  var cadanganDisplay = cadangan < 0 ? 0 : cadangan
+  // Cek event padam
+  var adaPadam2 = false
+  try {
+    var ep2 = await fetch('/api/event-padam?kode_unit=' + kodeUnit + '&tanggal=' + tanggal)
+    var ej2 = await ep2.json()
+    adaPadam2 = ej2.ada_padam === true
+  } catch(e) {}
+  var statusSys       = adaPadam2 ? 'defisit' : (cadangan >= maxDM ? 'normal' : (cadangan >= 0 ? 'siaga' : 'defisit'))
 
   // stok bbm = saldo_akhir (stock_akhir) dari tabel DATA H-1
   // hop bbm  = safety_stock dari tabel DATA H-1
@@ -956,9 +1348,9 @@ function buildUnitWAText(tanggal, periode, kodeUnit, records, allMesinCache, sto
 
   lines.push('\u200bresume')
   lines.push('\u200bdm pasok: ' + totalDM)
-  lines.push('\u200bbp terlayani: ' + totalBeban)
-  lines.push('\u200bpadam: ' + padam)
-  lines.push('\u200bcadangan: ' + cadangan)
+  lines.push('\u200bbp terlayani: ' + totalBebanOperasi)
+  lines.push('\u200bpadam: ' + totalBebanPadam)
+  lines.push('\u200bcadangan: ' + cadanganDisplay)
   lines.push('\u200bstatus: ' + statusSys)
   lines.push('\u200bstok bbm: ' + stokBbm)
   lines.push('\u200bhop bbm: ' + hopBbm)
@@ -1025,12 +1417,13 @@ async function buildMonitoringWAText(tanggal, periode, filterKodeUnit) {
     unitMap[kodeUnit].push(r)
   }
 
-  // 5. Build teks per unit, gabung dengan separator
-  var parts = []
+  // 5. Build teks per unit, gabung dengan separator (await semua karena async)
+  var partPromises = []
   for (var ui = 0; ui < unitOrder.length; ui++) {
     var ku = unitOrder[ui]
-    parts.push(buildUnitWAText(tanggal, periode, ku, unitMap[ku], allMesinCache, stokMap, lapMap))
+    partPromises.push(buildUnitWAText(tanggal, periode, ku, unitMap[ku], allMesinCache, stokMap, lapMap))
   }
+  var parts = await Promise.all(partPromises)
 
   return parts.join('\n\n---\n\n')
 }
@@ -1059,6 +1452,12 @@ async function saveAllData() {
       if (vp.type === 'readonly' || vp.type === 'select') continue
       var vel = vRow.querySelector('[data-mesin-id="' + vm.id_mesin + '"][data-key="' + vp.key + '"]')
       if (!vel || vel.disabled) continue  // skip field yang disabled
+      // skip beban jika status bukan Operasi (cek currentData DAN elemen DOM)
+      var vStatus = (currentData[vm.id_mesin] && currentData[vm.id_mesin].status_mesin) ? currentData[vm.id_mesin].status_mesin : 'Operasi'
+      // fallback: cek langsung dari dropdown di DOM
+      var vSelEl = vRow.querySelector('[data-mesin-id="' + vm.id_mesin + '"][data-key="status_mesin"]')
+      if (vSelEl && vSelEl.value) vStatus = vSelEl.value
+      if (vp.key === 'beban' && ['Standby','Pemeliharaan','Gangguan','Rusak'].indexOf(vStatus) !== -1) continue
       var vval = vel.value.trim()
       if (vval === '' || vval === null) {
         // Highlight merah
@@ -1098,6 +1497,17 @@ async function saveAllData() {
     if (!json.success) throw new Error(json.error)
     showToast('Data berhasil disimpan! (' + json.saved + ' mesin)','success')
 
+    // ── Auto-reset event_padam saat data direvisi ──
+    // Setiap kali user SIMPAN, hapus event_padam untuk unit+tanggal ini.
+    // Jika padam masih berlaku, user bisa klik tombol PADAM lagi untuk set ulang.
+    try {
+      await fetch('/api/event-padam?kode_unit=' + monSelectedUnit + '&tanggal=' + tanggal, {
+        method: 'DELETE'
+      })
+      // Refresh summary bar agar status langsung update (NORMAL/SIAGA sesuai data baru)
+      await updateSummaryBar()
+    } catch(ep) { /* abaikan error, tidak blocking */ }
+
     // Backup ke Google Sheets — tunggu selesai sebelum redirect WA
     try {
       var namaUnit = ''
@@ -1123,10 +1533,14 @@ async function saveAllData() {
       })
     } catch(se) { /* abaikan error sheets, tidak blocking simpan utama */ }
 
-    // Jika unit 919, baca jadwal dari spreadsheet dan simpan ke D1
-    if (parseInt(monSelectedUnit) === 919) {
+    // Jika unit 366/372/373/375/376/382/385/390/391/395/399/910/911/913/915/917/918/919/920, baca jadwal dari spreadsheet dan simpan ke D1
+    if (parseInt(monSelectedUnit) === 919 || parseInt(monSelectedUnit) === 918 || parseInt(monSelectedUnit) === 917 || parseInt(monSelectedUnit) === 920 || parseInt(monSelectedUnit) === 915 || parseInt(monSelectedUnit) === 913 || parseInt(monSelectedUnit) === 911 || parseInt(monSelectedUnit) === 910 || parseInt(monSelectedUnit) === 385 || parseInt(monSelectedUnit) === 390 || parseInt(monSelectedUnit) === 399 || parseInt(monSelectedUnit) === 395 || parseInt(monSelectedUnit) === 391 || parseInt(monSelectedUnit) === 373 || parseInt(monSelectedUnit) === 376 || parseInt(monSelectedUnit) === 382 || parseInt(monSelectedUnit) === 375 || parseInt(monSelectedUnit) === 366 || parseInt(monSelectedUnit) === 372) {
       try {
-        fetch('/api/jadwal-wa', { method: 'POST' }).catch(function() {})
+        fetch('/api/jadwal-wa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kode_unit: parseInt(monSelectedUnit) })
+        }).catch(function() {})
       } catch(sj) {}
     }
 
@@ -1161,7 +1575,7 @@ async function saveAllData() {
 
 async function showRiwayat() {
   var list = document.getElementById('riwayat-list')
-  list.innerHTML = '<div style="text-align:center;padding:16px;color:#94a3b8"><span class="spinner"></span> Memuat...</div>'
+  list.innerHTML = '<div style="text-align:center;padding:16px;color:#e2e8f0"><span class="spinner"></span> Memuat...</div>'
   document.getElementById('modal-riwayat').classList.remove('hidden')
   try {
     var url = '/api/monitoring/tanggal'
@@ -1170,7 +1584,7 @@ async function showRiwayat() {
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
     if (json.data.length === 0) {
-      list.innerHTML = '<div style="text-align:center;padding:16px;color:#94a3b8">Belum ada data</div>'
+      list.innerHTML = '<div style="text-align:center;padding:16px;color:#e2e8f0">Belum ada data</div>'
       return
     }
     var html = ''
@@ -1499,7 +1913,7 @@ function renderLapForm() {
     }
   }
   html += '<div class="lap-field-row" style="flex-direction:column;align-items:flex-start;gap:6px;">'
-  html += '<label class="lap-field-label" style="min-width:unset;">Upload Dokumen <span style="font-size:0.72rem;color:#94a3b8;">(maks 32MB)</span></label>'
+  html += '<label class="lap-field-label" style="min-width:unset;">Upload Dokumen <span style="font-size:0.72rem;color:#e2e8f0;">(maks 32MB)</span></label>'
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
   // Tombol galeri — input file tanpa capture
   html += '<label class="btn-upload-opt" for="field-dokumen-galeri"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Galeri</label>'
@@ -2140,13 +2554,13 @@ async function kirimWhatsApp() {
 
 async function showRiwayatLap() {
   var list = document.getElementById('riwayat-lap-list')
-  list.innerHTML = '<div style="text-align:center;padding:16px;color:#94a3b8"><span class="spinner"></span> Memuat...</div>'
+  list.innerHTML = '<div style="text-align:center;padding:16px;color:#e2e8f0"><span class="spinner"></span> Memuat...</div>'
   document.getElementById('modal-riwayat-lap').classList.remove('hidden')
   try {
     var res  = await fetch('/api/lap-operasional/tanggal')
     var json = await res.json()
     if (!json.success) throw new Error(json.error)
-    if (json.data.length === 0) { list.innerHTML = '<div style="text-align:center;padding:16px;color:#94a3b8">Belum ada data tersimpan</div>'; return }
+    if (json.data.length === 0) { list.innerHTML = '<div style="text-align:center;padding:16px;color:#e2e8f0">Belum ada data tersimpan</div>'; return }
     var html = ''
     for (var i = 0; i < json.data.length; i++) {
       var tgl = json.data[i].tanggal
@@ -2170,29 +2584,250 @@ async function selectRiwayatLap(tanggal) {
 // =============================================
 
 var dataTableInited = false
-var currentDataView = 'hop-bbm'  // 'hop-bbm' atau 'stock-oli'
-var oliTableInited  = false
+var currentDataView = 'hop-bbm'  // 'neraca-daya', 'hop-bbm', atau 'stock-oli'
+var oliTableInited     = false
+var neracaTableInited  = false
 
 function switchDataView(view) {
   currentDataView = view
   // Update active state of sub-tab buttons
+  document.getElementById('subtab-btn-neraca-daya').classList.toggle('active', view === 'neraca-daya')
   document.getElementById('subtab-btn-hop-bbm').classList.toggle('active', view === 'hop-bbm')
   document.getElementById('subtab-btn-stock-oli').classList.toggle('active', view === 'stock-oli')
+  // Show/hide wrappers
+  document.getElementById('neraca-table-wrap').classList.toggle('hidden', view !== 'neraca-daya')
+  document.getElementById('data-table-wrap').classList.toggle('hidden', view !== 'hop-bbm')
+  document.getElementById('oli-table-wrap').classList.toggle('hidden', view !== 'stock-oli')
+  // Show/hide input tanggal vs bulan
+  var dateWrap = document.getElementById('data-subtab-date-wrap')
+  dateWrap.style.display = ''
   var tanggal = document.getElementById('data-tanggal').value
-  if (view === 'hop-bbm') {
-    document.getElementById('data-table-wrap').classList.remove('hidden')
-    document.getElementById('oli-table-wrap').classList.add('hidden')
+  if (view === 'neraca-daya') {
+    if (tanggal) loadNeracaDayaTab()
+  } else if (view === 'hop-bbm') {
     if (tanggal) loadDataTab()
   } else {
-    document.getElementById('data-table-wrap').classList.add('hidden')
-    document.getElementById('oli-table-wrap').classList.remove('hidden')
     if (tanggal) loadStockOliTab()
   }
 }
 
 function onDataTanggalChange() {
-  if (currentDataView === 'hop-bbm') loadDataTab()
+  if (currentDataView === 'neraca-daya') loadNeracaDayaTab()
+  else if (currentDataView === 'hop-bbm') loadDataTab()
   else loadStockOliTab()
+}
+
+// =============================================
+// NERACA DAYA
+// =============================================
+async function loadNeracaDayaTab() {
+  var tanggal = document.getElementById('data-tanggal').value
+  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu', 'info'); return }
+
+  // Derive bulan dari tanggal yang dipilih
+  var bulan = tanggal.substring(0, 7)
+  var parts = bulan.split('-').map(Number)
+  var yr = parts[0], mo = parts[1]
+  var daysInMonth = new Date(yr, mo, 0).getDate()
+
+  // Gunakan tanggal yang dipilih untuk data detail
+  var tanggalDetail = tanggal
+
+  // Kolom tetap
+  var fixedCols = ['NO', 'ULD', 'OPS', 'STB', 'HAR', 'GGN', 'RSK',
+    'JML', 'POLA', 'DTP', 'DMN', 'MAKS',
+    'BP SIANG', 'CAD SIANG',
+    'BP MALAM', 'CAD MALAM', 'N-1', 'STATUS']
+
+  // Render header (selalu ulang karena jumlah kolom tanggal bisa berubah tiap bulan)
+  var headHTML = '<tr>'
+  // Kolom tetap
+  for (var i = 0; i < fixedCols.length; i++) {
+    var sticky = i === 0 ? 'position:sticky;left:0;z-index:2;' : i === 1 ? 'position:sticky;left:0;z-index:2;' : ''
+    var w = i === 0 ? 'width:1px;white-space:nowrap;padding:8px 6px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;' : 'padding:8px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;'
+    headHTML += '<th style="background:#1a3352;color:#fff;white-space:nowrap;font-size:0.72rem;text-align:center;' + w + sticky + '">' + fixedCols[i] + '</th>'
+  }
+  // Kolom tanggal 1 – N
+  for (var d = 1; d <= daysInMonth; d++) {
+    headHTML += '<th style="background:#1a3352;color:#fff;white-space:nowrap;font-size:0.72rem;text-align:center;padding:8px 6px;min-width:28px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">' + d + '</th>'
+  }
+  headHTML += '</tr>'
+  document.getElementById('neraca-table-head').innerHTML = headHTML
+  neracaTableInited = true
+
+  showLoading(true, 'loading-indicator-data')
+  document.getElementById('info-data-record').textContent = ''
+  try {
+    // Ambil data detail, bulanan, dan event padam bulan ini secara paralel
+    var [resDetail, resBulanan, resPadam] = await Promise.all([
+      fetch('/api/neraca-daya?tanggal=' + tanggalDetail),
+      fetch('/api/neraca-daya-bulanan?bulan=' + bulan),
+      fetch('/api/event-padam-bulanan?bulan=' + bulan)
+    ])
+    var jsonDetail  = await resDetail.json()
+    var jsonBulanan = await resBulanan.json()
+    var jsonPadam   = resPadam.ok ? await resPadam.json() : { success: false, data: [] }
+    if (!jsonDetail.success)  throw new Error(jsonDetail.error  || 'Gagal memuat neraca daya')
+    if (!jsonBulanan.success) throw new Error(jsonBulanan.error || 'Gagal memuat data bulanan')
+
+    // Build set padam: "kode_unit_tanggal"
+    var padamSetNeraca = new Set()
+    if (jsonPadam.success && jsonPadam.data) {
+      for (var pi = 0; pi < jsonPadam.data.length; pi++) {
+        padamSetNeraca.add(jsonPadam.data[pi].kode_unit + '_' + jsonPadam.data[pi].tanggal)
+      }
+    }
+
+    var rows    = jsonDetail.data
+    var bulanan = jsonBulanan.data  // array: { kode_unit, nama_unit, daily: { 'YYYY-MM-DD': status|null } }
+
+    // Buat map kode_unit → daily status
+    var dailyMap = {}
+    for (var b = 0; b < bulanan.length; b++) {
+      dailyMap[bulanan[b].kode_unit] = bulanan[b].daily || {}
+    }
+
+    function fmtN(v) { return v != null ? v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '-' }
+    var tbody = ''
+    var totalTerpasang = 0, totalPasok = 0, totalBeban = 0
+    var totalOps = 0, totalStb = 0, totalHar = 0, totalGgn = 0, totalRsk = 0, totalJml = 0
+    var totalMaks = 0, totalBpSiang = 0, totalCadSiang = 0, totalCadMalam = 0
+    // Warna status tanggal
+    function statusBgColor(s) {
+      if (!s) return '#f1f5f9'
+      if (s === 'NORMAL')  return '#d1fae5'
+      if (s === 'SIAGA')   return '#fef3c7'
+      if (s === 'DEFISIT') return '#fee2e2'
+      return '#f1f5f9'
+    }
+    function statusTxtColor(s) {
+      if (!s) return '#e2e8f0'
+      if (s === 'NORMAL')  return '#065f46'
+      if (s === 'SIAGA')   return '#92400e'
+      if (s === 'DEFISIT') return '#991b1b'
+      return '#e2e8f0'
+    }
+
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i]
+      var cadMalam = (r.dm_pasok != null && r.beban_puncak_malam != null && r.beban_puncak_malam > 0) ? (r.dm_pasok - r.beban_puncak_malam) : null
+      var isPadam  = padamSetNeraca.has(r.kode_unit + '_' + tanggalDetail)
+      // STATUS berdasarkan cadangan malam + event padam
+      var statusTxt, statusColor
+      if (cadMalam === null) {
+        statusTxt = '-'; statusColor = '#64748b'
+      } else if (isPadam) {
+        statusTxt = 'DEFISIT'; statusColor = '#c0392b'
+      } else if (cadMalam >= 0 && cadMalam < (r.max_dm || 0)) {
+        statusTxt = 'SIAGA';   statusColor = '#e67e22'
+      } else if (cadMalam >= (r.max_dm || 0)) {
+        statusTxt = 'NORMAL';  statusColor = '#27ae60'
+      } else {
+        statusTxt = 'DEFISIT'; statusColor = '#c0392b'
+      }
+      var cadSiang = (r.dm_pasok != null && r.beban_puncak_siang != null) ? (r.dm_pasok - r.beban_puncak_siang) : null
+
+      totalTerpasang += r.dm_terpasang || 0
+      totalPasok     += r.dm_pasok     || 0
+      totalBeban     += r.beban_puncak_malam || 0
+      totalOps     += r.jumlah_operasi      || 0
+      totalStb     += r.jumlah_standby      || 0
+      totalHar     += r.jumlah_pemeliharaan || 0
+      totalGgn     += r.jumlah_gangguan     || 0
+      totalRsk     += r.jumlah_rusak        || 0
+      totalJml     += r.jumlah_mesin        || 0
+      totalMaks    += r.max_dm              || 0
+      totalBpSiang += r.beban_puncak_siang  || 0
+      if (cadSiang != null) totalCadSiang += cadSiang
+      if (cadMalam != null) totalCadMalam += cadMalam
+
+      var bg = i % 2 === 0 ? '#fff' : '#f5f7fa'
+      var stickyStyle0 = 'position:sticky;left:0;z-index:1;background:' + bg + ';width:1px;white-space:nowrap;'
+      var stickyStyle1 = 'position:sticky;left:0;z-index:1;background:' + bg + ';'
+
+      tbody += '<tr style="background:' + bg + ';font-size:0.78rem;">'
+      tbody += '<td style="' + stickyStyle0 + 'text-align:center;padding:6px 4px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">' + (i+1) + '</td>'
+      tbody += '<td style="' + stickyStyle1 + 'text-align:left;padding:6px 10px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;white-space:nowrap;">' + (r.nama_unit || '-') + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">' + (r.jumlah_operasi != null ? r.jumlah_operasi : '-') + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">' + (r.jumlah_standby != null ? r.jumlah_standby : '-') + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">' + (r.jumlah_pemeliharaan != null ? r.jumlah_pemeliharaan : '-') + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">' + (r.jumlah_gangguan != null ? r.jumlah_gangguan : '-') + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">' + (r.jumlah_rusak != null ? r.jumlah_rusak : '-') + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;font-weight:600;">' + (r.jumlah_mesin != null ? r.jumlah_mesin : '-') + '</td>'
+      var polaVal = POLA_MAP[r.kode_unit] != null ? POLA_MAP[r.kode_unit] : '-'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">' + polaVal + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">' + fmtN(r.dm_terpasang) + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">' + fmtN(r.dm_pasok) + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">' + fmtN(r.max_dm) + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">' + fmtN(r.beban_puncak_siang) + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;font-weight:600;">' + fmtN(cadSiang) + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">' + fmtN(r.beban_puncak_malam) + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;font-weight:600;">' + fmtN(cadMalam) + '</td>'
+      var n1 = (cadMalam != null && r.max_dm != null) ? (cadMalam - r.max_dm) : null
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;font-weight:600;">' + fmtN(n1) + '</td>'
+      tbody += '<td style="text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;font-weight:bold;color:' + statusColor + ';">' + statusTxt + '</td>'
+
+      // Kolom tanggal harian
+      var unitDaily = dailyMap[r.kode_unit] || {}
+      for (var d = 1; d <= daysInMonth; d++) {
+        var tgl = bulan + '-' + String(d).padStart(2, '0')
+        var ds = unitDaily[tgl] || null
+        var bgC = statusBgColor(ds)
+        var txC = statusTxtColor(ds)
+        var lbl = ''  // hanya warna, tanpa teks
+        tbody += '<td style="text-align:center;padding:4px 2px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;background:' + bgC + ';color:' + txC + ';font-size:0.65rem;font-weight:700;min-width:28px;" title="' + (ds||'Tidak ada data') + '">' + lbl + '</td>'
+      }
+      tbody += '</tr>'
+    }
+
+    // Baris total
+    var totalCadangan = totalPasok - totalBeban
+    var totalStatusTxt, totalStatusColor
+    if (totalCadangan < 0) { totalStatusTxt = 'DEFISIT'; totalStatusColor = '#c0392b' }
+    else { totalStatusTxt = 'NORMAL'; totalStatusColor = '#27ae60' }
+    // Hitung jumlah status per tanggal untuk baris total
+    var totalCols = fixedCols.length - 2  // tanpa NO dan ULD
+    tbody += '<tr style="background:#1a3352;color:#fff;font-weight:bold;font-size:0.78rem;border-top:none;">'
+    tbody += '<td style="position:sticky;left:0;z-index:2;background:#1a3352;text-align:center;width:1px;white-space:nowrap;padding:6px 4px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;"></td>'
+    tbody += '<td style="position:sticky;left:0;z-index:2;background:#1a3352;padding:6px 10px;white-space:nowrap;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">TOTAL</td>'
+    var tdT = 'background:#1a3352;text-align:center;padding:6px 14px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;'
+    tbody += '<td style="' + tdT + '">' + totalOps + '</td>'
+    tbody += '<td style="' + tdT + '">' + totalStb + '</td>'
+    tbody += '<td style="' + tdT + '">' + totalHar + '</td>'
+    tbody += '<td style="' + tdT + '">' + totalGgn + '</td>'
+    tbody += '<td style="' + tdT + '">' + totalRsk + '</td>'
+    tbody += '<td style="' + tdT + 'font-weight:bold;">' + totalJml + '</td>'
+    tbody += '<td style="' + tdT + '"></td>'  // POLA
+    tbody += '<td style="' + tdT + '">' + fmtN(totalTerpasang) + '</td>'
+    tbody += '<td style="' + tdT + '">' + fmtN(totalPasok) + '</td>'
+    tbody += '<td style="' + tdT + '">' + fmtN(totalMaks) + '</td>'
+    tbody += '<td style="' + tdT + '">' + fmtN(totalBpSiang) + '</td>'
+    tbody += '<td style="' + tdT + 'font-weight:bold;">' + fmtN(totalCadSiang) + '</td>'
+    tbody += '<td style="' + tdT + '">' + fmtN(totalBeban) + '</td>'
+    tbody += '<td style="' + tdT + 'font-weight:bold;">' + fmtN(totalCadMalam) + '</td>'
+    tbody += '<td style="' + tdT + '"></td>'  // N-1
+    tbody += '<td style="' + tdT + '"></td>'  // STATUS
+    // Kolom tanggal di baris total: kosong
+    for (var d2 = 1; d2 <= daysInMonth; d2++) tbody += '<td style="background:#1a3352;padding:4px 2px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;"></td>'
+    tbody += '</tr>'
+
+    document.getElementById('neraca-table-body').innerHTML = tbody
+    document.getElementById('info-data-record').textContent = rows.length + ' unit · ' + bulan + ' (' + daysInMonth + ' hari)'
+    // Adjust left kolom ULD ikut lebar sebenar kolom NO
+    requestAnimationFrame(function() {
+      var tbl = document.getElementById('neraca-table')
+      if (!tbl) return
+      var colNo = tbl.querySelector('th:first-child')
+      if (!colNo) return
+      var noWidth = colNo.getBoundingClientRect().width
+      var ths = tbl.querySelectorAll('th:nth-child(2), td:nth-child(2)')
+      ths.forEach(function(el) { el.style.left = noWidth + 'px' })
+    })
+  } catch(e) {
+    showToast('Gagal memuat neraca daya: ' + e.message, 'error')
+  } finally {
+    showLoading(false, 'loading-indicator-data')
+  }
 }
 
 async function loadStockOliTab() {
@@ -2204,9 +2839,9 @@ async function loadStockOliTab() {
     var cols = ['NO', 'ULD', 'OLI SAE 40', 'OLI SX', 'OLI SX PLUS']
     var headHTML = '<tr>'
     for (var i = 0; i < cols.length; i++) {
-      var sticky = i < 2 ? 'position:sticky;left:' + (i===0?'0':'24px') + ';z-index:2;' : ''
+      var sticky = i === 0 ? 'position:sticky;left:0;z-index:2;' : i === 1 ? 'position:sticky;left:0;z-index:2;' : ''
       var align  = i === 1 ? 'text-align:left;' : 'text-align:center;'
-      var w      = i === 0 ? 'width:24px;min-width:24px;max-width:24px;padding:8px 4px;border-right:1px solid rgba(255,255,255,0.2);' : 'padding:8px 14px;'
+      var w      = i === 0 ? 'width:1px;white-space:nowrap;padding:8px 4px;border-right:1px solid #e2e8f0;' : 'padding:8px 14px;'
       headHTML += '<th style="background:#1e3a5f;color:#fff;white-space:nowrap;font-size:0.72rem;' + align + w + sticky + '">' + cols[i] + '</th>'
     }
     headHTML += '</tr>'
@@ -2225,7 +2860,7 @@ async function loadStockOliTab() {
 
     function fmtOliVal(val) {
       if (val === null || val === undefined) return '<span style="color:#cbd5e1">\u2014</span>'
-      if (val === '' || val === 'tidak menggunakan') return '<span style="color:#94a3b8;font-style:italic;">tidak menggunakan</span>'
+      if (val === '' || val === 'tidak menggunakan') return '<span style="color:#e2e8f0;font-style:italic;">tidak menggunakan</span>'
       if (!isNaN(Number(val))) return Number(val).toLocaleString('id-ID') + ' ltr'
       return val
     }
@@ -2235,8 +2870,8 @@ async function loadStockOliTab() {
       var d   = rows[r]
       var bg  = r % 2 === 0 ? '#fff' : '#f8fafc'
       bodyHTML += '<tr style="background:' + bg + ';border-bottom:1px solid #e2e8f0;">'
-      bodyHTML += '<td style="width:24px;min-width:24px;max-width:24px;padding:4px;text-align:center;font-size:0.7rem;position:sticky;left:0;background:' + bg + ';z-index:1;border-right:1px solid #e2e8f0;">' + d.no + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;white-space:nowrap;font-size:0.78rem;font-weight:600;color:#1e3a5f;text-align:left;position:sticky;left:24px;background:' + bg + ';z-index:1;">' + d.nama_unit + '</td>'
+      bodyHTML += '<td style="width:1px;white-space:nowrap;padding:4px;text-align:center;font-size:0.7rem;position:sticky;left:0;background:' + bg + ';z-index:1;border-right:1px solid #e2e8f0;">' + d.no + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;white-space:nowrap;font-size:0.78rem;font-weight:600;color:#1e3a5f;text-align:left;position:sticky;left:0;background:' + bg + ';z-index:1;">' + d.nama_unit + '</td>'
       bodyHTML += '<td style="padding:7px 14px;text-align:center;font-size:0.78rem;">' + fmtOliVal(d.sae40) + '</td>'
       bodyHTML += '<td style="padding:7px 14px;text-align:center;font-size:0.78rem;">' + fmtOliVal(d.sx) + '</td>'
       bodyHTML += '<td style="padding:7px 14px;text-align:center;font-size:0.78rem;">' + fmtOliVal(d.sx_plus) + '</td>'
@@ -2244,6 +2879,14 @@ async function loadStockOliTab() {
     }
     document.getElementById('oli-table-body').innerHTML = bodyHTML
     document.getElementById('info-data-record').textContent = rows.length + ' unit'
+    requestAnimationFrame(function() {
+      var tbl = document.getElementById('oli-table')
+      if (!tbl) return
+      var colNo = tbl.querySelector('th:first-child')
+      if (!colNo) return
+      var noWidth = colNo.getBoundingClientRect().width
+      tbl.querySelectorAll('th:nth-child(2), td:nth-child(2)').forEach(function(el) { el.style.left = noWidth + 'px' })
+    })
   } catch(e) {
     showToast('Gagal memuat data: ' + e.message, 'error')
   } finally {
@@ -2254,13 +2897,13 @@ async function loadStockOliTab() {
 function initDataTable() {
   if (dataTableInited) return
   var cols = ['NO','ULD','JALUR','KAPASITAS','SALDO AWAL BULAN','SALDO AKHIR',
-              'STOCK MATI','STOCK BERSIH','PEMAKAIAN TERTINGGI',
-              'DAYA TAMPUNG','BBM SIAP KIRIM','SAFETY STOCK',
-              'ESTIMASI BBM HABIS','KONDISI STOCK']
+              'STOCK MATI','STOCK BERSIH','PEMAKAIAN BBM','PEMAKAIAN RATA-RATA',
+              'PEMAKAIAN TERTINGGI','DAYA TAMPUNG','BBM SIAP KIRIM','SAFETY STOCK',
+              'ESTIMASI BBM HABIS','KONDISI STOCK','SFC']
   var headHTML = '<tr>'
   for (var i = 0; i < cols.length; i++) {
-    var stickyStyle = i < 2 ? 'position:sticky;left:' + (i===0?'0':'24px') + ';z-index:2;' : ''
-    var thExtra = i === 0 ? 'width:24px;min-width:24px;max-width:24px;padding:8px 4px;border-right:1px solid rgba(255,255,255,0.2);' : 'padding:8px 10px;'
+    var stickyStyle = i === 0 ? 'position:sticky;left:0;z-index:2;' : i === 1 ? 'position:sticky;left:0;z-index:2;' : ''
+    var thExtra = i === 0 ? 'width:1px;white-space:nowrap;padding:8px 4px;border-right:1px solid #e2e8f0;' : 'padding:8px 10px;'
     var thAlign = 'text-align:center;'
     var thWidth  = i === 2 ? 'min-width:198px;' : ''
     headHTML += '<th style="background:#1e3a5f;color:#fff;white-space:nowrap;font-size:0.72rem;' + thAlign + thWidth + thExtra + stickyStyle + '">' + cols[i] + '</th>'
@@ -2300,15 +2943,17 @@ async function loadDataTab() {
       else if (d.kondisi_stock === 'AMAN')   kondisiColor = '#22c55e'
 
       bodyHTML += '<tr style="background:#fff;border-bottom:1px solid #e2e8f0;">'
-      bodyHTML += '<td style="width:24px;min-width:24px;max-width:24px;padding:4px;text-align:center;font-size:0.7rem;position:sticky;left:0;background:#fff;z-index:1;border-right:1px solid #e2e8f0;">' + (r + 1) + '</td>'
-      var uldColor = (d.stok_awal === null || d.stok_awal === undefined) ? '#94a3b8' : '#1e3a5f'
-      bodyHTML += '<td style="padding:7px 10px;white-space:nowrap;font-size:0.78rem;font-weight:600;color:' + uldColor + ';text-align:left;position:sticky;left:24px;background:#fff;z-index:1;">' + d.nama_unit + '</td>'
+      bodyHTML += '<td style="width:1px;white-space:nowrap;padding:4px;text-align:center;font-size:0.7rem;position:sticky;left:0;background:#fff;z-index:1;border-right:1px solid #e2e8f0;">' + (r + 1) + '</td>'
+      var uldColor = (d.stok_awal === null || d.stok_awal === undefined) ? '#e2e8f0' : '#1e3a5f'
+      bodyHTML += '<td style="padding:7px 10px;white-space:nowrap;font-size:0.78rem;font-weight:600;color:' + uldColor + ';text-align:left;position:sticky;left:0;background:#fff;z-index:1;">' + d.nama_unit + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:left;font-size:0.78rem;min-width:198px;white-space:nowrap;">' + (d.jalur || '—') + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.kapasitas_tangki) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.stok_awal_bulan) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.stok_awal) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.stock_mati) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;">' + fmtData(d.stock_bersih) + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.pemakaian_bbm) + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.pemakaian_rata_rata) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.rata_rata_harian) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + (d.daya_tampung_storage !== null && d.daya_tampung_storage !== undefined ? Math.round(d.daya_tampung_storage * 100) + '%' : '<span style="color:#cbd5e1">—</span>') + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;">' + fmtData(d.bbm_siap_kirim) + '</td>'
@@ -2327,10 +2972,30 @@ async function loadDataTab() {
       }
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;">' + fmtEst + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;font-weight:700;color:' + kondisiColor + ';">' + d.kondisi_stock + '</td>'
+      var sfcVal = (d.sfc !== null && d.sfc !== undefined) ? d.sfc.toFixed(3) : '<span style="color:#cbd5e1">—</span>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + sfcVal + '</td>'
       bodyHTML += '</tr>'
     }
     document.getElementById('data-table-body').innerHTML = bodyHTML
-    document.getElementById('info-data-record').textContent = rows.length + ' unit'
+    requestAnimationFrame(function() {
+      var tbl = document.getElementById('data-table')
+      if (!tbl) return
+      var colNo = tbl.querySelector('th:first-child')
+      if (!colNo) return
+      var noWidth = colNo.getBoundingClientRect().width
+      tbl.querySelectorAll('th:nth-child(2), td:nth-child(2)').forEach(function(el) { el.style.left = noWidth + 'px' })
+    })
+
+    // HOP rata-rata = Total Stock Bersih / Total Pemakaian Tertinggi
+    var totalStockBersih = 0, totalPemakaianTertinggi = 0, hasHop = false
+    for (var ri = 0; ri < rows.length; ri++) {
+      if (rows[ri].stock_bersih != null)    { totalStockBersih += rows[ri].stock_bersih; hasHop = true }
+      if (rows[ri].rata_rata_harian != null) { totalPemakaianTertinggi += rows[ri].rata_rata_harian }
+    }
+    var hopRataRata = (hasHop && totalPemakaianTertinggi > 0)
+      ? Math.round(totalStockBersih / totalPemakaianTertinggi)
+      : '-'
+    document.getElementById('info-data-record').textContent = 'HOP rata-rata = ' + hopRataRata
 
   } catch(e) {
     showToast('Gagal memuat data: ' + e.message, 'error')
