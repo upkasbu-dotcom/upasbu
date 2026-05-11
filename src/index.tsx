@@ -124,6 +124,15 @@ async function initDB(db: D1Database) {
   // Tambah kolom kode_mesin ke mesin_cache jika belum ada (migrasi)
   try { await db.prepare(`ALTER TABLE mesin_cache ADD COLUMN kode_mesin TEXT`).run() } catch(_){}
 
+  // Tabel SLD (Single Line Diagram) per unit
+  await db.prepare(`CREATE TABLE IF NOT EXISTS sld (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kode_unit   INTEGER NOT NULL UNIQUE,
+    nama_unit   TEXT NOT NULL,
+    svg_data    TEXT NOT NULL DEFAULT '[]',
+    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`).run()
+
   // Tabel event padam per unit per tanggal
   await db.prepare(`CREATE TABLE IF NOT EXISTS event_padam (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1952,6 +1961,9 @@ app.get('/', (c) => {
         <button id="tab-btn-data" class="tab-btn" onclick="switchTab('data')">
           <span class="btn-text">DATA</span>
         </button>
+        <button id="tab-btn-sld" class="tab-btn" onclick="switchTab('sld')">
+          <span class="btn-text">SLD</span>
+        </button>
       </div>
       <div class="header-actions" id="header-actions-monitoring"></div>
       <div class="header-actions" id="header-actions-data" style="display:none;"></div>
@@ -2013,6 +2025,14 @@ app.get('/', (c) => {
         <label class="toolbar-label">Tanggal</label>
         <input type="date" id="data-tanggal" class="toolbar-input" onchange="onDataTanggalChange()"/>
       </div>
+      <!-- Periode (untuk RESUME) -->
+      <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
+        <label class="toolbar-label" style="width:auto;">Periode</label>
+        <select id="data-sel-periode" class="toolbar-select" style="width:90px;">
+          <option value="malam">MALAM</option>
+          <option value="siang">SIANG</option>
+        </select>
+      </div>
 
 
       <div id="loading-indicator-data" class="hidden"><span class="spinner"></span></div>
@@ -2038,6 +2058,29 @@ app.get('/', (c) => {
       <div id="loading-indicator-lap-unit" class="hidden"><span class="spinner"></span></div>
       <div id="loading-indicator-lap" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-lap-record"></span>
+    </div>
+  </div>
+</div>
+
+  <!-- SLD toolbar -->
+  <div id="toolbar-sld" class="hidden">
+    <div class="toolbar" style="align-items:center;">
+      <div class="toolbar-group">
+        <label class="toolbar-label">Unit</label>
+        <select id="sld-sel-unit" class="toolbar-select" onchange="onSldUnitChange(this.value)">
+          <option value="">-- Pilih Unit --</option>
+        </select>
+      </div>
+      <div id="sld-toolbar-actions" class="hidden" style="display:none;align-items:center;gap:6px;">
+        <button id="sld-btn-fit"    onclick="sldFitView()"    style="background:#475569;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">FIT</button>
+        <button id="sld-btn-grid"   onclick="sldToggleGrid()" style="background:#475569;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">GRID</button>
+        <button id="sld-btn-delete" onclick="sldDeleteSelected()" style="background:#dc2626;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;display:none;">HAPUS</button>
+        <button id="sld-btn-save"   onclick="sldSave()"       style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 14px;font-size:0.75rem;font-weight:700;cursor:pointer;">SIMPAN</button>
+      </div>
+      <div id="sld-admin-badge" class="hidden" style="display:none;align-items:center;gap:6px;">
+        <span id="sld-mode-label" style="font-size:0.72rem;color:#64748b;"></span>
+      </div>
+      <div id="loading-indicator-sld" class="hidden"><span class="spinner"></span></div>
     </div>
   </div>
 </div>
@@ -2094,6 +2137,64 @@ app.get('/', (c) => {
     </div>
   </div>
 
+</div>
+
+<!-- ===== TAB: SLD ===== -->
+<div id="tab-sld" class="tab-content" style="padding:0;">
+  <div id="sld-state-empty" style="display:flex;align-items:center;justify-content:center;height:300px;color:#94a3b8;font-size:0.9rem;">
+    Pilih unit untuk melihat / mengedit SLD
+  </div>
+  <div id="sld-wrap" class="hidden" style="position:relative;width:100%;background:#f1f5f9;border-top:1px solid #e2e8f0;">
+    <!-- Palette komponen (kiri) -->
+    <div id="sld-palette" style="position:absolute;left:0;top:0;bottom:0;width:72px;background:#1e3a5f;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px;overflow-y:auto;z-index:10;">
+      <div class="sld-pal-item" data-type="generator"  title="Generator/PLTD">
+        <svg width="36" height="36" viewBox="0 0 36 36"><circle cx="18" cy="18" r="14" fill="none" stroke="#93c5fd" stroke-width="2"/><text x="18" y="22" text-anchor="middle" font-size="11" fill="#93c5fd" font-weight="bold">G</text></svg>
+        <span>GEN</span>
+      </div>
+      <div class="sld-pal-item" data-type="trafo" title="Transformator">
+        <svg width="36" height="36" viewBox="0 0 36 36"><circle cx="13" cy="18" r="8" fill="none" stroke="#93c5fd" stroke-width="2"/><circle cx="23" cy="18" r="8" fill="none" stroke="#93c5fd" stroke-width="2"/></svg>
+        <span>TRF</span>
+      </div>
+      <div class="sld-pal-item" data-type="busbar" title="Busbar">
+        <svg width="36" height="20" viewBox="0 0 36 20"><rect x="2" y="8" width="32" height="4" fill="#93c5fd" rx="1"/></svg>
+        <span>BUS</span>
+      </div>
+      <div class="sld-pal-item" data-type="cb" title="Circuit Breaker">
+        <svg width="36" height="36" viewBox="0 0 36 36"><rect x="12" y="12" width="12" height="12" fill="none" stroke="#93c5fd" stroke-width="2" rx="2"/><line x1="18" y1="2" x2="18" y2="12" stroke="#93c5fd" stroke-width="2"/><line x1="18" y1="24" x2="18" y2="34" stroke="#93c5fd" stroke-width="2"/></svg>
+        <span>CB</span>
+      </div>
+      <div class="sld-pal-item" data-type="load" title="Beban/Load">
+        <svg width="36" height="36" viewBox="0 0 36 36"><polygon points="18,4 32,30 4,30" fill="none" stroke="#93c5fd" stroke-width="2"/><line x1="18" y1="30" x2="18" y2="34" stroke="#93c5fd" stroke-width="2"/></svg>
+        <span>LOAD</span>
+      </div>
+      <div class="sld-pal-item" data-type="line" title="Kabel/Line">
+        <svg width="36" height="36" viewBox="0 0 36 36"><line x1="4" y1="18" x2="32" y2="18" stroke="#93c5fd" stroke-width="2.5"/><polygon points="28,13 36,18 28,23" fill="#93c5fd"/></svg>
+        <span>LINE</span>
+      </div>
+      <div class="sld-pal-item" data-type="label" title="Label Teks">
+        <svg width="36" height="36" viewBox="0 0 36 36"><text x="18" y="24" text-anchor="middle" font-size="18" fill="#93c5fd" font-weight="bold">T</text></svg>
+        <span>TXT</span>
+      </div>
+    </div>
+    <!-- Canvas SVG -->
+    <div id="sld-canvas-wrap" style="margin-left:72px;overflow:auto;position:relative;height:580px;cursor:default;">
+      <svg id="sld-canvas" width="2000" height="1500" style="display:block;background:#f8fafc;">
+        <defs>
+          <pattern id="sld-grid-pattern" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e2e8f0" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+        <rect id="sld-grid-bg" width="100%" height="100%" fill="url(#sld-grid-pattern)"/>
+        <g id="sld-lines-layer"></g>
+        <g id="sld-components-layer"></g>
+      </svg>
+    </div>
+    <!-- Properties panel (kanan bawah, muncul saat ada seleksi) -->
+    <div id="sld-props-panel" style="display:none;position:absolute;right:8px;top:8px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;min-width:180px;box-shadow:0 2px 8px rgba(0,0,0,0.1);z-index:20;">
+      <div style="font-size:0.72rem;font-weight:700;color:#1e3a5f;margin-bottom:8px;text-transform:uppercase;">Properti</div>
+      <div style="display:flex;flex-direction:column;gap:6px;" id="sld-props-fields"></div>
+    </div>
+  </div>
 </div>
 
 <!-- TOAST -->
@@ -2207,6 +2308,39 @@ async function handleCron(env: { DB: D1Database }) {
     }
   } catch(_) {}
 }
+
+// ============================================================
+// API: SLD — GET per unit
+// ============================================================
+app.get('/api/sld/:kode_unit', async (c) => {
+  try {
+    const kode = parseInt(c.req.param('kode_unit'))
+    const row  = await c.env.DB.prepare(
+      `SELECT kode_unit, nama_unit, svg_data, updated_at FROM sld WHERE kode_unit = ?`
+    ).bind(kode).first<{ kode_unit: number, nama_unit: string, svg_data: string, updated_at: string }>()
+    if (!row) return c.json({ success: true, data: null })
+    return c.json({ success: true, data: { ...row, svg_data: JSON.parse(row.svg_data) } })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// API: SLD — POST simpan / update
+app.post('/api/sld/:kode_unit', async (c) => {
+  try {
+    const kode      = parseInt(c.req.param('kode_unit'))
+    const body: any = await c.req.json()
+    const namaUnit  = body.nama_unit  || ''
+    const svgData   = JSON.stringify(body.svg_data || [])
+    await c.env.DB.prepare(`
+      INSERT INTO sld (kode_unit, nama_unit, svg_data, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(kode_unit) DO UPDATE SET
+        nama_unit  = excluded.nama_unit,
+        svg_data   = excluded.svg_data,
+        updated_at = CURRENT_TIMESTAMP
+    `).bind(kode, namaUnit, svgData).run()
+    return c.json({ success: true })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
 
 export default {
   fetch: app.fetch

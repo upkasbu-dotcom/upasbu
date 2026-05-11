@@ -727,6 +727,11 @@ async function onResumeDataClick() {
   var tglStr   = parseInt(tglParts[2], 10) + ' ' + BULAN_ID[parseInt(tglParts[1], 10) - 1] + ' ' + tglParts[0]
   var tglFull  = hariStr + ', ' + tglStr
 
+  // ── Baca periode (siang/malam) dari selector khusus toolbar DATA ────────
+  var periodeEl  = document.getElementById('data-sel-periode')
+  var isSiang    = periodeEl && periodeEl.value === 'siang'
+  var periodeLabel = isSiang ? 'Siang' : 'Malam'
+
   var btnResume = document.getElementById('btn-resume-data')
   if (btnResume) { btnResume.disabled = true; btnResume.textContent = 'Memuat...' }
 
@@ -767,8 +772,8 @@ async function onResumeDataClick() {
       else if (kondisi === 'SIAGA')   countSiaga++
       else if (kondisi === 'DEFISIT') { countDefisit++; defisitList.push(nr.nama_unit || '-') }
 
-      totalDMP += nr.dm_pasok          || 0
-      totalBP  += nr.beban_puncak_malam || 0
+      totalDMP += nr.dm_pasok || 0
+      totalBP  += (isSiang ? (nr.beban_puncak_siang || 0) : (nr.beban_puncak_malam || 0))
     }
     var totalCAD = totalDMP - totalBP
 
@@ -785,14 +790,17 @@ async function onResumeDataClick() {
     var hopBbmStr = hopBbm !== null ? hopBbm + ' hari' : '...'
 
     // ── Baris kondisi defisit ───────────────────────────────────────────
-    var defisitLines = ''
+    // Jika ada defisit: "Sistem [nama ULD]" lalu daftar a. b. c.
+    // Jika tidak ada:   "Tidak ada sistem dalam kondisi defisit"
+    var defisitSistemLine = ''
+    var defisitSubLines   = ''
     if (defisitList.length === 0) {
-      defisitLines = '    Tidak ada sistem dalam kondisi defisit'
+      defisitSistemLine = '    Tidak ada sistem dalam kondisi defisit'
     } else {
+      defisitSistemLine = '    Sistem ' + defisitList.join(', ')
       for (var di = 0; di < defisitList.length; di++) {
         var huruf = String.fromCharCode(97 + di)   // a, b, c, ...
-        defisitLines += '    ' + huruf + '. ' + defisitList[di]
-        if (di < defisitList.length - 1) defisitLines += '\n'
+        defisitSubLines += '\n    ' + huruf + '. ' + defisitList[di]
       }
     }
 
@@ -809,8 +817,8 @@ async function onResumeDataClick() {
 'Yth. Pak VP OPHARKIT\n' +
 'Yth. Pak VP RENKINKIT\n' +
 '\n' +
-'Berikut kami laporkan Kondisi Pembangkit BP Malam\n' +
-'Sistem AMC UP ......\n' +
+'Berikut kami laporkan Kondisi Pembangkit BP ' + periodeLabel + '\n' +
+'Sistem AMC UP KAL 2\n' +
 tglFull + ', sebagai berikut:\n' +
 'Kondisi :\n' +
 '1. Rekap Kondisi Sistem\n' +
@@ -819,7 +827,7 @@ tglFull + ', sebagai berikut:\n' +
 '    Siaga    : ' + countSiaga  + ' \uD83D\uDFE1\n' +
 '    Defisit  : ' + countDefisit + ' \uD83D\uDD34\n' +
 '\n' +
-'2. Total Realisasi Beban Sistem Siang/Malam\n' +
+'2. Total Realisasi Beban Sistem ' + periodeLabel + '\n' +
 '    DMP  : ' + fmtMW(totalDMP) + '\n' +
 '    BP   : ' + fmtMW(totalBP)  + '\n' +
 '    CAD  : ' + fmtMW(totalCAD) + '\n' +
@@ -834,8 +842,7 @@ tglFull + ', sebagai berikut:\n' +
 '   (Tambahkan pasokan / stock berjalan)\n' +
 '\n' +
 '5. Kondisi Defisit\n' +
-'    Sistem ........\n' +
-defisitLines + '\n' +
+defisitSistemLine + defisitSubLines + '\n' +
 '\n' +
 'Demikian, mohon petunjuk dan arahan \uD83D\uDE4F'
 
@@ -1676,22 +1683,21 @@ function captureKamera() {
 // TAB SWITCHING
 // =============================================
 function switchTab(tab) {
-  ['monitoring','laporan','data'].forEach(function(t) {
+  ['monitoring','laporan','data','sld'].forEach(function(t) {
     document.getElementById('tab-' + t).classList.toggle('active', tab === t)
     document.getElementById('tab-btn-' + t).classList.toggle('active', tab === t)
   })
   document.getElementById('toolbar-monitoring').classList.toggle('hidden', tab !== 'monitoring')
   document.getElementById('toolbar-laporan').classList.toggle('hidden', tab !== 'laporan')
   document.getElementById('toolbar-data').classList.toggle('hidden', tab !== 'data')
+  document.getElementById('toolbar-sld').classList.toggle('hidden', tab !== 'sld')
   document.getElementById('header-actions-monitoring').style.display = (tab === 'monitoring') ? 'flex' : 'none'
   document.getElementById('header-actions-laporan').style.display   = (tab === 'laporan')    ? 'flex' : 'none'
   document.getElementById('header-actions-data').style.display      = (tab === 'data')       ? 'flex' : 'none'
 
   if (tab === 'laporan' && !lapSelectedKode) showLapState('empty')
-  if (tab === 'data') {
-    // Sync sub-tab button active state
-    switchDataView(currentDataView)
-  }
+  if (tab === 'data') switchDataView(currentDataView)
+  if (tab === 'sld') sldInitUnitSelect()
 }
 
 // =============================================
@@ -3033,5 +3039,560 @@ document.addEventListener('click', function(e) {
   var dd   = document.getElementById('op-dropdown')
   if (dd && wrap && !wrap.contains(e.target)) {
     dd.classList.add('hidden')
+  }
+})
+
+// =============================================
+// ===== SLD EDITOR =====
+// =============================================
+
+var SLD_IS_ADMIN   = false   // toggle via password
+var SLD_ADMIN_PASS = 'admin123'
+var sldCurrentUnit = null    // { kode_unit, nama_unit }
+var sldElements    = []      // array of element objects
+var sldSelected    = null    // id of selected element
+var sldNextId      = 1
+var sldGridVisible = true
+var sldDragging    = null    // { id, startX, startY, origX, origY }
+var sldLineMode    = false   // sedang menggambar line
+var sldLineTmp     = null    // { x1,y1 } titik awal line sementara
+var sldLineTmpEl   = null    // SVG element sementara
+var sldModified    = false
+
+// ── Snap ke grid 20px ──────────────────────────────────────────
+function sldSnap(v) { return Math.round(v / 20) * 20 }
+
+// ── Init select unit ──────────────────────────────────────────
+function sldInitUnitSelect() {
+  var sel = document.getElementById('sld-sel-unit')
+  if (sel.options.length > 1) return
+  UNIT_DATA.forEach(function(u) {
+    var opt = document.createElement('option')
+    opt.value = u.kode_unit
+    opt.textContent = u.nama_unit
+    sel.appendChild(opt)
+  })
+}
+
+// ── Pilih unit → load SLD dari API ───────────────────────────
+async function onSldUnitChange(val) {
+  if (!val) {
+    sldCurrentUnit = null
+    document.getElementById('sld-state-empty').style.display = 'flex'
+    document.getElementById('sld-wrap').classList.add('hidden')
+    return
+  }
+  var found = UNIT_DATA.find(function(u){ return u.kode_unit == val })
+  sldCurrentUnit = { kode_unit: parseInt(val), nama_unit: found ? found.nama_unit : val }
+
+  document.getElementById('sld-state-empty').style.display = 'none'
+  document.getElementById('sld-wrap').classList.remove('hidden')
+
+  // Tampilkan tombol aksi admin
+  var actEl = document.getElementById('sld-toolbar-actions')
+  if (SLD_IS_ADMIN) { actEl.style.display = 'flex' } else { actEl.style.display = 'none' }
+  document.getElementById('sld-mode-label').textContent = SLD_IS_ADMIN ? 'Mode: EDIT' : 'Mode: VIEW (login admin untuk edit)'
+  document.getElementById('sld-admin-badge').style.display = 'flex'
+
+  showLoading(true, 'loading-indicator-sld')
+  try {
+    var res  = await fetch('/api/sld/' + val)
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error)
+    sldElements = []
+    sldNextId   = 1
+    if (json.data && json.data.svg_data && json.data.svg_data.length > 0) {
+      sldElements = json.data.svg_data
+      sldNextId   = Math.max.apply(null, sldElements.map(function(e){ return e.id || 0 })) + 1
+    }
+    sldSelected  = null
+    sldModified  = false
+    sldRender()
+    sldHideProps()
+  } catch(e) {
+    showToast('Gagal memuat SLD: ' + e.message, 'error')
+  } finally {
+    showLoading(false, 'loading-indicator-sld')
+  }
+}
+
+// ── Admin login / logout toggle ───────────────────────────────
+function sldAdminLogin() {
+  if (SLD_IS_ADMIN) {
+    SLD_IS_ADMIN = false
+    document.getElementById('sld-toolbar-actions').style.display = 'none'
+    document.getElementById('sld-mode-label').textContent = 'Mode: VIEW (login admin untuk edit)'
+    sldSelected = null
+    sldRender()
+    sldHideProps()
+    showToast('Keluar dari mode admin', 'info')
+    return
+  }
+  var pw = prompt('Masukkan password admin:')
+  if (pw === SLD_ADMIN_PASS) {
+    SLD_IS_ADMIN = true
+    document.getElementById('sld-toolbar-actions').style.display = 'flex'
+    document.getElementById('sld-mode-label').textContent = 'Mode: EDIT'
+    showToast('Mode admin aktif', 'success')
+    sldRender()
+  } else if (pw !== null) {
+    showToast('Password salah', 'error')
+  }
+}
+
+// ── Toggle grid ───────────────────────────────────────────────
+function sldToggleGrid() {
+  sldGridVisible = !sldGridVisible
+  var bg = document.getElementById('sld-grid-bg')
+  if (bg) bg.setAttribute('fill', sldGridVisible ? 'url(#sld-grid-pattern)' : 'transparent')
+  document.getElementById('sld-btn-grid').style.background = sldGridVisible ? '#475569' : '#0f172a'
+}
+
+// ── Fit view ──────────────────────────────────────────────────
+function sldFitView() {
+  if (!sldElements.length) return
+  var xs = [], ys = []
+  sldElements.forEach(function(el) {
+    if (el.type === 'line') {
+      xs.push(el.x1, el.x2); ys.push(el.y1, el.y2)
+    } else {
+      xs.push(el.x); ys.push(el.y)
+    }
+  })
+  var minX = Math.min.apply(null,xs)-40, minY = Math.min.apply(null,ys)-40
+  var wrap = document.getElementById('sld-canvas-wrap')
+  wrap.scrollLeft = Math.max(0, minX)
+  wrap.scrollTop  = Math.max(0, minY)
+}
+
+// ── Render semua elemen ke SVG ────────────────────────────────
+function sldRender() {
+  var compLayer = document.getElementById('sld-components-layer')
+  var lineLayer = document.getElementById('sld-lines-layer')
+  if (!compLayer || !lineLayer) return
+  compLayer.innerHTML = ''
+  lineLayer.innerHTML  = ''
+
+  sldElements.forEach(function(el) {
+    if (el.type === 'line') {
+      sldRenderLine(lineLayer, el)
+    } else {
+      sldRenderComp(compLayer, el)
+    }
+  })
+
+  // Highlight selected
+  if (sldSelected !== null) {
+    var selEl = document.getElementById('sld-el-' + sldSelected)
+    if (selEl) {
+      var rect = document.createElementNS('http://www.w3.org/2000/svg','rect')
+      var bb = selEl.getBBox ? selEl.getBBox() : { x:0,y:0,width:60,height:60 }
+      rect.setAttribute('x', bb.x - 4)
+      rect.setAttribute('y', bb.y - 4)
+      rect.setAttribute('width',  bb.width  + 8)
+      rect.setAttribute('height', bb.height + 8)
+      rect.setAttribute('fill', 'none')
+      rect.setAttribute('stroke', '#f59e0b')
+      rect.setAttribute('stroke-width', '2')
+      rect.setAttribute('stroke-dasharray', '4 3')
+      rect.setAttribute('rx', '4')
+      rect.setAttribute('pointer-events', 'none')
+      compLayer.appendChild(rect)
+    }
+    document.getElementById('sld-btn-delete').style.display = 'inline-block'
+  } else {
+    document.getElementById('sld-btn-delete').style.display = 'none'
+  }
+}
+
+// ── Render komponen (generator, trafo, busbar, cb, load, label) ─
+function sldRenderComp(layer, el) {
+  var g = document.createElementNS('http://www.w3.org/2000/svg','g')
+  g.setAttribute('id', 'sld-el-' + el.id)
+  g.setAttribute('transform', 'translate(' + el.x + ',' + el.y + ')')
+  g.setAttribute('cursor', SLD_IS_ADMIN ? 'grab' : 'default')
+
+  var color  = el.color  || '#1e3a5f'
+  var label  = el.label  || ''
+  var w = el.w || 60, h = el.h || 60
+
+  if (el.type === 'generator') {
+    var c = document.createElementNS('http://www.w3.org/2000/svg','circle')
+    c.setAttribute('cx', w/2); c.setAttribute('cy', h/2)
+    c.setAttribute('r', Math.min(w,h)/2 - 4)
+    c.setAttribute('fill', '#fff'); c.setAttribute('stroke', color); c.setAttribute('stroke-width', '2.5')
+    g.appendChild(c)
+    var t = document.createElementNS('http://www.w3.org/2000/svg','text')
+    t.setAttribute('x', w/2); t.setAttribute('y', h/2 + 5)
+    t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','14')
+    t.setAttribute('fill', color); t.setAttribute('font-weight','bold')
+    t.textContent = 'G'; g.appendChild(t)
+    // Konektor atas
+    sldConnPoint(g, w/2, 0)
+  } else if (el.type === 'trafo') {
+    var c1 = document.createElementNS('http://www.w3.org/2000/svg','circle')
+    c1.setAttribute('cx', w*0.35); c1.setAttribute('cy', h/2)
+    c1.setAttribute('r', Math.min(w,h)*0.28)
+    c1.setAttribute('fill','#fff'); c1.setAttribute('stroke',color); c1.setAttribute('stroke-width','2.5')
+    g.appendChild(c1)
+    var c2 = document.createElementNS('http://www.w3.org/2000/svg','circle')
+    c2.setAttribute('cx', w*0.65); c2.setAttribute('cy', h/2)
+    c2.setAttribute('r', Math.min(w,h)*0.28)
+    c2.setAttribute('fill','#fff'); c2.setAttribute('stroke',color); c2.setAttribute('stroke-width','2.5')
+    g.appendChild(c2)
+    sldConnPoint(g, w*0.35, 0)
+    sldConnPoint(g, w*0.65, h)
+  } else if (el.type === 'busbar') {
+    var bh = el.bh || 8
+    var rect = document.createElementNS('http://www.w3.org/2000/svg','rect')
+    rect.setAttribute('x', 0); rect.setAttribute('y', (h-bh)/2)
+    rect.setAttribute('width', w); rect.setAttribute('height', bh)
+    rect.setAttribute('fill', color); rect.setAttribute('rx','2')
+    g.appendChild(rect)
+  } else if (el.type === 'cb') {
+    var sq = document.createElementNS('http://www.w3.org/2000/svg','rect')
+    sq.setAttribute('x', w/2-12); sq.setAttribute('y', h/2-12)
+    sq.setAttribute('width','24'); sq.setAttribute('height','24')
+    sq.setAttribute('fill','#fff'); sq.setAttribute('stroke',color); sq.setAttribute('stroke-width','2.5')
+    g.appendChild(sq)
+    var l1 = document.createElementNS('http://www.w3.org/2000/svg','line')
+    l1.setAttribute('x1',w/2); l1.setAttribute('y1',0)
+    l1.setAttribute('x2',w/2); l1.setAttribute('y2',h/2-12)
+    l1.setAttribute('stroke',color); l1.setAttribute('stroke-width','2.5')
+    g.appendChild(l1)
+    var l2 = document.createElementNS('http://www.w3.org/2000/svg','line')
+    l2.setAttribute('x1',w/2); l2.setAttribute('y1',h/2+12)
+    l2.setAttribute('x2',w/2); l2.setAttribute('y2',h)
+    l2.setAttribute('stroke',color); l2.setAttribute('stroke-width','2.5')
+    g.appendChild(l2)
+    sldConnPoint(g, w/2, 0)
+    sldConnPoint(g, w/2, h)
+  } else if (el.type === 'load') {
+    var tri = document.createElementNS('http://www.w3.org/2000/svg','polygon')
+    var hw = w/2
+    tri.setAttribute('points', hw+',6 '+(w-4)+','+(h-6)+' 4+','+(h-6))
+    tri.setAttribute('fill','#fff'); tri.setAttribute('stroke',color); tri.setAttribute('stroke-width','2.5')
+    g.appendChild(tri)
+    var lv = document.createElementNS('http://www.w3.org/2000/svg','line')
+    lv.setAttribute('x1',hw); lv.setAttribute('y1',0)
+    lv.setAttribute('x2',hw); lv.setAttribute('y2',6)
+    lv.setAttribute('stroke',color); lv.setAttribute('stroke-width','2.5')
+    g.appendChild(lv)
+    sldConnPoint(g, hw, 0)
+  } else if (el.type === 'label') {
+    var lt = document.createElementNS('http://www.w3.org/2000/svg','text')
+    lt.setAttribute('x', 0); lt.setAttribute('y', 0)
+    lt.setAttribute('font-size', el.fontSize || 13)
+    lt.setAttribute('fill', color)
+    lt.setAttribute('font-weight', el.bold ? 'bold' : 'normal')
+    lt.textContent = label || 'Label'
+    g.appendChild(lt)
+  }
+
+  // Label di bawah komponen (kecuali label itu sendiri)
+  if (label && el.type !== 'label') {
+    var lbl = document.createElementNS('http://www.w3.org/2000/svg','text')
+    lbl.setAttribute('x', w/2)
+    lbl.setAttribute('y', h + 14)
+    lbl.setAttribute('text-anchor','middle')
+    lbl.setAttribute('font-size','11')
+    lbl.setAttribute('fill','#374151')
+    lbl.setAttribute('font-weight','600')
+    lbl.textContent = label
+    g.appendChild(lbl)
+  }
+
+  // Event: klik & drag
+  g.addEventListener('mousedown', function(e) { sldOnCompMouseDown(e, el.id) })
+  g.addEventListener('touchstart', function(e) { sldOnCompTouchStart(e, el.id) }, { passive:false })
+  layer.appendChild(g)
+}
+
+// ── Titik konektor kecil ──────────────────────────────────────
+function sldConnPoint(g, cx, cy) {
+  var c = document.createElementNS('http://www.w3.org/2000/svg','circle')
+  c.setAttribute('cx', cx); c.setAttribute('cy', cy)
+  c.setAttribute('r', 3); c.setAttribute('fill', '#38bdf8')
+  c.setAttribute('pointer-events','none')
+  g.appendChild(c)
+}
+
+// ── Render line ───────────────────────────────────────────────
+function sldRenderLine(layer, el) {
+  var color = el.color || '#1e3a5f'
+  var g = document.createElementNS('http://www.w3.org/2000/svg','g')
+  g.setAttribute('id', 'sld-el-' + el.id)
+
+  var line = document.createElementNS('http://www.w3.org/2000/svg','line')
+  line.setAttribute('x1', el.x1); line.setAttribute('y1', el.y1)
+  line.setAttribute('x2', el.x2); line.setAttribute('y2', el.y2)
+  line.setAttribute('stroke', color)
+  line.setAttribute('stroke-width', el.strokeWidth || 2.5)
+  line.setAttribute('stroke-linecap','round')
+  g.appendChild(line)
+
+  // Hit area (invisible, untuk klik)
+  var hit = document.createElementNS('http://www.w3.org/2000/svg','line')
+  hit.setAttribute('x1', el.x1); hit.setAttribute('y1', el.y1)
+  hit.setAttribute('x2', el.x2); hit.setAttribute('y2', el.y2)
+  hit.setAttribute('stroke', 'transparent'); hit.setAttribute('stroke-width', '14')
+  hit.setAttribute('cursor', SLD_IS_ADMIN ? 'pointer' : 'default')
+  hit.addEventListener('mousedown', function(e){ sldSelectEl(el.id); e.stopPropagation() })
+  g.appendChild(hit)
+
+  if (el.label) {
+    var mx = (el.x1+el.x2)/2, my = (el.y1+el.y2)/2
+    var lt = document.createElementNS('http://www.w3.org/2000/svg','text')
+    lt.setAttribute('x', mx); lt.setAttribute('y', my-6)
+    lt.setAttribute('text-anchor','middle'); lt.setAttribute('font-size','11')
+    lt.setAttribute('fill','#374151'); lt.setAttribute('font-weight','600')
+    lt.textContent = el.label
+    g.appendChild(lt)
+  }
+
+  layer.appendChild(g)
+}
+
+// ── Tambah elemen dari palette ────────────────────────────────
+function sldAddElement(type) {
+  if (!SLD_IS_ADMIN) return
+  var wrap  = document.getElementById('sld-canvas-wrap')
+  var cx    = sldSnap(wrap.scrollLeft + wrap.clientWidth  / 2)
+  var cy    = sldSnap(wrap.scrollTop  + wrap.clientHeight / 2)
+
+  var el = { id: sldNextId++, type: type, label: '', color: '#1e3a5f' }
+  if (type === 'line') {
+    el.x1 = cx-60; el.y1 = cy; el.x2 = cx+60; el.y2 = cy
+    el.strokeWidth = 2.5
+  } else if (type === 'busbar') {
+    el.x = cx-80; el.y = cy; el.w = 160; el.h = 20; el.bh = 8
+  } else if (type === 'label') {
+    el.x = cx; el.y = cy; el.w = 80; el.h = 20
+    el.fontSize = 13; el.bold = false; el.label = 'Label'
+  } else {
+    el.x = cx-30; el.y = cy-30; el.w = 60; el.h = 60
+  }
+  sldElements.push(el)
+  sldModified = true
+  sldSelected = el.id
+  sldRender()
+  sldShowProps(el.id)
+}
+
+// ── Pilih elemen ──────────────────────────────────────────────
+function sldSelectEl(id) {
+  if (!SLD_IS_ADMIN && id !== null) return
+  sldSelected = id
+  sldRender()
+  if (id !== null) sldShowProps(id)
+  else sldHideProps()
+}
+
+// ── Hapus elemen terpilih ─────────────────────────────────────
+function sldDeleteSelected() {
+  if (sldSelected === null || !SLD_IS_ADMIN) return
+  sldElements = sldElements.filter(function(e){ return e.id !== sldSelected })
+  sldSelected = null
+  sldModified = true
+  sldRender()
+  sldHideProps()
+}
+
+// ── Panel properti: tampilkan ─────────────────────────────────
+function sldShowProps(id) {
+  var el  = sldElements.find(function(e){ return e.id === id })
+  if (!el) return
+  var panel  = document.getElementById('sld-props-panel')
+  var fields = document.getElementById('sld-props-fields')
+  if (!panel || !fields) return
+  panel.style.display = 'block'
+  var html = ''
+
+  // Label
+  html += '<div style="display:flex;flex-direction:column;gap:2px;">'
+  html += '<label style="font-size:0.68rem;color:#64748b;font-weight:600;">LABEL</label>'
+  html += '<input id="prop-label" type="text" value="' + (el.label||'') + '" style="border:1px solid #e2e8f0;border-radius:4px;padding:3px 6px;font-size:0.78rem;" oninput="sldPropChange(\'label\',this.value)"/>'
+  html += '</div>'
+
+  // Warna
+  html += '<div style="display:flex;align-items:center;gap:6px;">'
+  html += '<label style="font-size:0.68rem;color:#64748b;font-weight:600;flex-shrink:0;">WARNA</label>'
+  html += '<input id="prop-color" type="color" value="' + (el.color||'#1e3a5f') + '" style="width:36px;height:26px;border:none;cursor:pointer;border-radius:4px;" oninput="sldPropChange(\'color\',this.value)"/>'
+  html += '</div>'
+
+  if (el.type === 'line') {
+    // Koordinat line
+    html += sldPropNum('X1','x1',el.x1) + sldPropNum('Y1','y1',el.y1)
+    html += sldPropNum('X2','x2',el.x2) + sldPropNum('Y2','y2',el.y2)
+    html += sldPropNum('TEBAL','strokeWidth',el.strokeWidth||2.5)
+  } else if (el.type === 'busbar') {
+    html += sldPropNum('X','x',el.x) + sldPropNum('Y','y',el.y)
+    html += sldPropNum('LEBAR','w',el.w) + sldPropNum('TINGGI BUS','bh',el.bh||8)
+  } else if (el.type === 'label') {
+    html += sldPropNum('X','x',el.x) + sldPropNum('Y','y',el.y)
+    html += sldPropNum('FONT SIZE','fontSize',el.fontSize||13)
+    html += '<div style="display:flex;align-items:center;gap:6px;">'
+    html += '<label style="font-size:0.68rem;color:#64748b;font-weight:600;">BOLD</label>'
+    html += '<input type="checkbox" ' + (el.bold?'checked':'') + ' onchange="sldPropChange(\'bold\',this.checked)" style="width:16px;height:16px;cursor:pointer;"/>'
+    html += '</div>'
+  } else {
+    html += sldPropNum('X','x',el.x) + sldPropNum('Y','y',el.y)
+    html += sldPropNum('LEBAR','w',el.w||60) + sldPropNum('TINGGI','h',el.h||60)
+  }
+
+  html += '<button onclick="sldDeleteSelected()" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:0.72rem;font-weight:700;cursor:pointer;margin-top:2px;">HAPUS</button>'
+  fields.innerHTML = html
+}
+
+function sldPropNum(label, key, val) {
+  return '<div style="display:flex;align-items:center;gap:4px;">' +
+    '<label style="font-size:0.68rem;color:#64748b;font-weight:600;width:58px;flex-shrink:0;">' + label + '</label>' +
+    '<input type="number" value="' + val + '" style="border:1px solid #e2e8f0;border-radius:4px;padding:3px 4px;font-size:0.75rem;width:64px;" ' +
+    'oninput="sldPropChange(\'' + key + '\',parseFloat(this.value)||0)"/>' +
+    '</div>'
+}
+
+// ── Update properti elemen ────────────────────────────────────
+function sldPropChange(key, val) {
+  var el = sldElements.find(function(e){ return e.id === sldSelected })
+  if (!el) return
+  el[key] = val
+  sldModified = true
+  sldRender()
+  // Jangan re-show props supaya input tidak reset saat ketik
+}
+
+function sldHideProps() {
+  var p = document.getElementById('sld-props-panel')
+  if (p) p.style.display = 'none'
+}
+
+// ── Drag komponen (mouse) ─────────────────────────────────────
+function sldOnCompMouseDown(e, id) {
+  if (!SLD_IS_ADMIN) { sldSelectEl(null); return }
+  e.stopPropagation()
+  sldSelectEl(id)
+  var svg  = document.getElementById('sld-canvas')
+  var pt   = svg.createSVGPoint()
+  pt.x = e.clientX; pt.y = e.clientY
+  var svgP = pt.matrixTransform(svg.getScreenCTM().inverse())
+  var el   = sldElements.find(function(e){ return e.id === id })
+  if (!el || el.type === 'line') return
+  sldDragging = { id: id, startX: svgP.x, startY: svgP.y, origX: el.x, origY: el.y }
+
+  function onMove(ev) {
+    if (!sldDragging) return
+    var pt2 = svg.createSVGPoint()
+    pt2.x = ev.clientX; pt2.y = ev.clientY
+    var sp = pt2.matrixTransform(svg.getScreenCTM().inverse())
+    var dx = sp.x - sldDragging.startX
+    var dy = sp.y - sldDragging.startY
+    var target = sldElements.find(function(e){ return e.id === sldDragging.id })
+    if (target) {
+      target.x = sldSnap(sldDragging.origX + dx)
+      target.y = sldSnap(sldDragging.origY + dy)
+      sldModified = true
+      sldRender()
+    }
+  }
+  function onUp() {
+    sldDragging = null
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup',  onUp)
+    if (sldSelected !== null) sldShowProps(sldSelected)
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup',   onUp)
+}
+
+// ── Drag komponen (touch) ─────────────────────────────────────
+function sldOnCompTouchStart(e, id) {
+  if (!SLD_IS_ADMIN) return
+  e.preventDefault()
+  sldSelectEl(id)
+  var svg  = document.getElementById('sld-canvas')
+  var touch = e.touches[0]
+  var pt   = svg.createSVGPoint()
+  pt.x = touch.clientX; pt.y = touch.clientY
+  var svgP = pt.matrixTransform(svg.getScreenCTM().inverse())
+  var el   = sldElements.find(function(e){ return e.id === id })
+  if (!el || el.type === 'line') return
+  sldDragging = { id: id, startX: svgP.x, startY: svgP.y, origX: el.x, origY: el.y }
+
+  function onMove(ev) {
+    if (!sldDragging) return
+    var t2 = ev.touches[0]
+    var pt2 = svg.createSVGPoint()
+    pt2.x = t2.clientX; pt2.y = t2.clientY
+    var sp = pt2.matrixTransform(svg.getScreenCTM().inverse())
+    var dx = sp.x - sldDragging.startX
+    var dy = sp.y - sldDragging.startY
+    var target = sldElements.find(function(e){ return e.id === sldDragging.id })
+    if (target) {
+      target.x = sldSnap(sldDragging.origX + dx)
+      target.y = sldSnap(sldDragging.origY + dy)
+      sldModified = true
+      sldRender()
+    }
+  }
+  function onEnd() {
+    sldDragging = null
+    document.removeEventListener('touchmove', onMove)
+    document.removeEventListener('touchend',  onEnd)
+    if (sldSelected !== null) sldShowProps(sldSelected)
+  }
+  document.addEventListener('touchmove', onMove, { passive:false })
+  document.addEventListener('touchend',  onEnd)
+}
+
+// ── Klik canvas kosong → deselect ────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  var canvas = document.getElementById('sld-canvas')
+  if (!canvas) return
+  canvas.addEventListener('mousedown', function(e) {
+    if (e.target === canvas || e.target.id === 'sld-grid-bg') {
+      sldSelectEl(null)
+      sldHideProps()
+    }
+  })
+})
+
+// ── Simpan ke API ─────────────────────────────────────────────
+async function sldSave() {
+  if (!sldCurrentUnit || !SLD_IS_ADMIN) return
+  var btnSave = document.getElementById('sld-btn-save')
+  if (btnSave) { btnSave.disabled = true; btnSave.textContent = 'Menyimpan...' }
+  try {
+    var res = await fetch('/api/sld/' + sldCurrentUnit.kode_unit, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nama_unit: sldCurrentUnit.nama_unit, svg_data: sldElements })
+    })
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error)
+    sldModified = false
+    showToast('SLD berhasil disimpan!', 'success')
+  } catch(e) {
+    showToast('Gagal menyimpan SLD: ' + e.message, 'error')
+  } finally {
+    if (btnSave) { btnSave.disabled = false; btnSave.textContent = 'SIMPAN' }
+  }
+}
+
+// ── Pasang event palette drag ke canvas ───────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.sld-pal-item').forEach(function(item) {
+    item.addEventListener('click', function() {
+      if (!SLD_IS_ADMIN) { showToast('Login admin untuk mengedit SLD', 'info'); return }
+      if (!sldCurrentUnit) { showToast('Pilih unit terlebih dahulu', 'info'); return }
+      sldAddElement(item.getAttribute('data-type'))
+    })
+  })
+
+  // Tombol admin login di mode label
+  var modeLabel = document.getElementById('sld-mode-label')
+  if (modeLabel) {
+    modeLabel.style.cursor = 'pointer'
+    modeLabel.addEventListener('click', sldAdminLogin)
   }
 })
