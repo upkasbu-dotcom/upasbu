@@ -3082,9 +3082,11 @@ async function loadNeracaDayaTab() {
 // State edit popup (client-side only, tidak menyentuh database)
 var _popupEditMode   = false
 var _popupEditedData = []   // copy data dari API, bisa diubah user
+var _popupOrigData   = []   // snapshot awal saat popup dibuka (untuk reset)
 var _popupOrigBp     = null // BP asli dari neraca (tidak berubah saat edit)
 var _popupKodeUnit   = null // kode_unit popup aktif
 var _popupAllMesin   = []   // semua mesin unit ini dari mesin_cache
+var _allUnitMesin    = []   // semua mesin SEMUA unit dari /api/mesin-cache
 
 function _statusStyle(s) {
   if (s === 'Operasi')      return 'background:#d1fae5;color:#065f46;'
@@ -3248,18 +3250,11 @@ function _renderPopupTable() {
   body.innerHTML = html
 }
 
-// Tampilkan picker mesin yang belum ada di popup
+// Tampilkan picker mesin — bisa dari unit sendiri maupun unit lain
 function _showTambahMesinPicker() {
-  // _popupAllMesin berisi SEMUA mesin unit (has_data=true & false) dari detail-mesin LEFT JOIN
-  // available  = mesin yang has_data=false (belum ada data di tanggal ini) → bisa ditambahkan
-  // alreadyIn  = mesin yang has_data=true (sudah ada di tabel) → hanya info
-  var available = []
-  var alreadyIn = []
-  for (var j = 0; j < _popupAllMesin.length; j++) {
-    var m = _popupAllMesin[j]
-    if (m.has_data) alreadyIn.push(m)
-    else available.push(m)
-  }
+  // ID mesin yang sudah ada di tabel saat ini
+  var existingIds = {}
+  for (var ei = 0; ei < _popupEditedData.length; ei++) existingIds[_popupEditedData[ei].id_mesin] = true
 
   // Buat overlay picker
   var existing = document.getElementById('_popup-mesin-picker')
@@ -3269,62 +3264,138 @@ function _showTambahMesinPicker() {
   picker.id = '_popup-mesin-picker'
   picker.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;'
 
-  var inner = '<div style="background:#fff;border-radius:10px;padding:16px;width:520px;max-width:94vw;max-height:75vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
+  // ── Kelompokkan _allUnitMesin per unit ──
+  var unitMap = {}   // kode_unit → { nama_unit, mesin[] }
+  var unitOrder = [] // urutan: unit sendiri dulu, lalu lainnya alfabet
+  for (var mi = 0; mi < _allUnitMesin.length; mi++) {
+    var m = _allUnitMesin[mi]
+    var ku = m.kode_unit
+    if (!unitMap[ku]) {
+      unitMap[ku] = { nama_unit: m.nama_unit || ('Unit ' + ku), mesin: [] }
+      unitOrder.push(ku)
+    }
+    unitMap[ku].mesin.push(m)
+  }
+  // Urutkan: unit sendiri di atas, sisanya alfabetis nama_unit
+  unitOrder.sort(function(a, b) {
+    if (a === _popupKodeUnit) return -1
+    if (b === _popupKodeUnit) return  1
+    return (unitMap[a].nama_unit).localeCompare(unitMap[b].nama_unit)
+  })
+
+  var inner = '<div style="background:#fff;border-radius:10px;padding:16px;width:560px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
+
+  // Header
   inner += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-shrink:0;">'
   inner += '<b style="font-size:0.9rem;color:#1e3a5f;">Tambah Mesin ke Tabel</b>'
   inner += '<button onclick="document.getElementById(\'_popup-mesin-picker\').remove()" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:#64748b;line-height:1;">✕</button>'
   inner += '</div>'
-  inner += '<div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;">'
 
-  // ── Mesin yang belum ada di tabel (bisa ditambahkan) ──
-  if (available.length > 0) {
-    inner += '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;padding:2px 0 4px;">Belum ditampilkan (' + available.length + ')</div>'
-    for (var ai = 0; ai < available.length; ai++) {
-      var am = available[ai]
-      inner += '<div onclick="_tambahMesinKePopup(' + am.id_mesin + ')" style="padding:8px 12px;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer;font-size:0.78rem;background:#f0f9ff;" onmouseover="this.style.background=\'#dbeafe\'" onmouseout="this.style.background=\'#f0f9ff\'">'
-      inner += '<div style="font-weight:600;color:#1e3a5f;">' + (am.nama_mesin || am.mesin || '-') + '</div>'
-      inner += '<div style="color:#64748b;font-size:0.7rem;margin-top:2px;">DM Terpasang: ' + (am.terpasang != null ? am.terpasang + ' kW' : '-') + '</div>'
+  // Info simulasi
+  inner += '<div style="margin-bottom:10px;padding:6px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:0.7rem;color:#1e40af;flex-shrink:0;">'
+  inner += '⚡ Mode simulasi — mesin yang ditambah tidak tersimpan ke database. Perubahan hilang saat popup ditutup.'
+  inner += '</div>'
+
+  // Daftar unit accordion
+  inner += '<div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:4px;" id="_picker-unit-list">'
+
+  if (unitOrder.length === 0) {
+    inner += '<div style="text-align:center;padding:24px;color:#94a3b8;font-size:0.82rem;">Data mesin belum dimuat...</div>'
+  } else {
+    for (var ui = 0; ui < unitOrder.length; ui++) {
+      var ku2  = unitOrder[ui]
+      var unit = unitMap[ku2]
+      var isSelf = (ku2 === _popupKodeUnit)
+
+      // Hitung mesin tersedia (belum di tabel)
+      var avail = []
+      var inTbl = []
+      for (var mj = 0; mj < unit.mesin.length; mj++) {
+        var mm = unit.mesin[mj]
+        if (existingIds[mm.id_mesin]) inTbl.push(mm)
+        else avail.push(mm)
+      }
+
+      var unitLabel = (isSelf ? '★ ' : '') + unit.nama_unit
+      var badge = avail.length > 0
+        ? '<span style="background:#dbeafe;color:#1e40af;font-size:0.65rem;font-weight:700;padding:1px 6px;border-radius:8px;margin-left:6px;">' + avail.length + ' tersedia</span>'
+        : '<span style="background:#f1f5f9;color:#94a3b8;font-size:0.65rem;padding:1px 6px;border-radius:8px;margin-left:6px;">semua sudah ada</span>'
+
+      var accordId = '_acc_' + ku2
+      // Unit sendiri selalu terbuka, yang lain tertutup
+      var isOpen = isSelf
+      var bodyDisp = isOpen ? 'block' : 'none'
+      var arrowChar = isOpen ? '▾' : '▸'
+
+      inner += '<div style="border:1px solid ' + (isSelf ? '#bfdbfe' : '#e2e8f0') + ';border-radius:8px;overflow:hidden;">'
+
+      // Header accordion
+      inner += '<div onclick="_togglePickerAccordion(\''+accordId+'\')" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:' + (isSelf ? '#eff6ff' : '#f8fafc') + ';cursor:pointer;user-select:none;">'
+      inner += '<div style="display:flex;align-items:center;gap:4px;">'
+      inner += '<span style="font-size:0.78rem;font-weight:' + (isSelf ? '700' : '600') + ';color:' + (isSelf ? '#1e3a5f' : '#334155') + ';">' + unitLabel + '</span>'
+      inner += badge
       inner += '</div>'
+      inner += '<span id="_arr_' + ku2 + '" style="font-size:0.8rem;color:#94a3b8;">' + arrowChar + '</span>'
+      inner += '</div>'
+
+      // Body accordion — daftar mesin
+      inner += '<div id="' + accordId + '" style="display:' + bodyDisp + ';padding:6px 10px;display:' + bodyDisp + ';flex-direction:column;gap:4px;">'
+
+      if (avail.length === 0 && inTbl.length === 0) {
+        inner += '<div style="padding:8px;color:#94a3b8;font-size:0.75rem;text-align:center;">Tidak ada mesin</div>'
+      }
+
+      // Mesin yang bisa ditambah
+      for (var aj = 0; aj < avail.length; aj++) {
+        var am2 = avail[aj]
+        inner += '<div onclick="_tambahMesinKePopup(' + am2.id_mesin + ')" '
+        inner += 'style="padding:7px 10px;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer;font-size:0.75rem;background:#f0f9ff;" '
+        inner += 'onmouseover="this.style.background=\'#dbeafe\'" onmouseout="this.style.background=\'#f0f9ff\'">'
+        inner += '<div style="font-weight:600;color:#1e3a5f;">' + (am2.nama_mesin || '-') + '</div>'
+        inner += '<div style="color:#64748b;font-size:0.68rem;margin-top:1px;">DM Terpasang: ' + (am2.terpasang != null ? am2.terpasang + ' kW' : '-') + '</div>'
+        inner += '</div>'
+      }
+
+      // Mesin yang sudah ada di tabel (disabled)
+      for (var bj = 0; bj < inTbl.length; bj++) {
+        var bm2 = inTbl[bj]
+        inner += '<div style="padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:0.75rem;background:#f8fafc;opacity:0.6;">'
+        inner += '<div style="font-weight:600;color:#94a3b8;">' + (bm2.nama_mesin || '-') + '</div>'
+        inner += '<div style="color:#94a3b8;font-size:0.68rem;margin-top:1px;">DM Terpasang: ' + (bm2.terpasang != null ? bm2.terpasang + ' kW' : '-') + ' · Sudah ada di tabel</div>'
+        inner += '</div>'
+      }
+
+      inner += '</div>' // end body
+      inner += '</div>' // end accordion item
     }
   }
 
-  // ── Mesin yang sudah ada di tabel (disabled, info saja) ──
-  if (alreadyIn.length > 0) {
-    inner += '<div style="font-size:0.7rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;padding:' + (available.length > 0 ? '10px' : '2px') + ' 0 4px;">Sudah ditampilkan (' + alreadyIn.length + ')</div>'
-    for (var bi = 0; bi < alreadyIn.length; bi++) {
-      var bm = alreadyIn[bi]
-      inner += '<div style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:0.78rem;background:#f8fafc;opacity:0.7;">'
-      inner += '<div style="font-weight:600;color:#94a3b8;">' + (bm.nama_mesin || bm.mesin || '-') + '</div>'
-      inner += '<div style="color:#94a3b8;font-size:0.7rem;margin-top:2px;">DM Terpasang: ' + (bm.terpasang != null ? bm.terpasang + ' kW' : '-') + ' · Sudah ada di tabel</div>'
-      inner += '</div>'
-    }
-  }
-
-  // Jika _popupAllMesin kosong sama sekali
-  if (_popupAllMesin.length === 0) {
-    inner += '<div style="text-align:center;padding:20px;color:#94a3b8;font-size:0.8rem;">Tidak ada data mesin untuk unit ini</div>'
-  }
-
-  inner += '</div>'
-
-  // Footer info jika semua sudah ada
-  if (available.length === 0 && alreadyIn.length > 0) {
-    inner += '<div style="margin-top:10px;padding:8px 10px;background:#fef9c3;border-radius:6px;font-size:0.72rem;color:#92400e;flex-shrink:0;">Semua mesin unit ini sudah ditampilkan di tabel. Tambah mesin baru lewat menu <b>Pengaturan Mesin</b>.</div>'
-  }
-
-  inner += '</div>'
+  inner += '</div>' // end list
+  inner += '</div>' // end card
   picker.innerHTML = inner
   picker.addEventListener('click', function(e) { if (e.target === picker) picker.remove() })
   document.body.appendChild(picker)
+}
+
+// Toggle buka/tutup accordion unit di picker
+function _togglePickerAccordion(id) {
+  var body = document.getElementById(id)
+  var ku   = id.replace('_acc_', '')
+  var arr  = document.getElementById('_arr_' + ku)
+  if (!body) return
+  var isOpen = body.style.display !== 'none'
+  body.style.display = isOpen ? 'none' : 'flex'
+  if (arr) arr.textContent = isOpen ? '▸' : '▾'
 }
 
 // Tambah mesin yang dipilih ke tabel popup
 function _tambahMesinKePopup(idMesin) {
   var picker = document.getElementById('_popup-mesin-picker')
   if (picker) picker.remove()
+  // Cari dari _allUnitMesin (semua unit) — bukan hanya unit sendiri
   var mesin = null
-  for (var i = 0; i < _popupAllMesin.length; i++) {
-    if (_popupAllMesin[i].id_mesin === idMesin) { mesin = _popupAllMesin[i]; break }
+  for (var i = 0; i < _allUnitMesin.length; i++) {
+    if (_allUnitMesin[i].id_mesin === idMesin) { mesin = _allUnitMesin[i]; break }
   }
   if (!mesin) return
   _popupEditedData.push({
@@ -3369,6 +3440,8 @@ function togglePopupEditMode() {
       btn.textContent = 'SELESAI'
       btn.style.background = '#16a34a'
     } else {
+      // Klik SELESAI → reset ke data awal (buang semua perubahan simulasi)
+      _popupEditedData = _popupOrigData.map(function(m) { return Object.assign({}, m) })
       btn.textContent = 'EDIT'
       btn.style.background = '#1e3a5f'
     }
@@ -3381,6 +3454,7 @@ async function showNeracaDetailPopup(kodeUnit, namaUnit, tanggal) {
   // Reset state edit setiap kali popup dibuka
   _popupEditMode   = false
   _popupEditedData = []
+  _popupOrigData   = []
   _popupOrigBp     = 0
 
   var modal   = document.getElementById('modal-detail-mesin')
@@ -3408,16 +3482,23 @@ async function showNeracaDetailPopup(kodeUnit, namaUnit, tanggal) {
   modal.classList.remove('hidden')
 
   try {
-    // Fetch data mesin (ALL via LEFT JOIN + has_data flag) dan neraca (parallel)
-    // detail-mesin sudah return semua mesin unit + flag has_data, tidak perlu mesin-unit lagi
-    var [resMesin, resNeraca] = await Promise.all([
+    // Fetch 3 sumber paralel: detail-mesin, neraca-daya, semua mesin (untuk picker lintas unit)
+    var [resMesin, resNeraca, resSemua] = await Promise.all([
       fetch('/api/detail-mesin?kode_unit=' + kodeUnit + '&tanggal=' + tanggal),
-      fetch('/api/neraca-daya?tanggal=' + tanggal)
+      fetch('/api/neraca-daya?tanggal=' + tanggal),
+      _allUnitMesin.length > 0
+        ? Promise.resolve(null)   // sudah ada cache, skip fetch
+        : fetch('/api/mesin-cache')
     ])
     var jsonMesin  = await resMesin.json()
     var jsonNeraca = await resNeraca.json()
     if (!jsonMesin.success) throw new Error(jsonMesin.error)
-    // _popupAllMesin = SEMUA mesin unit (termasuk yang belum punya data hari ini)
+    // Cache semua mesin lintas unit (sekali fetch, pakai terus)
+    if (resSemua) {
+      var jsonSemua = await resSemua.json()
+      if (jsonSemua.success) _allUnitMesin = jsonSemua.data || []
+    }
+    // _popupAllMesin = SEMUA mesin unit ini (termasuk yang belum punya data hari ini)
     _popupKodeUnit = kodeUnit
     _popupAllMesin = jsonMesin.data || []
 
@@ -3490,6 +3571,8 @@ async function showNeracaDetailPopup(kodeUnit, namaUnit, tanggal) {
         sfc:           m.sfc
       }
     })
+    // Simpan snapshot awal untuk reset saat SELESAI / tutup popup
+    _popupOrigData = _popupEditedData.map(function(m) { return Object.assign({}, m) })
 
     _renderPopupTable()
 
@@ -3881,7 +3964,19 @@ async function loadDataTab() {
   }
 }
 
-function closeModal(id) { document.getElementById(id).classList.add('hidden') }
+function closeModal(id) {
+  document.getElementById(id).classList.add('hidden')
+  // Reset state popup saat modal-detail-mesin ditutup
+  if (id === 'modal-detail-mesin') {
+    _popupEditMode   = false
+    _popupEditedData = _popupOrigData.map(function(m) { return Object.assign({}, m) })
+    var btnEdit = document.getElementById('btn-popup-edit')
+    if (btnEdit) { btnEdit.textContent = 'EDIT'; btnEdit.style.background = '#1e3a5f' }
+    // Tutup picker jika masih terbuka
+    var picker = document.getElementById('_popup-mesin-picker')
+    if (picker) picker.remove()
+  }
+}
 
 function showLoading(show, id) {
   var el = document.getElementById(id)
