@@ -727,8 +727,8 @@ async function onResumeDataClick() {
   var tglStr   = parseInt(tglParts[2], 10) + ' ' + BULAN_ID[parseInt(tglParts[1], 10) - 1] + ' ' + tglParts[0]
   var tglFull  = hariStr + ', ' + tglStr
 
-  // ── Baca periode (siang/malam) dari selector khusus toolbar DATA ────────
-  var periodeEl  = document.getElementById('data-sel-periode')
+  // ── Baca periode (siang/malam) dari selector toolbar monitoring ────────
+  var periodeEl  = document.getElementById('sel-periode')
   var isSiang    = periodeEl && periodeEl.value === 'siang'
   var periodeLabel = isSiang ? 'Siang' : 'Malam'
 
@@ -751,7 +751,8 @@ async function onResumeDataClick() {
     var totalUnit   = neracaRows.length
     var countNormal = 0, countSiaga  = 0, countDefisit = 0
     var totalDMP    = 0, totalBP     = 0
-    var defisitList = []   // nama unit yang DEFISIT
+    var defisitList = []   // unit yang DEFISIT
+    var siagaList   = []   // unit yang SIAGA
 
     for (var ni = 0; ni < neracaRows.length; ni++) {
       var nr      = neracaRows[ni]
@@ -769,8 +770,34 @@ async function onResumeDataClick() {
       }
 
       if (kondisi === 'NORMAL')  countNormal++
-      else if (kondisi === 'SIAGA')   countSiaga++
-      else if (kondisi === 'DEFISIT') { countDefisit++; defisitList.push(nr.nama_unit || '-') }
+      else if (kondisi === 'SIAGA') {
+        countSiaga++
+        var bp_siaga  = isSiang ? (nr.beban_puncak_siang || 0) : (nr.beban_puncak_malam || 0)
+        var dmn_siaga = nr.dm_pasok || 0
+        var cad_siaga = dmn_siaga - bp_siaga
+        var padam_siaga = cad_siaga < 0 ? Math.abs(cad_siaga) : 0
+        siagaList.push({
+          nama  : nr.nama_unit || '-',
+          dmn   : dmn_siaga,
+          bp    : bp_siaga,
+          cad   : cad_siaga,
+          padam : padam_siaga
+        })
+      }
+      else if (kondisi === 'DEFISIT') {
+        countDefisit++
+        var bp_unit  = isSiang ? (nr.beban_puncak_siang || 0) : (nr.beban_puncak_malam || 0)
+        var dmn_unit = nr.dm_pasok || 0
+        var cad_unit = dmn_unit - bp_unit
+        var padam_unit = cad_unit < 0 ? Math.abs(cad_unit) : 0
+        defisitList.push({
+          nama   : nr.nama_unit || '-',
+          dmn    : dmn_unit,
+          bp     : bp_unit,
+          cad    : cad_unit,
+          padam  : padam_unit
+        })
+      }
 
       totalDMP += nr.dm_pasok || 0
       totalBP  += (isSiang ? (nr.beban_puncak_siang || 0) : (nr.beban_puncak_malam || 0))
@@ -789,18 +816,45 @@ async function onResumeDataClick() {
       : null
     var hopBbmStr = hopBbm !== null ? hopBbm + ' hari' : '...'
 
-    // ── Baris kondisi defisit ───────────────────────────────────────────
-    // Jika ada defisit: "Sistem [nama ULD]" lalu daftar a. b. c.
-    // Jika tidak ada:   "Tidak ada sistem dalam kondisi defisit"
+    // ── Baris kondisi siaga & defisit ──────────────────────────────────
+    function fmtKW(n) {
+      if (n == null || isNaN(n)) return '...'
+      return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' kW'
+    }
+
+    // Siaga
+    var siagaSistemLine = ''
+    var siagaSubLines   = ''
+    if (siagaList.length === 0) {
+      siagaSistemLine = '    Tidak ada sistem dalam kondisi siaga'
+    } else {
+      siagaSistemLine = '    Sistem ' + siagaList.map(function(d){ return d.nama }).join(', ')
+      for (var si2 = 0; si2 < siagaList.length; si2++) {
+        var hurufS = String.fromCharCode(97 + si2)
+        var ds = siagaList[si2]
+        siagaSubLines += '\n    ' + hurufS + '. ' + ds.nama +
+          '\n       DMN   : ' + fmtKW(ds.dmn) +
+          '\n       BP    : ' + fmtKW(ds.bp) +
+          '\n       CAD   : ' + fmtKW(ds.cad) +
+          '\n       Padam : ' + fmtKW(ds.padam)
+      }
+    }
+
+    // Defisit
     var defisitSistemLine = ''
     var defisitSubLines   = ''
     if (defisitList.length === 0) {
       defisitSistemLine = '    Tidak ada sistem dalam kondisi defisit'
     } else {
-      defisitSistemLine = '    Sistem ' + defisitList.join(', ')
+      defisitSistemLine = '    Sistem ' + defisitList.map(function(d){ return d.nama }).join(', ')
       for (var di = 0; di < defisitList.length; di++) {
         var huruf = String.fromCharCode(97 + di)   // a, b, c, ...
-        defisitSubLines += '\n    ' + huruf + '. ' + defisitList[di]
+        var d = defisitList[di]
+        defisitSubLines += '\n    ' + huruf + '. ' + d.nama +
+          '\n       DMN   : ' + fmtKW(d.dmn) +
+          '\n       BP    : ' + fmtKW(d.bp) +
+          '\n       CAD   : ' + fmtKW(d.cad) +
+          '\n       Padam : ' + fmtKW(d.padam)
       }
     }
 
@@ -828,21 +882,20 @@ tglFull + ', sebagai berikut:\n' +
 '    Defisit  : ' + countDefisit + ' \uD83D\uDD34\n' +
 '\n' +
 '2. Total Realisasi Beban Sistem ' + periodeLabel + '\n' +
-'    DMP  : ' + fmtMW(totalDMP) + '\n' +
-'    BP   : ' + fmtMW(totalBP)  + '\n' +
-'    CAD  : ' + fmtMW(totalCAD) + '\n' +
+'    DMP  : ' + fmtKW(totalDMP) + '\n' +
+'    BP   : ' + fmtKW(totalBP)  + '\n' +
+'    CAD  : ' + fmtKW(totalCAD) + '\n' +
 '\n' +
-'3. Realisasi Daya Mampu Pembangkit Sewa\n' +
-'    Daya Kontrak  : \u2026 MW\n' +
-'    Daya Mampu    : \u2026 MW\n' +
+'3. Kondisi Siaga\n' +
+siagaSistemLine + siagaSubLines + '\n' +
 '\n' +
-'4. BBM dan Pelumas\n' +
+'4. Kondisi Defisit\n' +
+defisitSistemLine + defisitSubLines + '\n' +
+'\n' +
+'5. BBM dan Pelumas\n' +
 '   HOP BBM Rata-rata        : ' + hopBbmStr + '\n' +
 '   HOP Pelumas Rata-rata    :        hari\n' +
 '   (Tambahkan pasokan / stock berjalan)\n' +
-'\n' +
-'5. Kondisi Defisit\n' +
-defisitSistemLine + defisitSubLines + '\n' +
 '\n' +
 'Demikian, mohon petunjuk dan arahan \uD83D\uDE4F'
 
@@ -1107,10 +1160,6 @@ async function loadData() {
     }
     updateTableData()
     updateSummaryBar()
-    var cnt = json.data.length
-    document.getElementById('info-record').textContent = cnt > 0
-      ? cnt + ' mesin sudah ada data'
-      : 'Belum ada data untuk ' + tanggal + ' (' + periode + ')'
     // Jika popup WA sedang terbuka, rebuild teks sesuai filter baru
     await refreshPopupWA()
   } catch(e) { showToast('Gagal memuat data: ' + e.message,'error') }
@@ -2590,7 +2639,7 @@ async function selectRiwayatLap(tanggal) {
 // =============================================
 
 var dataTableInited = false
-var currentDataView = 'hop-bbm'  // 'neraca-daya', 'hop-bbm', atau 'stock-oli'
+var currentDataView = 'neraca-daya'  // 'neraca-daya', 'hop-bbm', atau 'stock-oli'
 var oliTableInited     = false
 var neracaTableInited  = false
 
@@ -2598,18 +2647,31 @@ function switchDataView(view) {
   currentDataView = view
   // Update active state of sub-tab buttons
   document.getElementById('subtab-btn-neraca-daya').classList.toggle('active', view === 'neraca-daya')
+  document.getElementById('subtab-btn-sfc').classList.toggle('active', view === 'sfc')
   document.getElementById('subtab-btn-hop-bbm').classList.toggle('active', view === 'hop-bbm')
   document.getElementById('subtab-btn-stock-oli').classList.toggle('active', view === 'stock-oli')
   // Show/hide wrappers
   document.getElementById('neraca-table-wrap').classList.toggle('hidden', view !== 'neraca-daya')
+  document.getElementById('sfc-table-wrap').classList.toggle('hidden', view !== 'sfc')
   document.getElementById('data-table-wrap').classList.toggle('hidden', view !== 'hop-bbm')
   document.getElementById('oli-table-wrap').classList.toggle('hidden', view !== 'stock-oli')
-  // Show/hide input tanggal vs bulan
+  // Show/hide tombol download Excel (hanya di neraca daya)
+  var btnDl = document.getElementById('btn-download-neraca')
+  if (btnDl) btnDl.style.display = (view === 'neraca-daya') ? '' : 'none'
+  // Show/hide tombol Resume (hanya di neraca daya)
+  var btnResume = document.getElementById('btn-resume-data')
+  if (btnResume) btnResume.style.display = (view === 'neraca-daya') ? '' : 'none'
+  // Show/hide filter ULD (hanya di SFC)
+  var sfcFilter = document.getElementById('sfc-filter-wrap')
+  if (sfcFilter) sfcFilter.style.display = (view === 'sfc') ? 'flex' : 'none'
+  // Show/hide input tanggal
   var dateWrap = document.getElementById('data-subtab-date-wrap')
   dateWrap.style.display = ''
   var tanggal = document.getElementById('data-tanggal').value
   if (view === 'neraca-daya') {
     if (tanggal) loadNeracaDayaTab()
+  } else if (view === 'sfc') {
+    if (tanggal) loadSfcTab()
   } else if (view === 'hop-bbm') {
     if (tanggal) loadDataTab()
   } else {
@@ -2617,8 +2679,188 @@ function switchDataView(view) {
   }
 }
 
+// ── Download Excel Neraca Daya ────────────────────────────────────────────
+async function downloadNeracaExcel() {
+  var tanggal = document.getElementById('data-tanggal').value
+  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu', 'info'); return }
+
+  var btn = document.getElementById('btn-download-neraca')
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Memuat...' }
+
+  try {
+    var res  = await fetch('/api/neraca-daya?tanggal=' + tanggal)
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error || 'Gagal memuat data')
+
+    var rows = json.data   // array per unit
+
+    // Urutan kode_unit sesuai format template Excel
+    var NERACA_ORDER = [399, 390, 382, 391, 376, 373, 395, 375, 366, 910, 911, 385, 913, 915, 920, 917, 918, 919, 372]
+    // Map ID template (kolom B) sesuai urutan
+    var NERACA_ID_MAP = {
+      399: 560, 390: 561, 382: 562, 391: 563, 376: 564,
+      373: 566, 395: 569, 375: 571, 366: 800, 910: 804,
+      911: 801, 385: 805, 913: 811, 915: 322, 920: 324,
+      917: 338, 918: 1202, 919: 1203, 372: 2760
+    }
+    // Sort rows sesuai NERACA_ORDER, unit tidak dikenal taruh di akhir
+    var rowMap = {}
+    rows.forEach(function(r) { rowMap[r.kode_unit] = r })
+    var sortedRows = []
+    NERACA_ORDER.forEach(function(ku) { if (rowMap[ku]) sortedRows.push(rowMap[ku]) })
+    // Tambah unit yang tidak ada di NERACA_ORDER (jika ada)
+    rows.forEach(function(r) {
+      if (NERACA_ORDER.indexOf(r.kode_unit) === -1) sortedRows.push(r)
+    })
+    rows = sortedRows
+
+    var tglParts = tanggal.split('-')
+    var tglLabel = tglParts[2] + '.' + tglParts[1] + '.' + tglParts[0]  // DD.MM.YYYY
+
+    // ── Nama bulan Indonesia ─────────────────────────────────────────────
+    var BULAN_ID = ['Januari','Februari','Maret','April','Mei','Juni',
+                    'Juli','Agustus','September','Oktober','November','Desember']
+
+    // ── Build data array untuk SheetJS ──────────────────────────────────
+    // Header row
+    var header = [
+      'No','ID','Jenis','Sistem','Waktu',
+      'DMP (MW)','Captive Power (MW)','Beban Puncak (MW)','Cadangan (MW)',
+      'Kirim (MW)','ID Sistem Penerima','Terima (MW)','ID Sistem Pengirim',
+      'Status','Unit Tidak Siap','Keterangan'
+    ]
+
+    var wsData = [header]
+
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i]
+      var no     = i + 1
+      var id     = NERACA_ID_MAP[r.kode_unit] || r.kode_unit
+      var jenis  = 'ULD'
+      var sistem = (r.nama_unit || '-').replace(/^ULD /i, 'PLTD ')
+
+      // Hitung cadangan siang & malam (MW — dibagi 1000 karena data dalam kW)
+      var dmp      = r.dm_pasok          != null ? r.dm_pasok / 1000          : null
+      var bpSiang  = r.beban_puncak_siang != null ? r.beban_puncak_siang / 1000 : null
+      var bpMalam  = r.beban_puncak_malam != null ? r.beban_puncak_malam / 1000 : null
+      var cadSiang = (dmp != null && bpSiang != null) ? Math.round((dmp - bpSiang) * 1000) / 1000 : null
+      var cadMalam = (dmp != null && bpMalam != null) ? Math.round((dmp - bpMalam) * 1000) / 1000 : null
+
+      // Status (berdasarkan cadangan malam)
+      var status = '-'
+      if (cadMalam !== null) {
+        var maxDm = r.max_dm != null ? r.max_dm / 1000 : 0
+        if (cadMalam < 0)                          status = 'DEFISIT'
+        else if (cadMalam >= 0 && cadMalam < maxDm) status = 'SIAGA'
+        else                                        status = 'NORMAL'
+      }
+
+      // Baris Siang
+      wsData.push([
+        no, id, jenis, sistem, 'Siang',
+        dmp     != null ? Math.round(dmp     * 1000) / 1000 : '',
+        '',   // Captive Power
+        bpSiang != null ? Math.round(bpSiang * 1000) / 1000 : '',
+        '',   // Cadangan — dikosongkan
+        '', '', '', '',  // Kirim, ID Penerima, Terima, ID Pengirim
+        '',   // Status — dikosongkan
+        '', ''
+      ])
+
+      // Baris Malam
+      wsData.push([
+        '', id, jenis, '', 'Malam',
+        dmp     != null ? Math.round(dmp     * 1000) / 1000 : '',
+        '',
+        bpMalam != null ? Math.round(bpMalam * 1000) / 1000 : '',
+        '',   // Cadangan — dikosongkan
+        '', '', '', '',
+        '',   // Status — dikosongkan
+        '', ''
+      ])
+    }
+
+    // ── Buat workbook SheetJS ────────────────────────────────────────────
+    var wb = XLSX.utils.book_new()
+    var ws = XLSX.utils.aoa_to_sheet(wsData)
+
+    // ── Merge kolom No, ID, Jenis, Sistem untuk tiap unit (2 baris per unit) ──
+    // Baris header = index 0 → data mulai baris 1 (row Excel = 2)
+    // Setiap unit = 2 baris: baris Siang (genap) dan Malam (ganjil)
+    var merges = []
+    for (var mi = 0; mi < rows.length; mi++) {
+      var rSiang = 1 + mi * 2  // index wsData (0-based), baris Siang
+      var rMalam = rSiang + 1  // baris Malam
+      // Hanya kolom D=3(Sistem) yang di-merge
+      merges.push({ s: { r: rSiang, c: 3 }, e: { r: rMalam, c: 3 } })
+    }
+    ws['!merges'] = merges
+
+    // Lebar kolom
+    ws['!cols'] = [
+      { wch: 4  },  // No
+      { wch: 6  },  // ID
+      { wch: 6  },  // Jenis
+      { wch: 24 },  // Sistem
+      { wch: 7  },  // Waktu
+      { wch: 10 },  // DMP
+      { wch: 16 },  // Captive Power
+      { wch: 16 },  // Beban Puncak
+      { wch: 13 },  // Cadangan
+      { wch: 10 },  // Kirim
+      { wch: 18 },  // ID Sistem Penerima
+      { wch: 11 },  // Terima
+      { wch: 18 },  // ID Sistem Pengirim
+      { wch: 10 },  // Status
+      { wch: 18 },  // Unit Tidak Siap
+      { wch: 20 },  // Keterangan
+    ]
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Neraca Daya')
+
+    // ── Sheet Kesiapan Pembangkit ────────────────────────────────────────
+    var ksHeader = [
+      'No', 'ID', 'Jenis', 'Sistem',
+      'Total Daya Terpasang (MW)', 'DMN (MW)', 'Unit Terbesar (MW)'
+    ]
+    var ksData = [ksHeader]
+    for (var ki = 0; ki < rows.length; ki++) {
+      var kr   = rows[ki]
+      var kNo  = ki + 1
+      var kId  = NERACA_ID_MAP[kr.kode_unit] || kr.kode_unit
+      var kSis = (kr.nama_unit || '-').replace(/^ULD /i, 'PLTD ')
+      var kDtp = kr.dm_terpasang != null ? Math.round(kr.dm_terpasang / 1000 * 1000) / 1000 : ''
+      var kDmn = kr.dm_pasok    != null ? Math.round(kr.dm_pasok    / 1000 * 1000) / 1000 : ''
+      var kMax = kr.max_dm      != null ? Math.round(kr.max_dm      / 1000 * 1000) / 1000 : ''
+      ksData.push([kNo, kId, 'ULD', kSis, kDtp, kDmn, kMax])
+    }
+    var wsKs = XLSX.utils.aoa_to_sheet(ksData)
+    wsKs['!cols'] = [
+      { wch: 4  },  // No
+      { wch: 6  },  // ID
+      { wch: 6  },  // Jenis
+      { wch: 24 },  // Sistem
+      { wch: 24 },  // Total Daya Terpasang
+      { wch: 12 },  // DMN
+      { wch: 18 },  // Unit Terbesar
+    ]
+    XLSX.utils.book_append_sheet(wb, wsKs, 'Kesiapan Pembangkit')
+
+    // Nama file: "Neraca Daya DD.MM.YYYY.xlsx"
+    var fileName = 'UID KSKT ' + tglLabel + '.xlsx'
+    XLSX.writeFile(wb, fileName)
+    showToast('File Excel berhasil diunduh!', 'success')
+
+  } catch(e) {
+    showToast('Gagal download: ' + e.message, 'error')
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'EXCEL' }
+  }
+}
+
 function onDataTanggalChange() {
   if (currentDataView === 'neraca-daya') loadNeracaDayaTab()
+  else if (currentDataView === 'sfc') loadSfcTab()
   else if (currentDataView === 'hop-bbm') loadDataTab()
   else loadStockOliTab()
 }
@@ -2781,7 +3023,7 @@ async function loadNeracaDayaTab() {
         var bgC = statusBgColor(ds)
         var txC = statusTxtColor(ds)
         var lbl = ''  // hanya warna, tanpa teks
-        tbody += '<td style="text-align:center;padding:4px 2px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;background:' + bgC + ';color:' + txC + ';font-size:0.65rem;font-weight:700;min-width:28px;" title="' + (ds||'Tidak ada data') + '">' + lbl + '</td>'
+        tbody += '<td onclick="showNeracaDetailPopup(' + r.kode_unit + ',\'' + (r.nama_unit||'-').replace(/'/g,"\\'") + '\',\'' + tgl + '\')" style="cursor:pointer;text-align:center;padding:4px 2px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;background:' + bgC + ';color:' + txC + ';font-size:0.65rem;font-weight:700;min-width:28px;" title="' + (ds||'Tidak ada data') + ' — klik untuk detail">' + lbl + '</td>'
       }
       tbody += '</tr>'
     }
@@ -2834,6 +3076,635 @@ async function loadNeracaDayaTab() {
   } finally {
     showLoading(false, 'loading-indicator-data')
   }
+}
+
+// ── Popup detail mesin per ULD ────────────────────────────────────────────
+// State edit popup (client-side only, tidak menyentuh database)
+var _popupEditMode   = false
+var _popupEditedData = []   // copy data dari API, bisa diubah user
+var _popupOrigBp     = null // BP asli dari neraca (tidak berubah saat edit)
+var _popupKodeUnit   = null // kode_unit popup aktif
+var _popupAllMesin   = []   // semua mesin unit ini dari mesin_cache
+
+function _statusStyle(s) {
+  if (s === 'Operasi')      return 'background:#d1fae5;color:#065f46;'
+  if (s === 'Standby')      return 'background:#dbeafe;color:#1e40af;'
+  if (s === 'Pemeliharaan') return 'background:#fef3c7;color:#92400e;'
+  if (s === 'Gangguan')     return 'background:#fee2e2;color:#991b1b;'
+  if (s === 'Rusak')        return 'background:#fce7f3;color:#9d174d;'
+  return 'background:#f1f5f9;color:#64748b;'
+}
+function _sfcStyle(sfc) {
+  if (sfc === null) return 'color:#94a3b8;'
+  if (sfc <= 0.3157) return 'color:#16a34a;font-weight:700;'
+  if (sfc <= 0.3188) return 'color:#d97706;font-weight:700;'
+  return 'color:#dc2626;font-weight:700;'
+}
+function _fmtKW(v) { return (v != null && v !== 'null') ? Number(v).toLocaleString('id-ID') + ' kW' : '-' }
+
+// Hitung ulang info bar dari editedData (client-side)
+function _recalcInfoBar() {
+  var infoBar = document.getElementById('modal-detail-infobar')
+  if (!infoBar) return
+  // DMN = SUM DM mesin yang bukan Rusak & Gangguan
+  var newDmn  = 0
+  var newMaks = 0
+  for (var i = 0; i < _popupEditedData.length; i++) {
+    var m = _popupEditedData[i]
+    var st = m.status_mesin || '-'
+    if (st !== 'Rusak' && st !== 'Gangguan') {
+      var dm = m.daya_mampu != null ? Number(m.daya_mampu) : 0
+      newDmn += dm
+      if (dm > newMaks) newMaks = dm
+    }
+  }
+  var bp  = _popupOrigBp != null ? Number(_popupOrigBp) : 0
+  var cad = newDmn - bp
+  var n1  = cad - newMaks
+  var newStatusTxt, scBg, scTx
+  if (cad < 0)              { newStatusTxt = 'DEFISIT'; scBg = '#fee2e2'; scTx = '#c0392b' }
+  else if (cad < newMaks)   { newStatusTxt = 'SIAGA';   scBg = '#fef3c7'; scTx = '#e67e22' }
+  else                      { newStatusTxt = 'NORMAL';   scBg = '#dcfce7'; scTx = '#27ae60' }
+
+  var cols = [
+    { label: 'DMN',    val: _fmtKW(newDmn) },
+    { label: 'BP',     val: _fmtKW(bp) },
+    { label: 'CAD',    val: _fmtKW(cad) },
+    { label: 'MAKS',   val: _fmtKW(newMaks) },
+    { label: 'N-1',    val: _fmtKW(n1) },
+    { label: 'STATUS', val: null }
+  ]
+  var cellStyle     = 'flex:1;text-align:center;padding:6px 4px;border-right:1px solid #e2e8f0;'
+  var cellStyleLast = 'flex:1;text-align:center;padding:6px 4px;'
+  var row1 = '', row2 = ''
+  for (var ci = 0; ci < cols.length; ci++) {
+    var cs = ci < cols.length - 1 ? cellStyle : cellStyleLast
+    row1 += '<div style="' + cs + 'font-size:0.7rem;font-weight:600;color:#64748b;background:#f1f5f9;">' + cols[ci].label + '</div>'
+    if (cols[ci].label === 'STATUS') {
+      row2 += '<div style="' + cs + 'font-size:0.78rem;font-weight:700;"><span style="background:' + scBg + ';color:' + scTx + ';padding:2px 10px;border-radius:10px;font-size:0.72rem;">' + newStatusTxt + '</span></div>'
+    } else {
+      row2 += '<div style="' + cs + 'font-size:0.78rem;font-weight:700;color:#1e3a5f;">' + cols[ci].val + '</div>'
+    }
+  }
+  infoBar.innerHTML =
+    '<div style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:10px;">'
+    + '<div style="display:flex;border-bottom:1px solid #e2e8f0;">' + row1 + '</div>'
+    + '<div style="display:flex;">' + row2 + '</div>'
+    + '</div>'
+}
+
+// Render tabel isi popup (view mode atau edit mode)
+function _renderPopupTable() {
+  var body = document.getElementById('modal-detail-body')
+  if (!body) return
+  var em = _popupEditMode
+  var inputBase = 'font-size:0.75rem;border:1px solid #93c5fd;border-radius:4px;padding:3px 4px;width:100%;box-sizing:border-box;text-align:center;'
+  var statOpts  = ['Operasi','Standby','Pemeliharaan','Gangguan','Rusak']
+
+  // colgroup — tambah kolom Aksi saat edit mode
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:0.78rem;table-layout:fixed;">'
+  if (em) {
+    html += '<colgroup><col style="width:36px"><col><col style="width:103px"><col style="width:81px"><col style="width:90px"><col style="width:90px"><col style="width:90px"><col style="width:73px"><col style="width:44px"></colgroup>'
+  } else {
+    html += '<colgroup><col style="width:36px"><col><col style="width:103px"><col style="width:81px"><col style="width:90px"><col style="width:90px"><col style="width:90px"><col style="width:73px"></colgroup>'
+  }
+  html += '<thead><tr style="background:#1e3a5f;color:#fff;">'
+  html += '<th style="padding:8px 4px;text-align:center;border-right:1px solid #2d5a8e;font-size:0.78rem;font-weight:600;">No</th>'
+  html += '<th style="padding:8px 10px;text-align:center;border-right:1px solid #2d5a8e;font-size:0.78rem;font-weight:600;">Mesin</th>'
+  html += '<th style="padding:8px 6px;text-align:center;border-right:1px solid #2d5a8e;font-size:0.78rem;font-weight:600;">Status</th>'
+  html += '<th style="padding:8px 6px;text-align:center;border-right:1px solid #2d5a8e;font-size:0.78rem;font-weight:600;">DM (kW)</th>'
+  html += '<th style="padding:8px 6px;text-align:center;border-right:1px solid #2d5a8e;font-size:0.78rem;font-weight:600;">Beban (kW)</th>'
+  html += '<th style="padding:8px 6px;text-align:center;border-right:1px solid #2d5a8e;font-size:0.78rem;font-weight:600;">BBM (L)</th>'
+  html += '<th style="padding:8px 6px;text-align:center;border-right:1px solid #2d5a8e;font-size:0.78rem;font-weight:600;">kWh</th>'
+  html += '<th style="padding:8px 6px;text-align:center;' + (em ? 'border-right:1px solid #2d5a8e;' : '') + 'font-size:0.78rem;font-weight:600;">SFC</th>'
+  if (em) html += '<th style="padding:8px 4px;text-align:center;font-size:0.78rem;font-weight:600;"></th>'
+  html += '</tr></thead><tbody>'
+
+  for (var i = 0; i < _popupEditedData.length; i++) {
+    var m  = _popupEditedData[i]
+    var bg = i % 2 === 0 ? '#fff' : '#f8fafc'
+    var isNew = !!m._isNew  // mesin yang ditambahkan manual
+    html += '<tr style="background:' + (isNew ? '#f0fdf4' : bg) + ';' + (isNew ? 'outline:1px solid #86efac;outline-offset:-1px;' : '') + '">'
+    html += '<td style="padding:7px 6px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;text-align:center;">' + (i+1) + '</td>'
+    html += '<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;text-align:left;font-size:0.75rem;">' + (m.nama_mesin || '-') + (isNew ? ' <span style="font-size:0.65rem;background:#bbf7d0;color:#166534;padding:1px 5px;border-radius:8px;font-weight:600;">BARU</span>' : '') + '</td>'
+
+    // Status
+    if (em) {
+      html += '<td style="padding:4px 6px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">'
+      html += '<select onchange="_onPopupFieldChange(' + i + ',\'status_mesin\',this.value)" style="' + inputBase + 'background:#fff;">'
+      for (var si = 0; si < statOpts.length; si++) {
+        var sel = (m.status_mesin === statOpts[si]) ? ' selected' : ''
+        html += '<option value="' + statOpts[si] + '"' + sel + '>' + statOpts[si] + '</option>'
+      }
+      html += '</select></td>'
+    } else {
+      html += '<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;text-align:center;">'
+      html += '<span style="padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;' + _statusStyle(m.status_mesin) + '">' + (m.status_mesin || '-') + '</span></td>'
+    }
+
+    // DM (kW)
+    if (em) {
+      html += '<td style="padding:4px 6px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">'
+      html += '<input type="number" min="0" value="' + (m.daya_mampu != null ? m.daya_mampu : '') + '" onchange="_onPopupFieldChange(' + i + ',\'daya_mampu\',this.value)" style="' + inputBase + '"/></td>'
+    } else {
+      html += '<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;text-align:center;">' + (m.daya_mampu != null ? m.daya_mampu.toLocaleString('id-ID') : '-') + '</td>'
+    }
+
+    // Beban, BBM, kWh — read-only
+    html += '<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;text-align:center;">' + (m.beban != null ? m.beban.toLocaleString('id-ID') : '-') + '</td>'
+    html += '<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;text-align:center;">' + (m.pemakaian_bbm != null ? m.pemakaian_bbm.toLocaleString('id-ID') : '-') + '</td>'
+    html += '<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;text-align:center;">' + (m.kwh_produksi != null ? m.kwh_produksi.toLocaleString('id-ID') : '-') + '</td>'
+    html += '<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;' + (em ? 'border-right:1px solid #e2e8f0;' : '') + 'text-align:center;' + _sfcStyle(m.sfc) + '">' + (m.sfc != null ? m.sfc.toFixed(4) : '-') + '</td>'
+
+    // Kolom Aksi — hanya saat edit mode, hanya mesin _isNew yang bisa dihapus
+    if (em) {
+      if (isNew) {
+        html += '<td style="padding:4px 2px;border-bottom:1px solid #e2e8f0;text-align:center;">'
+        html += '<button onclick="_hapusMesinDariPopup(' + i + ')" style="background:#fee2e2;color:#dc2626;border:none;border-radius:4px;padding:3px 7px;font-size:0.72rem;font-weight:700;cursor:pointer;">✕</button></td>'
+      } else {
+        html += '<td style="border-bottom:1px solid #e2e8f0;"></td>'
+      }
+    }
+    html += '</tr>'
+  }
+  html += '</tbody></table>'
+
+  // Footer
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px;">'
+  html += '<div style="display:flex;gap:12px;font-size:0.7rem;flex-wrap:wrap;">'
+  html += '<span style="color:#16a34a;font-weight:600;">● SFC ≤ 0.3157 (KPI)</span>'
+  html += '<span style="color:#d97706;font-weight:600;">● 0.3157 &lt; SFC ≤ 0.3188 (SLA)</span>'
+  html += '<span style="color:#dc2626;font-weight:600;">● SFC &gt; 0.3188 (Tidak Tercapai)</span>'
+  html += '</div>'
+  if (em) {
+    html += '<button onclick="_showTambahMesinPicker()" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;white-space:nowrap;">+ TAMBAH MESIN</button>'
+  }
+  html += '</div>'
+  if (em) {
+    html += '<div style="margin-top:8px;padding:6px 10px;background:#fef9c3;border:1px solid #fde68a;border-radius:6px;font-size:0.72rem;color:#92400e;">'
+    html += '⚠️ Mode edit aktif — perubahan hanya tampilan, tidak tersimpan ke database.'
+    html += '</div>'
+  }
+  body.innerHTML = html
+}
+
+// Tampilkan picker mesin yang belum ada di popup
+function _showTambahMesinPicker() {
+  // _popupAllMesin berisi SEMUA mesin unit (has_data=true & false) dari detail-mesin LEFT JOIN
+  // available  = mesin yang has_data=false (belum ada data di tanggal ini) → bisa ditambahkan
+  // alreadyIn  = mesin yang has_data=true (sudah ada di tabel) → hanya info
+  var available = []
+  var alreadyIn = []
+  for (var j = 0; j < _popupAllMesin.length; j++) {
+    var m = _popupAllMesin[j]
+    if (m.has_data) alreadyIn.push(m)
+    else available.push(m)
+  }
+
+  // Buat overlay picker
+  var existing = document.getElementById('_popup-mesin-picker')
+  if (existing) existing.remove()
+
+  var picker = document.createElement('div')
+  picker.id = '_popup-mesin-picker'
+  picker.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;'
+
+  var inner = '<div style="background:#fff;border-radius:10px;padding:16px;width:520px;max-width:94vw;max-height:75vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.2);">'
+  inner += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-shrink:0;">'
+  inner += '<b style="font-size:0.9rem;color:#1e3a5f;">Tambah Mesin ke Tabel</b>'
+  inner += '<button onclick="document.getElementById(\'_popup-mesin-picker\').remove()" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:#64748b;line-height:1;">✕</button>'
+  inner += '</div>'
+  inner += '<div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;">'
+
+  // ── Mesin yang belum ada di tabel (bisa ditambahkan) ──
+  if (available.length > 0) {
+    inner += '<div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;padding:2px 0 4px;">Belum ditampilkan (' + available.length + ')</div>'
+    for (var ai = 0; ai < available.length; ai++) {
+      var am = available[ai]
+      inner += '<div onclick="_tambahMesinKePopup(' + am.id_mesin + ')" style="padding:8px 12px;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer;font-size:0.78rem;background:#f0f9ff;" onmouseover="this.style.background=\'#dbeafe\'" onmouseout="this.style.background=\'#f0f9ff\'">'
+      inner += '<div style="font-weight:600;color:#1e3a5f;">' + (am.nama_mesin || am.mesin || '-') + '</div>'
+      inner += '<div style="color:#64748b;font-size:0.7rem;margin-top:2px;">DM Terpasang: ' + (am.terpasang != null ? am.terpasang + ' kW' : '-') + '</div>'
+      inner += '</div>'
+    }
+  }
+
+  // ── Mesin yang sudah ada di tabel (disabled, info saja) ──
+  if (alreadyIn.length > 0) {
+    inner += '<div style="font-size:0.7rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;padding:' + (available.length > 0 ? '10px' : '2px') + ' 0 4px;">Sudah ditampilkan (' + alreadyIn.length + ')</div>'
+    for (var bi = 0; bi < alreadyIn.length; bi++) {
+      var bm = alreadyIn[bi]
+      inner += '<div style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:0.78rem;background:#f8fafc;opacity:0.7;">'
+      inner += '<div style="font-weight:600;color:#94a3b8;">' + (bm.nama_mesin || bm.mesin || '-') + '</div>'
+      inner += '<div style="color:#94a3b8;font-size:0.7rem;margin-top:2px;">DM Terpasang: ' + (bm.terpasang != null ? bm.terpasang + ' kW' : '-') + ' · Sudah ada di tabel</div>'
+      inner += '</div>'
+    }
+  }
+
+  // Jika _popupAllMesin kosong sama sekali
+  if (_popupAllMesin.length === 0) {
+    inner += '<div style="text-align:center;padding:20px;color:#94a3b8;font-size:0.8rem;">Tidak ada data mesin untuk unit ini</div>'
+  }
+
+  inner += '</div>'
+
+  // Footer info jika semua sudah ada
+  if (available.length === 0 && alreadyIn.length > 0) {
+    inner += '<div style="margin-top:10px;padding:8px 10px;background:#fef9c3;border-radius:6px;font-size:0.72rem;color:#92400e;flex-shrink:0;">Semua mesin unit ini sudah ditampilkan di tabel. Tambah mesin baru lewat menu <b>Pengaturan Mesin</b>.</div>'
+  }
+
+  inner += '</div>'
+  picker.innerHTML = inner
+  picker.addEventListener('click', function(e) { if (e.target === picker) picker.remove() })
+  document.body.appendChild(picker)
+}
+
+// Tambah mesin yang dipilih ke tabel popup
+function _tambahMesinKePopup(idMesin) {
+  var picker = document.getElementById('_popup-mesin-picker')
+  if (picker) picker.remove()
+  var mesin = null
+  for (var i = 0; i < _popupAllMesin.length; i++) {
+    if (_popupAllMesin[i].id_mesin === idMesin) { mesin = _popupAllMesin[i]; break }
+  }
+  if (!mesin) return
+  _popupEditedData.push({
+    id_mesin:      mesin.id_mesin,
+    nama_mesin:    mesin.nama_mesin || mesin.mesin || '-',
+    terpasang:     mesin.terpasang,
+    status_mesin:  'Standby',
+    daya_mampu:    mesin.terpasang != null ? mesin.terpasang : null,
+    beban:         null,
+    pemakaian_bbm: null,
+    kwh_produksi:  null,
+    sfc:           null,
+    _isNew:        true
+  })
+  _renderPopupTable()
+  _recalcInfoBar()
+}
+
+// Hapus mesin (hanya yang _isNew) dari tabel popup
+function _hapusMesinDariPopup(idx) {
+  _popupEditedData.splice(idx, 1)
+  _renderPopupTable()
+  _recalcInfoBar()
+}
+
+// Dipanggil saat user ubah nilai di input/select
+function _onPopupFieldChange(idx, field, val) {
+  if (field === 'daya_mampu') {
+    _popupEditedData[idx].daya_mampu = val !== '' ? Number(val) : null
+  } else if (field === 'status_mesin') {
+    _popupEditedData[idx].status_mesin = val
+  }
+  _recalcInfoBar()
+}
+
+// Toggle mode edit / selesai
+function togglePopupEditMode() {
+  _popupEditMode = !_popupEditMode
+  var btn = document.getElementById('btn-popup-edit')
+  if (btn) {
+    if (_popupEditMode) {
+      btn.textContent = 'SELESAI'
+      btn.style.background = '#16a34a'
+    } else {
+      btn.textContent = 'EDIT'
+      btn.style.background = '#1e3a5f'
+    }
+  }
+  _renderPopupTable()
+  _recalcInfoBar()
+}
+
+async function showNeracaDetailPopup(kodeUnit, namaUnit, tanggal) {
+  // Reset state edit setiap kali popup dibuka
+  _popupEditMode   = false
+  _popupEditedData = []
+  _popupOrigBp     = 0
+
+  var modal   = document.getElementById('modal-detail-mesin')
+  var title   = document.getElementById('modal-detail-title')
+  var sub     = document.getElementById('modal-detail-sub')
+  var loading = document.getElementById('modal-detail-loading')
+  var body    = document.getElementById('modal-detail-body')
+  var infoBar = document.getElementById('modal-detail-infobar')
+
+  // Judul & tanggal
+  title.textContent = namaUnit
+  var tglParts  = tanggal.split('-')
+  var tglObj    = new Date(Number(tglParts[0]), Number(tglParts[1]) - 1, Number(tglParts[2]))
+  var namaBulan = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
+  sub.textContent = tglObj.getDate() + ' ' + namaBulan[tglObj.getMonth()] + ' ' + tglObj.getFullYear()
+
+  // Tombol Edit — reset ke state awal
+  var btnEdit = document.getElementById('btn-popup-edit')
+  if (btnEdit) { btnEdit.textContent = 'EDIT'; btnEdit.style.background = '#1e3a5f' }
+
+  // Kosongkan info bar & body, tampilkan loading
+  if (infoBar) infoBar.innerHTML = ''
+  body.innerHTML = ''
+  loading.style.display = 'block'
+  modal.classList.remove('hidden')
+
+  try {
+    // Fetch data mesin (ALL via LEFT JOIN + has_data flag) dan neraca (parallel)
+    // detail-mesin sudah return semua mesin unit + flag has_data, tidak perlu mesin-unit lagi
+    var [resMesin, resNeraca] = await Promise.all([
+      fetch('/api/detail-mesin?kode_unit=' + kodeUnit + '&tanggal=' + tanggal),
+      fetch('/api/neraca-daya?tanggal=' + tanggal)
+    ])
+    var jsonMesin  = await resMesin.json()
+    var jsonNeraca = await resNeraca.json()
+    if (!jsonMesin.success) throw new Error(jsonMesin.error)
+    // _popupAllMesin = SEMUA mesin unit (termasuk yang belum punya data hari ini)
+    _popupKodeUnit = kodeUnit
+    _popupAllMesin = jsonMesin.data || []
+
+    // Ambil data neraca unit ini sesuai tanggal diklik
+    if (jsonNeraca.success && jsonNeraca.data) {
+      var unitNeraca = jsonNeraca.data.find(function(u) { return u.kode_unit === kodeUnit })
+      if (unitNeraca) {
+        var dmn  = unitNeraca.dm_pasok            != null ? unitNeraca.dm_pasok            : null
+        var bp   = unitNeraca.beban_puncak_malam  != null ? unitNeraca.beban_puncak_malam  : null
+        var maks = unitNeraca.max_dm              != null ? unitNeraca.max_dm              : null
+        var cad  = (dmn != null && bp != null)    ? (dmn - bp)   : null
+        var n1   = (cad != null && maks != null)  ? (cad - maks) : null
+        var statusTxt, scBg, scTx
+        if (cad === null)        { statusTxt = '-';       scBg = '#f1f5f9'; scTx = '#64748b' }
+        else if (cad < 0)        { statusTxt = 'DEFISIT'; scBg = '#fee2e2'; scTx = '#c0392b' }
+        else if (cad < (maks||0)){ statusTxt = 'SIAGA';   scBg = '#fef3c7'; scTx = '#e67e22' }
+        else                     { statusTxt = 'NORMAL';  scBg = '#dcfce7'; scTx = '#27ae60' }
+        _popupOrigBp = bp != null ? Number(bp) : 0
+        // Render info bar
+        if (infoBar) {
+          var cols0 = [
+            { label: 'DMN',    val: _fmtKW(dmn) },
+            { label: 'BP',     val: _fmtKW(bp) },
+            { label: 'CAD',    val: _fmtKW(cad) },
+            { label: 'MAKS',   val: _fmtKW(maks) },
+            { label: 'N-1',    val: _fmtKW(n1) },
+            { label: 'STATUS', val: null }
+          ]
+          var cs0 = 'flex:1;text-align:center;padding:6px 4px;border-right:1px solid #e2e8f0;'
+          var cs0L = 'flex:1;text-align:center;padding:6px 4px;'
+          var r1 = '', r2 = ''
+          for (var ci = 0; ci < cols0.length; ci++) {
+            var csi = ci < cols0.length - 1 ? cs0 : cs0L
+            r1 += '<div style="' + csi + 'font-size:0.7rem;font-weight:600;color:#64748b;background:#f1f5f9;">' + cols0[ci].label + '</div>'
+            if (cols0[ci].label === 'STATUS') {
+              r2 += '<div style="' + csi + 'font-size:0.78rem;font-weight:700;"><span style="background:' + scBg + ';color:' + scTx + ';padding:2px 10px;border-radius:10px;font-size:0.72rem;">' + statusTxt + '</span></div>'
+            } else {
+              r2 += '<div style="' + csi + 'font-size:0.78rem;font-weight:700;color:#1e3a5f;">' + cols0[ci].val + '</div>'
+            }
+          }
+          infoBar.innerHTML =
+            '<div style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:10px;">'
+            + '<div style="display:flex;border-bottom:1px solid #e2e8f0;">' + r1 + '</div>'
+            + '<div style="display:flex;">' + r2 + '</div>'
+            + '</div>'
+        }
+      }
+    }
+
+    // editedData = hanya mesin yang punya data di tanggal ini (has_data=true)
+    // _popupAllMesin sudah berisi semua (has_data true & false) untuk picker
+    var mesinDenganData = (jsonMesin.data || []).filter(function(m) { return m.has_data })
+
+    if (mesinDenganData.length === 0) {
+      body.innerHTML = '<div style="text-align:center;padding:24px;color:#64748b;">Tidak ada data mesin untuk tanggal ini</div>'
+      return
+    }
+
+    // Simpan deep copy ke editedData (hanya mesin ber-data)
+    _popupEditedData = mesinDenganData.map(function(m) {
+      return {
+        id_mesin:      m.id_mesin,
+        nama_mesin:    m.nama_mesin,
+        terpasang:     m.terpasang,
+        status_mesin:  m.status_mesin,
+        daya_mampu:    m.daya_mampu,
+        beban:         m.beban,
+        pemakaian_bbm: m.pemakaian_bbm,
+        kwh_produksi:  m.kwh_produksi,
+        sfc:           m.sfc
+      }
+    })
+
+    _renderPopupTable()
+
+  } catch(e) {
+    body.innerHTML = '<div style="text-align:center;padding:16px;color:#dc2626;">Gagal memuat: ' + e.message + '</div>'
+  } finally {
+    loading.style.display = 'none'
+  }
+}
+
+// =============================================
+// SFC — Grafik Garis
+// =============================================
+var sfcChartInstance = null  // simpan instance Chart.js agar bisa di-destroy
+var sfcAllUnits      = []    // simpan semua data unit untuk filter
+var sfcAllDates      = []    // simpan semua tanggal
+
+async function loadSfcTab() {
+  var tanggal = document.getElementById('data-tanggal').value
+  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu', 'info'); return }
+
+  showLoading(true, 'loading-indicator-data')
+  document.getElementById('info-data-record').textContent = ''
+
+  try {
+    var res  = await fetch('/api/sfc-bulanan?tanggal=' + tanggal)
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error || 'Gagal memuat data SFC')
+
+    // Simpan ke variabel global untuk dipakai filter
+    sfcAllUnits = json.data
+    sfcAllDates = json.dates
+
+    // ── Populate dropdown ULD ────────────────────────────────────────────
+    var sel = document.getElementById('sfc-sel-uld')
+    var prevVal = sel.value  // pertahankan pilihan sebelumnya jika ada
+    sel.innerHTML = '<option value="">Semua ULD</option>'
+    sfcAllUnits.forEach(function(u) {
+      var opt = document.createElement('option')
+      opt.value = u.kode_unit
+      opt.textContent = u.nama_unit
+      if (String(u.kode_unit) === String(prevVal)) opt.selected = true
+      sel.appendChild(opt)
+    })
+
+    // Render chart sesuai filter
+    sfcRenderChart()
+
+    document.getElementById('info-data-record').textContent =
+      sfcAllUnits.length + ' unit | 30 hari terakhir'
+
+  } catch(e) {
+    showToast('Gagal memuat SFC: ' + e.message, 'error')
+  } finally {
+    showLoading(false, 'loading-indicator-data')
+  }
+}
+
+function onSfcUldChange() {
+  sfcRenderChart()
+}
+
+function sfcRenderChart() {
+  var tanggal = document.getElementById('data-tanggal').value
+  var selVal  = document.getElementById('sfc-sel-uld').value  // '' = semua
+
+  // Filter unit
+  var units = selVal
+    ? sfcAllUnits.filter(function(u) { return String(u.kode_unit) === String(selVal) })
+    : sfcAllUnits
+  var dates = sfcAllDates
+
+  // Label sumbu X: DD/MM
+  var labels = dates.map(function(d) {
+    var p = d.split('-'); return p[2] + '/' + p[1]
+  })
+
+  // Palet warna
+  var COLORS = [
+    '#2563eb','#dc2626','#16a34a','#d97706','#7c3aed',
+    '#0891b2','#be185d','#65a30d','#ea580c','#0f172a',
+    '#6366f1','#14b8a6','#f59e0b','#ef4444','#84cc16',
+    '#ec4899','#06b6d4','#f97316','#8b5cf6','#10b981'
+  ]
+
+  // Bangun datasets
+  var datasets = []
+  if (selVal && units.length === 1) {
+    // Mode per mesin — tampilkan garis tiap mesin dalam ULD terpilih
+    var mesinList = units[0].mesin || []
+    for (var i = 0; i < mesinList.length; i++) {
+      var m     = mesinList[i]
+      var color = COLORS[i % COLORS.length]
+      var data  = dates.map(function(d) {
+        var v = m.daily[d]; return (v != null) ? v : null
+      })
+      datasets.push({
+        label:           m.nama_mesin || ('Mesin ' + (i + 1)),
+        data:            data,
+        borderColor:     color,
+        backgroundColor: color + '22',
+        borderWidth:     2,
+        pointRadius:     3,
+        pointHoverRadius:6,
+        spanGaps:        true,
+        tension:         0.3
+      })
+    }
+  } else {
+    // Mode per ULD — satu garis per ULD
+    for (var i = 0; i < units.length; i++) {
+      var u     = units[i]
+      var color = COLORS[i % COLORS.length]
+      var data  = dates.map(function(d) {
+        var v = u.daily[d]; return (v != null) ? v : null
+      })
+      datasets.push({
+        label:           u.nama_unit || ('Unit ' + (i + 1)),
+        data:            data,
+        borderColor:     color,
+        backgroundColor: color + '22',
+        borderWidth:     2,
+        pointRadius:     3,
+        pointHoverRadius:6,
+        spanGaps:        true,
+        tension:         0.3
+      })
+    }
+  }
+
+  // Destroy chart lama
+  if (sfcChartInstance) { sfcChartInstance.destroy(); sfcChartInstance = null }
+
+  var canvas = document.getElementById('sfc-chart')
+  canvas.style.height = '460px'
+
+  var titleText = (selVal && units.length === 1)
+    ? 'SFC per Mesin — ' + (units[0] ? units[0].nama_unit : '') + ' — 30 Hari s/d ' + tanggal
+    : 'SFC (L/kWh) — Semua ULD — 30 Hari s/d ' + tanggal
+
+  sfcChartInstance = new Chart(canvas, {
+    type: 'line',
+    data: { labels: labels, datasets: datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { font: { size: 11 }, boxWidth: 16, padding: 10 }
+        },
+        title: {
+          display: true,
+          text: titleText,
+          font: { size: 13, weight: 'bold' },
+          color: '#1a3352',
+          padding: { bottom: 12 }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              var v = ctx.parsed.y
+              return ' ' + ctx.dataset.label + ': ' + (v != null ? v.toFixed(3) : '—')
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 10 }, maxRotation: 45, minRotation: 45 },
+          grid:  { color: '#e2e8f0' }
+        },
+        y: {
+          title: { display: true, text: 'SFC (L/kWh)', font: { size: 11 } },
+          ticks: { font: { size: 10 } },
+          grid:  { color: '#e2e8f0' },
+          afterDataLimits: function(axis) {
+            axis.min = Math.max(0, axis.min - 0.05)
+            axis.max = axis.max + 0.05
+          }
+        }
+      }
+    },
+    plugins: [{
+      id: 'sfcRefLines',
+      afterDraw: function(chart) {
+        var ctx2   = chart.ctx
+        var yAxis  = chart.scales.y
+        var xLeft  = chart.chartArea.left
+        var xRight = chart.chartArea.right
+        var refs   = [
+          { val: 0.3157, color: '#16a34a', label: 'KPI 0.3157' },
+          { val: 0.3188, color: '#d97706', label: 'SLA 0.3188' }
+        ]
+        refs.forEach(function(ref) {
+          var yPos = yAxis.getPixelForValue(ref.val)
+          if (yPos < chart.chartArea.top || yPos > chart.chartArea.bottom) return
+          ctx2.save()
+          ctx2.setLineDash([6, 4])
+          ctx2.strokeStyle = ref.color
+          ctx2.lineWidth   = 1.5
+          ctx2.beginPath()
+          ctx2.moveTo(xLeft,  yPos)
+          ctx2.lineTo(xRight, yPos)
+          ctx2.stroke()
+          ctx2.setLineDash([])
+          ctx2.fillStyle = ref.color
+          ctx2.font      = '10px sans-serif'
+          ctx2.fillText(ref.label, xLeft + 4, yPos - 4)
+          ctx2.restore()
+        })
+      }
+    }]
+  })
 }
 
 async function loadStockOliTab() {
@@ -3049,15 +3920,63 @@ document.addEventListener('click', function(e) {
 var SLD_IS_ADMIN   = false   // toggle via password
 var SLD_ADMIN_PASS = 'admin123'
 var sldCurrentUnit = null    // { kode_unit, nama_unit }
+var sldMesinList   = []      // daftar mesin untuk unit SLD aktif
 var sldElements    = []      // array of element objects
-var sldSelected    = null    // id of selected element
+var sldSelected    = null    // id of selected element (single)
+var sldMultiSel    = []      // array of id — multi-select untuk grouping
 var sldNextId      = 1
 var sldGridVisible = true
-var sldDragging    = null    // { id, startX, startY, origX, origY }
-var sldLineMode    = false   // sedang menggambar line
-var sldLineTmp     = null    // { x1,y1 } titik awal line sementara
-var sldLineTmpEl   = null    // SVG element sementara
+var sldDragging    = null    // { id, startX, startY, ... }
+var sldLineMode    = false
+var sldLineTmp     = null
+var sldLineTmpEl   = null
 var sldModified    = false
+// Drag-select (rubber-band)
+var sldSelBoxing   = false   // sedang drag selection box
+var sldSelBox      = null    // { x0,y0,x1,y1 } koordinat SVG
+
+// ── Undo / Redo ────────────────────────────────────────────────
+var sldUndoStack   = []      // array of { elements, nextId }
+var sldRedoStack   = []
+var SLD_HIST_MAX   = 50      // max history depth
+
+function sldHistoryPush() {
+  sldUndoStack.push({ elements: JSON.parse(JSON.stringify(sldElements)), nextId: sldNextId })
+  if (sldUndoStack.length > SLD_HIST_MAX) sldUndoStack.shift()
+  sldRedoStack = []           // mutasi baru → hapus redo stack
+  sldUpdateUndoBtn()
+}
+
+function sldUndo() {
+  if (!SLD_IS_ADMIN || sldUndoStack.length === 0) return
+  sldRedoStack.push({ elements: JSON.parse(JSON.stringify(sldElements)), nextId: sldNextId })
+  var snap = sldUndoStack.pop()
+  sldElements = snap.elements
+  sldNextId   = snap.nextId
+  sldSelected = null; sldMultiSel = []
+  sldModified = true
+  sldRender(); sldHideProps(); sldUpdateGroupBtn(); sldUpdateUndoBtn()
+  showToast('Undo', 'info')
+}
+
+function sldRedo() {
+  if (!SLD_IS_ADMIN || sldRedoStack.length === 0) return
+  sldUndoStack.push({ elements: JSON.parse(JSON.stringify(sldElements)), nextId: sldNextId })
+  var snap = sldRedoStack.pop()
+  sldElements = snap.elements
+  sldNextId   = snap.nextId
+  sldSelected = null; sldMultiSel = []
+  sldModified = true
+  sldRender(); sldHideProps(); sldUpdateGroupBtn(); sldUpdateUndoBtn()
+  showToast('Redo', 'info')
+}
+
+function sldUpdateUndoBtn() {
+  var bu = document.getElementById('sld-btn-undo')
+  var br = document.getElementById('sld-btn-redo')
+  if (bu) { bu.disabled = sldUndoStack.length === 0; bu.style.opacity = sldUndoStack.length === 0 ? '0.4' : '1' }
+  if (br) { br.disabled = sldRedoStack.length === 0; br.style.opacity = sldRedoStack.length === 0 ? '0.4' : '1' }
+}
 
 // ── Snap ke grid 20px ──────────────────────────────────────────
 function sldSnap(v) { return Math.round(v / 20) * 20 }
@@ -3091,10 +4010,17 @@ async function onSldUnitChange(val) {
   // Tampilkan tombol aksi admin
   var actEl = document.getElementById('sld-toolbar-actions')
   if (SLD_IS_ADMIN) { actEl.style.display = 'flex' } else { actEl.style.display = 'none' }
-  document.getElementById('sld-mode-label').textContent = SLD_IS_ADMIN ? 'Mode: EDIT' : 'Mode: VIEW (login admin untuk edit)'
-  document.getElementById('sld-admin-badge').style.display = 'flex'
+  document.getElementById('sld-mode-label').textContent = SLD_IS_ADMIN ? '🔓 Mode: EDIT (klik untuk logout)' : '🔒 Mode: VIEW (klik untuk login admin)'
 
   showLoading(true, 'loading-indicator-sld')
+  // Fetch daftar mesin untuk unit ini (dipakai dropdown label generator)
+  sldMesinList = []
+  try {
+    var mRes  = await fetch('/api/mesin-unit?kode_unit=' + val)
+    var mJson = await mRes.json()
+    if (mJson.success && mJson.data) sldMesinList = mJson.data
+  } catch(e) { /* abaikan, dropdown cukup kosong */ }
+
   try {
     var res  = await fetch('/api/sld/' + val)
     var json = await res.json()
@@ -3102,17 +4028,89 @@ async function onSldUnitChange(val) {
     sldElements = []
     sldNextId   = 1
     if (json.data && json.data.svg_data && json.data.svg_data.length > 0) {
+      // Ada data tersimpan — load langsung
       sldElements = json.data.svg_data
       sldNextId   = Math.max.apply(null, sldElements.map(function(e){ return e.id || 0 })) + 1
+      sldSelected = null
+      sldModified = false
+      sldRender()
+      sldHideProps()
+    } else {
+      // Belum ada SLD → auto-generate Generator dari daftar mesin
+      sldSelected = null
+      sldModified = false
+      await sldAutoGenerate(val)
     }
-    sldSelected  = null
-    sldModified  = false
-    sldRender()
-    sldHideProps()
   } catch(e) {
     showToast('Gagal memuat SLD: ' + e.message, 'error')
   } finally {
     showLoading(false, 'loading-indicator-sld')
+  }
+}
+
+// ── Auto-generate Generator dari daftar mesin ────────────────
+async function sldAutoGenerate(kodeUnit) {
+  if (!kodeUnit) kodeUnit = sldCurrentUnit && sldCurrentUnit.kode_unit
+  if (!kodeUnit) { showToast('Pilih unit dulu', 'info'); return }
+
+  var btnAg = document.getElementById('sld-btn-autogen')
+  if (btnAg) { btnAg.disabled = true; btnAg.textContent = '...' }
+
+  try {
+    var res  = await fetch('/api/mesin-unit?kode_unit=' + kodeUnit)
+    var json = await res.json()
+    if (!json.success || !json.data || json.data.length === 0) {
+      showToast('Tidak ada data mesin untuk unit ini', 'info')
+      sldRender(); sldHideProps(); return
+    }
+
+    var mesinList = json.data
+    var GEN_W   = 60    // lebar simbol generator
+    var GEN_H   = 60    // tinggi simbol generator
+    var CELL_W  = 100   // jarak antar generator — cukup untuk wrap 2 baris ~10 char
+    var START_X = 60    // mulai dari x=60
+    var START_Y = 100   // mulai dari y=100
+    var PER_ROW = 10    // max generator per baris
+
+    // Hapus hanya elemen generator lama, pertahankan elemen lain
+    sldElements = sldElements.filter(function(e){ return e.type !== 'generator' })
+
+    mesinList.forEach(function(m, i) {
+      var col = i % PER_ROW
+      var row = Math.floor(i / PER_ROW)
+      var ex  = START_X + col * CELL_W
+      var ey  = START_Y + row * 180   // baris berikutnya turun 180px
+
+      // Nama mesin (baris 1) + daya terpasang (baris 2)
+      var namaMesin = (m.nama_mesin || m.mesin || ('Mesin ' + (i + 1))).trim()
+      var dayaStr   = (m.terpasang != null && m.terpasang > 0)
+                      ? '\n' + m.terpasang + ' kW'
+                      : ''
+
+      sldElements.push({
+        id    : sldNextId++,
+        type  : 'generator',
+        x     : ex,
+        y     : ey,
+        w     : GEN_W,
+        h     : GEN_H,
+        label : namaMesin + dayaStr,
+        color : '#1e3a5f'
+      })
+    })
+
+    sldHistoryPush()
+    sldSelected = null
+    sldModified = true
+    sldRender()
+    sldHideProps()
+    var wrap = document.getElementById('sld-canvas-wrap')
+    if (wrap) { wrap.scrollLeft = 0; wrap.scrollTop = 0 }
+    showToast('Auto-generate ' + mesinList.length + ' generator selesai', 'success')
+  } catch(e) {
+    showToast('Gagal load mesin: ' + e.message, 'error')
+  } finally {
+    if (btnAg) { btnAg.disabled = false; btnAg.textContent = 'AUTO GEN' }
   }
 }
 
@@ -3121,7 +4119,7 @@ function sldAdminLogin() {
   if (SLD_IS_ADMIN) {
     SLD_IS_ADMIN = false
     document.getElementById('sld-toolbar-actions').style.display = 'none'
-    document.getElementById('sld-mode-label').textContent = 'Mode: VIEW (login admin untuk edit)'
+    document.getElementById('sld-mode-label').textContent = '🔒 Mode: VIEW (klik untuk login admin)'
     sldSelected = null
     sldRender()
     sldHideProps()
@@ -3132,7 +4130,7 @@ function sldAdminLogin() {
   if (pw === SLD_ADMIN_PASS) {
     SLD_IS_ADMIN = true
     document.getElementById('sld-toolbar-actions').style.display = 'flex'
-    document.getElementById('sld-mode-label').textContent = 'Mode: EDIT'
+    document.getElementById('sld-mode-label').textContent = '🔓 Mode: EDIT (klik untuk logout)'
     showToast('Mode admin aktif', 'success')
     sldRender()
   } else if (pw !== null) {
@@ -3173,22 +4171,22 @@ function sldRender() {
   compLayer.innerHTML = ''
   lineLayer.innerHTML  = ''
 
+  // Render elemen (skip type group — tidak ada visual)
   sldElements.forEach(function(el) {
     if (el.type === 'line') {
       sldRenderLine(lineLayer, el)
-    } else {
+    } else if (el.type !== 'group') {
       sldRenderComp(compLayer, el)
     }
   })
 
-  // Highlight selected
+  // Highlight single selected
   if (sldSelected !== null) {
     var selEl = document.getElementById('sld-el-' + sldSelected)
     if (selEl) {
-      var rect = document.createElementNS('http://www.w3.org/2000/svg','rect')
       var bb = selEl.getBBox ? selEl.getBBox() : { x:0,y:0,width:60,height:60 }
-      rect.setAttribute('x', bb.x - 4)
-      rect.setAttribute('y', bb.y - 4)
+      var rect = document.createElementNS('http://www.w3.org/2000/svg','rect')
+      rect.setAttribute('x', bb.x - 4);       rect.setAttribute('y', bb.y - 4)
       rect.setAttribute('width',  bb.width  + 8)
       rect.setAttribute('height', bb.height + 8)
       rect.setAttribute('fill', 'none')
@@ -3203,6 +4201,25 @@ function sldRender() {
   } else {
     document.getElementById('sld-btn-delete').style.display = 'none'
   }
+
+  // Highlight multi-select — outline biru per elemen
+  sldMultiSel.forEach(function(mid) {
+    var mel = document.getElementById('sld-el-' + mid)
+    if (!mel) return
+    var bb2 = mel.getBBox ? mel.getBBox() : { x:0,y:0,width:60,height:60 }
+    var mr = document.createElementNS('http://www.w3.org/2000/svg','rect')
+    mr.setAttribute('x', bb2.x - 3);  mr.setAttribute('y', bb2.y - 3)
+    mr.setAttribute('width',  bb2.width  + 6)
+    mr.setAttribute('height', bb2.height + 6)
+    mr.setAttribute('fill', 'rgba(14,165,233,0.10)')
+    mr.setAttribute('stroke', '#0ea5e9')
+    mr.setAttribute('stroke-width', '1.5')
+    mr.setAttribute('rx', '3')
+    mr.setAttribute('pointer-events', 'none')
+    compLayer.appendChild(mr)
+  })
+
+  sldUpdateGroupBtn()
 }
 
 // ── Render komponen (generator, trafo, busbar, cb, load, label) ─
@@ -3270,7 +4287,7 @@ function sldRenderComp(layer, el) {
   } else if (el.type === 'load') {
     var tri = document.createElementNS('http://www.w3.org/2000/svg','polygon')
     var hw = w/2
-    tri.setAttribute('points', hw+',6 '+(w-4)+','+(h-6)+' 4+','+(h-6))
+    tri.setAttribute('points', hw+',6 '+(w-4)+','+(h-6)+' 4,'+(h-6))
     tri.setAttribute('fill','#fff'); tri.setAttribute('stroke',color); tri.setAttribute('stroke-width','2.5')
     g.appendChild(tri)
     var lv = document.createElementNS('http://www.w3.org/2000/svg','line')
@@ -3289,16 +4306,67 @@ function sldRenderComp(layer, el) {
     g.appendChild(lt)
   }
 
-  // Label di bawah komponen (kecuali label itu sendiri)
+  // Label: generator → di bawah (tengah), semua tipe lain → di kanan (rata kiri)
   if (label && el.type !== 'label') {
+    var segments  = label.split('\n')
+    var namaPart  = segments[0] || ''
+    var dayaPart  = segments[1] || ''
+
+    // Word-wrap nama mesin
+    var WRAP_CH   = Math.max(10, Math.floor(w / 6.5))
+    var words     = namaPart.split(' ')
+    var namaLines = []
+    var cur       = ''
+    words.forEach(function(wd) {
+      if (!wd) return
+      var test = cur ? cur + ' ' + wd : wd
+      if (test.length > WRAP_CH && cur) { namaLines.push(cur); cur = wd }
+      else cur = test
+    })
+    if (cur) namaLines.push(cur)
+
+    var allLines  = namaLines.concat(dayaPart ? [dayaPart] : [])
+    var namaCount = namaLines.length
     var lbl = document.createElementNS('http://www.w3.org/2000/svg','text')
-    lbl.setAttribute('x', w/2)
-    lbl.setAttribute('y', h + 14)
-    lbl.setAttribute('text-anchor','middle')
-    lbl.setAttribute('font-size','11')
+    lbl.setAttribute('font-size','10')
     lbl.setAttribute('fill','#374151')
     lbl.setAttribute('font-weight','600')
-    lbl.textContent = label
+
+    if (el.type === 'generator') {
+      // Generator: label di bawah, tengah (perilaku lama)
+      lbl.setAttribute('x', w/2)
+      lbl.setAttribute('y', h + 14)
+      lbl.setAttribute('text-anchor','middle')
+      allLines.forEach(function(line, li) {
+        var ts = document.createElementNS('http://www.w3.org/2000/svg','tspan')
+        ts.setAttribute('x', w/2)
+        ts.setAttribute('dy', li === 0 ? '0' : '12')
+        if (li >= namaCount) { ts.setAttribute('fill','#2563eb'); ts.setAttribute('font-weight','400') }
+        ts.textContent = line
+        lbl.appendChild(ts)
+      })
+    } else {
+      // Semua tipe lain: label di kanan, vertikal tengah simbol
+      // lblX dihitung dari tepi kanan visual aktual (bukan dari w)
+      var lblX
+      if      (el.type === 'cb')    lblX = w/2 + 12 + 4  // kotak CB: x=w/2-12..w/2+12
+      else if (el.type === 'trafo') lblX = w * 0.65 + Math.min(w,h)*0.28 + 4  // lingkaran kanan trafo
+      else if (el.type === 'load')  lblX = w - 4 + 4     // tepi kanan segitiga
+      else                          lblX = w + 2          // default (busbar dll)
+      var lblY = h / 2 - (allLines.length - 1) * 6  // vertikal center
+      lbl.setAttribute('x', lblX)
+      lbl.setAttribute('y', lblY)
+      lbl.setAttribute('text-anchor','start')
+      allLines.forEach(function(line, li) {
+        var ts = document.createElementNS('http://www.w3.org/2000/svg','tspan')
+        ts.setAttribute('x', lblX)
+        ts.setAttribute('dy', li === 0 ? '0' : '12')
+        if (li >= namaCount) { ts.setAttribute('fill','#2563eb'); ts.setAttribute('font-weight','400') }
+        ts.textContent = line
+        lbl.appendChild(ts)
+      })
+    }
+
     g.appendChild(lbl)
   }
 
@@ -3317,35 +4385,211 @@ function sldConnPoint(g, cx, cy) {
   g.appendChild(c)
 }
 
+// ── Kumpulkan semua titik konektor dari semua komponen ────────
+// Return array of { x, y } dalam koordinat SVG absolut
+function sldAllConnectors() {
+  var pts = []
+  sldElements.forEach(function(el) {
+    if (el.type === 'line' || el.type === 'group') return
+    var w = el.w || 60, h = el.h || 60
+    var ax = el.x, ay = el.y  // translate offset
+    if (el.type === 'generator') {
+      pts.push({ x: ax + w/2, y: ay })
+    } else if (el.type === 'trafo') {
+      pts.push({ x: ax + w*0.35, y: ay })
+      pts.push({ x: ax + w*0.65, y: ay + h })
+    } else if (el.type === 'busbar') {
+      // busbar: konektor tiap 20px sepanjang sisi atas dan bawah
+      var bh = el.bh || 8
+      var cy_top = ay + (h - bh) / 2
+      var cy_bot = ay + (h + bh) / 2
+      for (var bx = ax; bx <= ax + w; bx += 20) {
+        pts.push({ x: bx, y: cy_top })
+        pts.push({ x: bx, y: cy_bot })
+      }
+    } else if (el.type === 'cb') {
+      pts.push({ x: ax + w/2, y: ay })
+      pts.push({ x: ax + w/2, y: ay + h })
+    } else if (el.type === 'load') {
+      pts.push({ x: ax + w/2, y: ay })
+    }
+  })
+  return pts
+}
+
+// ── Snap endpoint ke konektor terdekat ───────────────────────
+var SNAP_R = 30  // radius snap lebih besar agar mudah
+function sldSnapToConn(x, y) {
+  var best = null, bestD = SNAP_R + 1
+  sldAllConnectors().forEach(function(p) {
+    var d = Math.sqrt((p.x-x)*(p.x-x) + (p.y-y)*(p.y-y))
+    if (d < bestD) { bestD = d; best = p }
+  })
+  return best ? { x: best.x, y: best.y, snapped: true } : { x: sldSnap(x), y: sldSnap(y), snapped: false }
+}
+
+// ── Handle endpoint di overlay layer ─────────────────────────
+// Dipanggil dari sldRender() — tulis ke sld-overlay-layer
+// agar tidak ikut ter-clear saat drag (handle diupdate langsung)
+function sldUpdateEndpointHandles() {
+  var ovl = document.getElementById('sld-overlay-layer')
+  if (!ovl) return
+  ovl.innerHTML = ''  // clear handle lama
+  if (!SLD_IS_ADMIN || sldSelected === null) return
+  var el = sldElements.find(function(e){ return e.id === sldSelected })
+  if (!el || el.type !== 'line') return
+
+  ;[['p1', el.x1, el.y1], ['p2', el.x2, el.y2]].forEach(function(ep) {
+    var which = ep[0], hx = ep[1], hy = ep[2]
+    var h = document.createElementNS('http://www.w3.org/2000/svg','circle')
+    h.setAttribute('cx', hx); h.setAttribute('cy', hy)
+    h.setAttribute('r', '8')
+    h.setAttribute('fill', '#f97316')
+    h.setAttribute('stroke', '#fff')
+    h.setAttribute('stroke-width', '2.5')
+    h.setAttribute('cursor', 'crosshair')
+    h.setAttribute('pointer-events', 'all')
+    h.style.filter = 'drop-shadow(0 1px 3px rgba(0,0,0,0.5))'
+    h.addEventListener('mousedown', function(e) {
+      sldDragEndpoint(e, el.id, which)
+    })
+    ovl.appendChild(h)
+  })
+}
+
+// ── Drag endpoint line (p1 atau p2) ──────────────────────────
+function sldDragEndpoint(e, elId, which) {
+  if (!SLD_IS_ADMIN) return
+  e.stopPropagation()
+  e.preventDefault()
+  sldHistoryPush()  // snapshot sebelum geser endpoint
+  var svg = document.getElementById('sld-canvas')
+  var ovl = document.getElementById('sld-overlay-layer')
+  var el  = sldElements.find(function(e){ return e.id === elId })
+  if (!el || !ovl) return
+
+  // Cari handle circle yang sesuai di overlay
+  var handles = ovl.querySelectorAll('circle')
+  var myHandle = handles[which === 'p1' ? 0 : 1]
+
+  // Indikator snap lingkaran hijau (di overlay, tidak ikut di-clear)
+  var snapInd = document.createElementNS('http://www.w3.org/2000/svg','circle')
+  snapInd.setAttribute('r', SNAP_R)
+  snapInd.setAttribute('fill', 'rgba(34,197,94,0.15)')
+  snapInd.setAttribute('stroke', '#22c55e')
+  snapInd.setAttribute('stroke-width', '1.5')
+  snapInd.setAttribute('stroke-dasharray', '4 3')
+  snapInd.setAttribute('pointer-events', 'none')
+  snapInd.style.display = 'none'
+  ovl.appendChild(snapInd)
+
+  // Update path line secara langsung di DOM — tanpa sldRender() penuh
+  var lineG   = document.getElementById('sld-el-' + elId)
+  var paths   = lineG ? lineG.querySelectorAll('path') : []
+
+  function updateLinePath() {
+    var midX, midY, pathD
+    if (el.elbow) {
+      if (el.elbowDir === 'V') { midX = el.x1; midY = el.y2 }
+      else                    { midX = el.x2; midY = el.y1 }
+      pathD = 'M '+el.x1+' '+el.y1+' L '+midX+' '+midY+' L '+el.x2+' '+el.y2
+    } else {
+      pathD = 'M '+el.x1+' '+el.y1+' L '+el.x2+' '+el.y2
+    }
+    // Update path visible + hit area
+    paths.forEach(function(p) { p.setAttribute('d', pathD) })
+  }
+
+  function onMove(ev) {
+    var pt = svg.createSVGPoint()
+    pt.x = ev.clientX; pt.y = ev.clientY
+    var sp  = pt.matrixTransform(svg.getScreenCTM().inverse())
+    var res = sldSnapToConn(sp.x, sp.y)
+
+    if (which === 'p1') { el.x1 = res.x; el.y1 = res.y }
+    else                { el.x2 = res.x; el.y2 = res.y }
+
+    // Update handle position langsung
+    if (myHandle) {
+      myHandle.setAttribute('cx', res.x)
+      myHandle.setAttribute('cy', res.y)
+    }
+    // Update path line langsung
+    updateLinePath()
+
+    // Indikator snap
+    if (res.snapped) {
+      snapInd.setAttribute('cx', res.x); snapInd.setAttribute('cy', res.y)
+      snapInd.style.display = ''
+    } else {
+      snapInd.style.display = 'none'
+    }
+    sldModified = true
+  }
+
+  function onUp() {
+    if (snapInd.parentNode) snapInd.parentNode.removeChild(snapInd)
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup',   onUp)
+    // Full re-render sekali saja di akhir
+    sldRender()
+    sldShowProps(elId)
+  }
+
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup',   onUp)
+}
+
 // ── Render line ───────────────────────────────────────────────
 function sldRenderLine(layer, el) {
   var color = el.color || '#1e3a5f'
+  var sw    = el.strokeWidth || 2.5
   var g = document.createElementNS('http://www.w3.org/2000/svg','g')
   g.setAttribute('id', 'sld-el-' + el.id)
 
-  var line = document.createElementNS('http://www.w3.org/2000/svg','line')
-  line.setAttribute('x1', el.x1); line.setAttribute('y1', el.y1)
-  line.setAttribute('x2', el.x2); line.setAttribute('y2', el.y2)
-  line.setAttribute('stroke', color)
-  line.setAttribute('stroke-width', el.strokeWidth || 2.5)
-  line.setAttribute('stroke-linecap','round')
-  g.appendChild(line)
+  // Hitung path — lurus atau siku
+  var midX, midY, pathD
+  if (el.elbow) {
+    if (el.elbowDir === 'V') {
+      // Vertikal dulu, lalu horizontal
+      midX = el.x1; midY = el.y2
+    } else {
+      // Horizontal dulu, lalu vertikal (default)
+      midX = el.x2; midY = el.y1
+    }
+    pathD = 'M ' + el.x1 + ' ' + el.y1 +
+            ' L ' + midX + ' ' + midY  +
+            ' L ' + el.x2 + ' ' + el.y2
+  } else {
+    pathD = 'M ' + el.x1 + ' ' + el.y1 + ' L ' + el.x2 + ' ' + el.y2
+    midX = (el.x1 + el.x2) / 2
+    midY = (el.y1 + el.y2) / 2
+  }
 
-  // Hit area (invisible, untuk klik)
-  var hit = document.createElementNS('http://www.w3.org/2000/svg','line')
-  hit.setAttribute('x1', el.x1); hit.setAttribute('y1', el.y1)
-  hit.setAttribute('x2', el.x2); hit.setAttribute('y2', el.y2)
-  hit.setAttribute('stroke', 'transparent'); hit.setAttribute('stroke-width', '14')
-  hit.setAttribute('cursor', SLD_IS_ADMIN ? 'pointer' : 'default')
-  hit.addEventListener('mousedown', function(e){ sldSelectEl(el.id); e.stopPropagation() })
+  var path = document.createElementNS('http://www.w3.org/2000/svg','path')
+  path.setAttribute('d', pathD)
+  path.setAttribute('stroke', color)
+  path.setAttribute('stroke-width', sw)
+  path.setAttribute('stroke-linecap', 'round')
+  path.setAttribute('stroke-linejoin', 'round')
+  path.setAttribute('fill', 'none')
+  g.appendChild(path)
+
+  // Hit area (invisible, untuk klik & drag body line)
+  var hit = document.createElementNS('http://www.w3.org/2000/svg','path')
+  hit.setAttribute('d', pathD)
+  hit.setAttribute('stroke', 'transparent')
+  hit.setAttribute('stroke-width', '14')
+  hit.setAttribute('fill', 'none')
+  hit.setAttribute('cursor', SLD_IS_ADMIN ? 'move' : 'default')
+  hit.addEventListener('mousedown', function(e) { sldOnCompMouseDown(e, el.id); e.stopPropagation() })
   g.appendChild(hit)
 
   if (el.label) {
-    var mx = (el.x1+el.x2)/2, my = (el.y1+el.y2)/2
     var lt = document.createElementNS('http://www.w3.org/2000/svg','text')
-    lt.setAttribute('x', mx); lt.setAttribute('y', my-6)
-    lt.setAttribute('text-anchor','middle'); lt.setAttribute('font-size','11')
-    lt.setAttribute('fill','#374151'); lt.setAttribute('font-weight','600')
+    lt.setAttribute('x', midX); lt.setAttribute('y', midY - 6)
+    lt.setAttribute('text-anchor', 'middle'); lt.setAttribute('font-size', '11')
+    lt.setAttribute('fill', '#374151'); lt.setAttribute('font-weight', '600')
     lt.textContent = el.label
     g.appendChild(lt)
   }
@@ -3362,8 +4606,10 @@ function sldAddElement(type) {
 
   var el = { id: sldNextId++, type: type, label: '', color: '#1e3a5f' }
   if (type === 'line') {
-    el.x1 = cx-60; el.y1 = cy; el.x2 = cx+60; el.y2 = cy
+    el.x1 = cx-60; el.y1 = cy; el.x2 = cx+60; el.y2 = cy+80
     el.strokeWidth = 2.5
+    el.elbow    = true  // default siku
+    el.elbowDir = 'H'   // H = horizontal dulu lalu vertikal
   } else if (type === 'busbar') {
     el.x = cx-80; el.y = cy; el.w = 160; el.h = 20; el.bh = 8
   } else if (type === 'label') {
@@ -3372,6 +4618,7 @@ function sldAddElement(type) {
   } else {
     el.x = cx-30; el.y = cy-30; el.w = 60; el.h = 60
   }
+  sldHistoryPush()
   sldElements.push(el)
   sldModified = true
   sldSelected = el.id
@@ -3379,23 +4626,211 @@ function sldAddElement(type) {
   sldShowProps(el.id)
 }
 
-// ── Pilih elemen ──────────────────────────────────────────────
-function sldSelectEl(id) {
+// ── Pilih elemen (single / shift+klik multi) ──────────────────
+function sldSelectEl(id, shiftKey) {
   if (!SLD_IS_ADMIN && id !== null) return
+  if (id === null) {
+    // Klik kosong → clear semua
+    sldSelected  = null
+    sldMultiSel  = []
+    sldRender()
+    sldHideProps()
+    sldUpdateGroupBtn()
+    return
+  }
+  if (shiftKey) {
+    // Shift+klik → toggle ke/dari multiSel
+    var idx = sldMultiSel.indexOf(id)
+    if (idx === -1) sldMultiSel.push(id)
+    else sldMultiSel.splice(idx, 1)
+    sldSelected = sldMultiSel.length === 1 ? sldMultiSel[0] : null
+    sldRender()
+    if (sldMultiSel.length === 1) sldShowProps(sldMultiSel[0])
+    else sldHideProps()
+    sldUpdateGroupBtn()
+    return
+  }
+  // Klik biasa — langsung pilih elemen (Opsi A: tidak redirect ke group)
   sldSelected = id
+  sldMultiSel = []
   sldRender()
-  if (id !== null) sldShowProps(id)
-  else sldHideProps()
+  sldShowProps(id)
+  sldUpdateGroupBtn()
+  sldUpdateEndpointHandles()
 }
 
-// ── Hapus elemen terpilih ─────────────────────────────────────
-function sldDeleteSelected() {
+// ── Update tampilan tombol GROUP/UNGROUP/COPY/PASTE/DUPLIKAT ──
+function sldUpdateGroupBtn() {
+  var btnGrp   = document.getElementById('sld-btn-group')
+  var btnUngrp = document.getElementById('sld-btn-ungroup')
+  var btnCopy  = document.getElementById('sld-btn-copy')
+  var btnPaste = document.getElementById('sld-btn-paste')
+  var btnDup   = document.getElementById('sld-btn-dup')
+
+  var hasSel   = sldSelected !== null || sldMultiSel.length >= 1
+  var isGroup  = sldSelected !== null && sldElements.find(function(e){
+    return e.id === sldSelected && e.type === 'group'
+  })
+
+  if (btnGrp)   btnGrp.style.display   = (sldMultiSel.length >= 2) ? 'inline-block' : 'none'
+  if (btnUngrp) btnUngrp.style.display = isGroup ? 'inline-block' : 'none'
+  if (btnCopy)  btnCopy.style.display  = hasSel ? 'inline-block' : 'none'
+  if (btnDup)   btnDup.style.display   = hasSel ? 'inline-block' : 'none'
+  if (btnPaste) btnPaste.style.display = sldClipboard.length ? 'inline-block' : 'none'
+}
+
+// ── Buat group dari multi-select ──────────────────────────────
+function sldGroupSelected() {
+  if (sldMultiSel.length < 2 || !SLD_IS_ADMIN) return
+  // Jangan masukkan group ke dalam group lain
+  var ids = sldMultiSel.filter(function(id) {
+    var el = sldElements.find(function(e){ return e.id === id })
+    return el && el.type !== 'group'
+  })
+  if (ids.length < 2) { showToast('Pilih minimal 2 elemen bukan-group', 'info'); return }
+  var grp = {
+    id       : sldNextId++,
+    type     : 'group',
+    label    : 'Group',
+    color    : '#0ea5e9',
+    childIds : ids.slice()
+  }
+  sldHistoryPush()
+  sldElements.push(grp)
+  sldSelected = grp.id
+  sldMultiSel = []
+  sldModified = true
+  sldRender()
+  sldShowProps(grp.id)
+  sldUpdateGroupBtn()
+  showToast('Group dibuat (' + ids.length + ' elemen)', 'success')
+}
+
+// ── Lepas group (ungroup) ─────────────────────────────────────
+function sldUngroupSelected() {
   if (sldSelected === null || !SLD_IS_ADMIN) return
-  sldElements = sldElements.filter(function(e){ return e.id !== sldSelected })
+  var grp = sldElements.find(function(e){ return e.id === sldSelected && e.type === 'group' })
+  if (!grp) return
+  sldHistoryPush()
+  sldElements = sldElements.filter(function(e){ return e.id !== grp.id })
   sldSelected = null
+  sldMultiSel = grp.childIds.slice()
   sldModified = true
   sldRender()
   sldHideProps()
+  sldUpdateGroupBtn()
+  showToast('Group dilepas', 'info')
+}
+
+// ── Hitung bounding box dari child elemen group ───────────────
+function sldGroupBBox(grp) {
+  var PAD = 16
+  var xs = [], ys = [], xs2 = [], ys2 = []
+  grp.childIds.forEach(function(cid) {
+    var el = sldElements.find(function(e){ return e.id === cid })
+    if (!el) return
+    if (el.type === 'line') {
+      xs.push(el.x1, el.x2); ys.push(el.y1, el.y2)
+      xs2.push(el.x1, el.x2); ys2.push(el.y1, el.y2)
+    } else {
+      xs.push(el.x); ys.push(el.y)
+      xs2.push(el.x + (el.w || 60)); ys2.push(el.y + (el.h || 60) + 40)
+    }
+  })
+  if (!xs.length) return null
+  return {
+    x: Math.min.apply(null, xs)  - PAD,
+    y: Math.min.apply(null, ys)  - PAD,
+    w: Math.max.apply(null, xs2) - Math.min.apply(null, xs)  + PAD * 2,
+    h: Math.max.apply(null, ys2) - Math.min.apply(null, ys)  + PAD * 2
+  }
+}
+
+// ── Copy / Paste / Duplicate ───────────────────────────────────
+var sldClipboard = []   // array of deep-copied element objects
+
+function sldCopy() {
+  if (!SLD_IS_ADMIN) return
+  // Kumpulkan id yang akan di-copy: multiSel kalau ada, atau single selected
+  var ids = sldMultiSel.length >= 2 ? sldMultiSel.slice()
+          : sldSelected !== null     ? [sldSelected]
+          : []
+  if (!ids.length) return
+  // Deep-copy, sertakan child group kalau ada group
+  var toCopy = []
+  ids.forEach(function(id) {
+    var el = sldElements.find(function(e){ return e.id === id })
+    if (!el) return
+    toCopy.push(JSON.parse(JSON.stringify(el)))
+    if (el.type === 'group' && el.childIds) {
+      el.childIds.forEach(function(cid) {
+        if (ids.indexOf(cid) === -1) {          // belum ada di list
+          var cel = sldElements.find(function(e){ return e.id === cid })
+          if (cel) toCopy.push(JSON.parse(JSON.stringify(cel)))
+        }
+      })
+    }
+  })
+  sldClipboard = toCopy
+  showToast('Disalin ' + toCopy.length + ' elemen', 'success')
+}
+
+function sldPaste() {
+  if (!SLD_IS_ADMIN || !sldClipboard.length) return
+  var OFFSET = 20
+  // Buat mapping id lama → id baru
+  var idMap = {}
+  var newEls = sldClipboard.map(function(el) {
+    var ne = JSON.parse(JSON.stringify(el))
+    var newId = sldNextId++
+    idMap[el.id] = newId
+    ne.id = newId
+    if (ne.type === 'line') {
+      ne.x1 += OFFSET; ne.y1 += OFFSET
+      ne.x2 += OFFSET; ne.y2 += OFFSET
+    } else if (ne.type !== 'group') {
+      ne.x += OFFSET; ne.y += OFFSET
+    }
+    return ne
+  })
+  // Remap childIds group ke id baru
+  newEls.forEach(function(ne) {
+    if (ne.type === 'group' && ne.childIds) {
+      ne.childIds = ne.childIds.map(function(cid){
+        return idMap[cid] !== undefined ? idMap[cid] : cid
+      })
+    }
+  })
+  sldHistoryPush()
+  newEls.forEach(function(ne){ sldElements.push(ne) })
+  // Select semua yang baru di-paste
+  var newIds = newEls.filter(function(ne){ return ne.type !== 'group' }).map(function(ne){ return ne.id })
+  sldMultiSel = newIds
+  sldSelected = newIds.length === 1 ? newIds[0] : null
+  sldModified = true
+  sldRender()
+  if (sldSelected !== null) sldShowProps(sldSelected)
+  else sldHideProps()
+  sldUpdateGroupBtn()
+  showToast('Paste ' + newEls.length + ' elemen', 'success')
+}
+
+function sldDuplicate() {
+  sldCopy()
+  sldPaste()
+}
+
+// ── Hapus elemen terpilih (group → hapus group saja, child tetap) ─
+function sldDeleteSelected() {
+  if (sldSelected === null || !SLD_IS_ADMIN) return
+  sldHistoryPush()
+  sldElements = sldElements.filter(function(e){ return e.id !== sldSelected })
+  sldSelected = null
+  sldMultiSel = []
+  sldModified = true
+  sldRender()
+  sldHideProps()
+  sldUpdateGroupBtn()
 }
 
 // ── Panel properti: tampilkan ─────────────────────────────────
@@ -3420,8 +4855,28 @@ function sldShowProps(id) {
   html += '<input id="prop-color" type="color" value="' + (el.color||'#1e3a5f') + '" style="width:36px;height:26px;border:none;cursor:pointer;border-radius:4px;" oninput="sldPropChange(\'color\',this.value)"/>'
   html += '</div>'
 
-  if (el.type === 'line') {
-    // Koordinat line
+  if (el.type === 'group') {
+    // Props group: hanya label + warna + info child + tombol ungroup
+    html += '<div style="font-size:0.68rem;color:#64748b;">Elemen: <b>' + (el.childIds||[]).length + '</b></div>'
+    html += '<button onclick="sldUngroupSelected()" style="background:#0ea5e9;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:0.72rem;font-weight:700;cursor:pointer;margin-top:2px;width:100%;">UNGROUP</button>'
+    html += '<button onclick="sldDeleteSelected()" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:0.72rem;font-weight:700;cursor:pointer;margin-top:2px;width:100%;">HAPUS GROUP</button>'
+    fields.innerHTML = html
+    return
+  } else if (el.type === 'line') {
+    // Toggle siku / lurus
+    var elbowChecked = el.elbow ? 'checked' : ''
+    var elbowDirLabel = (el.elbowDir === 'V') ? '\u2195 lalu \u2194' : '\u2194 lalu \u2195'
+    html += '<div style="display:flex;align-items:center;gap:6px;">'
+    html += '<label style="font-size:0.68rem;color:#64748b;font-weight:600;width:58px;">SIKU</label>'
+    html += '<input type="checkbox" ' + elbowChecked + ' onchange="sldPropChange(\'elbow\',this.checked)" style="width:16px;height:16px;cursor:pointer;"/>'
+    html += '</div>'
+    if (el.elbow) {
+      html += '<div style="display:flex;align-items:center;gap:4px;">'
+      html += '<label style="font-size:0.68rem;color:#64748b;font-weight:600;width:58px;">ARAH</label>'
+      html += '<button onclick="sldToggleElbowDir()" style="font-size:0.7rem;padding:2px 8px;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;background:#f1f5f9;">' + elbowDirLabel + '</button>'
+      html += '</div>'
+    }
+    // Koordinat
     html += sldPropNum('X1','x1',el.x1) + sldPropNum('Y1','y1',el.y1)
     html += sldPropNum('X2','x2',el.x2) + sldPropNum('Y2','y2',el.y2)
     html += sldPropNum('TEBAL','strokeWidth',el.strokeWidth||2.5)
@@ -3435,6 +4890,27 @@ function sldShowProps(id) {
     html += '<label style="font-size:0.68rem;color:#64748b;font-weight:600;">BOLD</label>'
     html += '<input type="checkbox" ' + (el.bold?'checked':'') + ' onchange="sldPropChange(\'bold\',this.checked)" style="width:16px;height:16px;cursor:pointer;"/>'
     html += '</div>'
+  } else if (el.type === 'generator') {
+    html += sldPropNum('X','x',el.x) + sldPropNum('Y','y',el.y)
+    html += sldPropNum('LEBAR','w',el.w||60) + sldPropNum('TINGGI','h',el.h||60)
+    // Dropdown pilih mesin sebagai label
+    var mlist = sldMesinList.length ? sldMesinList : mesinList
+    if (mlist && mlist.length > 0) {
+      // Cari mesin yang sedang dipakai (cocokkan dari baris pertama label)
+      var currentNama = (el.label || '').split('\n')[0].trim()
+      html += '<div style="display:flex;flex-direction:column;gap:2px;margin-top:4px;">'
+      html += '<label style="font-size:0.68rem;color:#64748b;font-weight:600;">PILIH MESIN</label>'
+      html += '<select style="border:1px solid #e2e8f0;border-radius:4px;padding:3px 6px;font-size:0.75rem;cursor:pointer;width:100%;" onchange="sldPickMesin(this.value)">'
+      html += '<option value="">— pilih mesin —</option>'
+      mlist.forEach(function(m) {
+        var nm   = (m.nama_mesin || m.mesin || '').trim()
+        var daya = (m.terpasang > 0) ? ' (' + m.terpasang + ' kW)' : ''
+        var sel  = nm === currentNama ? ' selected' : ''
+        html += '<option value="' + m.id_mesin + '"' + sel + '>' + nm + daya + '</option>'
+      })
+      html += '</select>'
+      html += '</div>'
+    }
   } else {
     html += sldPropNum('X','x',el.x) + sldPropNum('Y','y',el.y)
     html += sldPropNum('LEBAR','w',el.w||60) + sldPropNum('TINGGI','h',el.h||60)
@@ -3452,14 +4928,45 @@ function sldPropNum(label, key, val) {
     '</div>'
 }
 
+// ── Pilih mesin dari dropdown → set label generator ───────────
+function sldPickMesin(idMesin) {
+  var el = sldElements.find(function(e){ return e.id === sldSelected })
+  if (!el || el.type !== 'generator') return
+  if (!idMesin) return  // pilih "— pilih mesin —"
+  var mlist = sldMesinList.length ? sldMesinList : mesinList
+  var m = mlist.find(function(x){ return String(x.id_mesin) === String(idMesin) })
+  if (!m) return
+  sldHistoryPush()
+  var nm   = (m.nama_mesin || m.mesin || '').trim()
+  var daya = (m.terpasang != null && m.terpasang > 0) ? '\n' + m.terpasang + ' kW' : ''
+  el.label = nm + daya
+  el.mesinId = m.id_mesin   // simpan referensi id mesin di elemen
+  sldModified = true
+  sldRender()
+  sldShowProps(el.id)
+}
+
 // ── Update properti elemen ────────────────────────────────────
 function sldPropChange(key, val) {
   var el = sldElements.find(function(e){ return e.id === sldSelected })
   if (!el) return
+  sldHistoryPush()
   el[key] = val
   sldModified = true
   sldRender()
-  // Jangan re-show props supaya input tidak reset saat ketik
+  // Re-show props hanya untuk checkbox (supaya tombol ARAH muncul/hilang)
+  if (key === 'elbow') sldShowProps(el.id)
+}
+
+// ── Toggle arah belok siku (H↔V) ─────────────────────────────
+function sldToggleElbowDir() {
+  var el = sldElements.find(function(e){ return e.id === sldSelected })
+  if (!el || el.type !== 'line') return
+  sldHistoryPush()
+  el.elbowDir = (el.elbowDir === 'V') ? 'H' : 'V'
+  sldModified = true
+  sldRender()
+  sldShowProps(el.id)
 }
 
 function sldHideProps() {
@@ -3467,18 +4974,92 @@ function sldHideProps() {
   if (p) p.style.display = 'none'
 }
 
+// ── Drag group (mouse) — murni drag tanpa mengubah selection ──
+// Dipanggil dari sldOnCompMouseDown saat child group di-drag.
+// Selection sudah diset oleh sldOnCompMouseDown, fungsi ini
+// hanya menangani pergerakan semua child bersama.
+function sldOnGroupMouseDown(e, grpId) {
+  if (!SLD_IS_ADMIN) return
+  sldHistoryPush()  // snapshot sebelum drag group
+  // TIDAK memanggil sldSelectEl — selection ditangani pemanggil
+  var svg = document.getElementById('sld-canvas')
+  var pt  = svg.createSVGPoint()
+  pt.x = e.clientX; pt.y = e.clientY
+  var svgP = pt.matrixTransform(svg.getScreenCTM().inverse())
+  var grp  = sldElements.find(function(g){ return g.id === grpId })
+  if (!grp) return
+
+  // Simpan posisi awal semua child
+  var origPositions = {}
+  grp.childIds.forEach(function(cid) {
+    var cel = sldElements.find(function(e){ return e.id === cid })
+    if (!cel) return
+    if (cel.type === 'line') origPositions[cid] = { x1:cel.x1, y1:cel.y1, x2:cel.x2, y2:cel.y2 }
+    else origPositions[cid] = { x:cel.x, y:cel.y }
+  })
+
+  function onMove(ev) {
+    var pt2 = svg.createSVGPoint()
+    pt2.x = ev.clientX; pt2.y = ev.clientY
+    var sp = pt2.matrixTransform(svg.getScreenCTM().inverse())
+    var dx = sp.x - svgP.x, dy = sp.y - svgP.y
+    grp.childIds.forEach(function(cid) {
+      var cel = sldElements.find(function(e){ return e.id === cid })
+      if (!cel || !origPositions[cid]) return
+      if (cel.type === 'line') {
+        cel.x1 = sldSnap(origPositions[cid].x1 + dx)
+        cel.y1 = sldSnap(origPositions[cid].y1 + dy)
+        cel.x2 = sldSnap(origPositions[cid].x2 + dx)
+        cel.y2 = sldSnap(origPositions[cid].y2 + dy)
+      } else {
+        cel.x = sldSnap(origPositions[cid].x + dx)
+        cel.y = sldSnap(origPositions[cid].y + dy)
+      }
+    })
+    sldModified = true
+    sldRender()
+  }
+  function onUp() {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup',   onUp)
+    // Refresh props panel untuk elemen yang ter-select (bukan group)
+    if (sldSelected !== null) sldShowProps(sldSelected)
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup',   onUp)
+}
+
 // ── Drag komponen (mouse) ─────────────────────────────────────
 function sldOnCompMouseDown(e, id) {
   if (!SLD_IS_ADMIN) { sldSelectEl(null); return }
   e.stopPropagation()
-  sldSelectEl(id)
+  sldHistoryPush()  // snapshot sebelum drag
+  sldSelectEl(id, e.shiftKey)
   var svg  = document.getElementById('sld-canvas')
   var pt   = svg.createSVGPoint()
   pt.x = e.clientX; pt.y = e.clientY
   var svgP = pt.matrixTransform(svg.getScreenCTM().inverse())
   var el   = sldElements.find(function(e){ return e.id === id })
-  if (!el || el.type === 'line') return
-  sldDragging = { id: id, startX: svgP.x, startY: svgP.y, origX: el.x, origY: el.y }
+  if (!el) return
+
+  // Cek apakah elemen ini child dari group → drag semua child sekaligus
+  var parentGrp = sldElements.find(function(g){
+    return g.type === 'group' && g.childIds && g.childIds.indexOf(id) !== -1
+  })
+  if (parentGrp) {
+    // sldSelectEl sudah dipanggil di atas (pilih child, bukan group)
+    // Delegasikan drag ke sldOnGroupMouseDown (murni geser, tidak ubah selection)
+    sldOnGroupMouseDown(e, parentGrp.id)
+    return
+  }
+
+  // Simpan posisi awal — line pakai x1/y1/x2/y2, komponen lain pakai x/y
+  if (el.type === 'line') {
+    sldDragging = { id: id, startX: svgP.x, startY: svgP.y,
+                    origX1: el.x1, origY1: el.y1, origX2: el.x2, origY2: el.y2 }
+  } else {
+    sldDragging = { id: id, startX: svgP.x, startY: svgP.y, origX: el.x, origY: el.y }
+  }
 
   function onMove(ev) {
     if (!sldDragging) return
@@ -3489,8 +5070,16 @@ function sldOnCompMouseDown(e, id) {
     var dy = sp.y - sldDragging.startY
     var target = sldElements.find(function(e){ return e.id === sldDragging.id })
     if (target) {
-      target.x = sldSnap(sldDragging.origX + dx)
-      target.y = sldSnap(sldDragging.origY + dy)
+      if (target.type === 'line') {
+        // Geser kedua titik sekaligus
+        target.x1 = sldSnap(sldDragging.origX1 + dx)
+        target.y1 = sldSnap(sldDragging.origY1 + dy)
+        target.x2 = sldSnap(sldDragging.origX2 + dx)
+        target.y2 = sldSnap(sldDragging.origY2 + dy)
+      } else {
+        target.x = sldSnap(sldDragging.origX + dx)
+        target.y = sldSnap(sldDragging.origY + dy)
+      }
       sldModified = true
       sldRender()
     }
@@ -3509,6 +5098,7 @@ function sldOnCompMouseDown(e, id) {
 function sldOnCompTouchStart(e, id) {
   if (!SLD_IS_ADMIN) return
   e.preventDefault()
+  sldHistoryPush()  // snapshot sebelum drag touch
   sldSelectEl(id)
   var svg  = document.getElementById('sld-canvas')
   var touch = e.touches[0]
@@ -3516,8 +5106,14 @@ function sldOnCompTouchStart(e, id) {
   pt.x = touch.clientX; pt.y = touch.clientY
   var svgP = pt.matrixTransform(svg.getScreenCTM().inverse())
   var el   = sldElements.find(function(e){ return e.id === id })
-  if (!el || el.type === 'line') return
-  sldDragging = { id: id, startX: svgP.x, startY: svgP.y, origX: el.x, origY: el.y }
+  if (!el) return
+
+  if (el.type === 'line') {
+    sldDragging = { id: id, startX: svgP.x, startY: svgP.y,
+                    origX1: el.x1, origY1: el.y1, origX2: el.x2, origY2: el.y2 }
+  } else {
+    sldDragging = { id: id, startX: svgP.x, startY: svgP.y, origX: el.x, origY: el.y }
+  }
 
   function onMove(ev) {
     if (!sldDragging) return
@@ -3529,8 +5125,15 @@ function sldOnCompTouchStart(e, id) {
     var dy = sp.y - sldDragging.startY
     var target = sldElements.find(function(e){ return e.id === sldDragging.id })
     if (target) {
-      target.x = sldSnap(sldDragging.origX + dx)
-      target.y = sldSnap(sldDragging.origY + dy)
+      if (target.type === 'line') {
+        target.x1 = sldSnap(sldDragging.origX1 + dx)
+        target.y1 = sldSnap(sldDragging.origY1 + dy)
+        target.x2 = sldSnap(sldDragging.origX2 + dx)
+        target.y2 = sldSnap(sldDragging.origY2 + dy)
+      } else {
+        target.x = sldSnap(sldDragging.origX + dx)
+        target.y = sldSnap(sldDragging.origY + dy)
+      }
       sldModified = true
       sldRender()
     }
@@ -3545,15 +5148,90 @@ function sldOnCompTouchStart(e, id) {
   document.addEventListener('touchend',  onEnd)
 }
 
-// ── Klik canvas kosong → deselect ────────────────────────────
+// ── Klik canvas kosong → deselect / drag-select ───────────────
 document.addEventListener('DOMContentLoaded', function() {
   var canvas = document.getElementById('sld-canvas')
   if (!canvas) return
+
   canvas.addEventListener('mousedown', function(e) {
-    if (e.target === canvas || e.target.id === 'sld-grid-bg') {
-      sldSelectEl(null)
-      sldHideProps()
+    if (e.target !== canvas && e.target.id !== 'sld-grid-bg') return
+    if (!SLD_IS_ADMIN) return
+
+    // Mulai drag-select (rubber band)
+    var svg = canvas
+    var pt  = svg.createSVGPoint()
+    pt.x = e.clientX; pt.y = e.clientY
+    var sp = pt.matrixTransform(svg.getScreenCTM().inverse())
+    sldSelBoxing = true
+    sldSelBox    = { x0: sp.x, y0: sp.y, x1: sp.x, y1: sp.y }
+
+    // Buat rect sementara
+    var selRect = document.createElementNS('http://www.w3.org/2000/svg','rect')
+    selRect.setAttribute('id','sld-sel-rect')
+    selRect.setAttribute('fill','rgba(14,165,233,0.08)')
+    selRect.setAttribute('stroke','#0ea5e9')
+    selRect.setAttribute('stroke-width','1')
+    selRect.setAttribute('stroke-dasharray','4 2')
+    selRect.setAttribute('pointer-events','none')
+    canvas.appendChild(selRect)
+
+    function onMove(ev) {
+      if (!sldSelBoxing) return
+      var pt2 = svg.createSVGPoint()
+      pt2.x = ev.clientX; pt2.y = ev.clientY
+      var sp2 = pt2.matrixTransform(svg.getScreenCTM().inverse())
+      sldSelBox.x1 = sp2.x; sldSelBox.y1 = sp2.y
+      var rx = Math.min(sldSelBox.x0, sldSelBox.x1)
+      var ry = Math.min(sldSelBox.y0, sldSelBox.y1)
+      var rw = Math.abs(sldSelBox.x1 - sldSelBox.x0)
+      var rh = Math.abs(sldSelBox.y1 - sldSelBox.y0)
+      selRect.setAttribute('x', rx); selRect.setAttribute('y', ry)
+      selRect.setAttribute('width', rw); selRect.setAttribute('height', rh)
     }
+
+    function onUp() {
+      sldSelBoxing = false
+      var sr = document.getElementById('sld-sel-rect')
+      if (sr) sr.parentNode.removeChild(sr)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup',   onUp)
+
+      var rx0 = Math.min(sldSelBox.x0, sldSelBox.x1)
+      var ry0 = Math.min(sldSelBox.y0, sldSelBox.y1)
+      var rx1 = Math.max(sldSelBox.x0, sldSelBox.x1)
+      var ry1 = Math.max(sldSelBox.y0, sldSelBox.y1)
+      var size = (rx1-rx0) * (ry1-ry0)
+
+      if (size < 100) {
+        // Klik biasa (bukan drag) → deselect
+        sldSelectEl(null)
+        return
+      }
+
+      // Temukan semua elemen di dalam kotak seleksi
+      var hit = []
+      sldElements.forEach(function(el) {
+        if (el.type === 'group') return  // skip group
+        var ex, ey
+        if (el.type === 'line') {
+          ex = Math.min(el.x1, el.x2); ey = Math.min(el.y1, el.y2)
+        } else {
+          ex = el.x; ey = el.y
+        }
+        if (ex >= rx0 && ey >= ry0 && ex <= rx1 && ey <= ry1) hit.push(el.id)
+      })
+
+      if (hit.length === 0) { sldSelectEl(null); return }
+      sldMultiSel = hit
+      sldSelected = hit.length === 1 ? hit[0] : null
+      sldRender()
+      if (hit.length === 1) sldShowProps(hit[0])
+      else sldHideProps()
+      sldUpdateGroupBtn()
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup',   onUp)
   })
 })
 
@@ -3589,10 +5267,29 @@ document.addEventListener('DOMContentLoaded', function() {
     })
   })
 
-  // Tombol admin login di mode label
-  var modeLabel = document.getElementById('sld-mode-label')
-  if (modeLabel) {
-    modeLabel.style.cursor = 'pointer'
-    modeLabel.addEventListener('click', sldAdminLogin)
+  // sld-mode-label sudah pakai onclick="sldAdminLogin()" di HTML — tidak perlu addEventListener lagi
+})
+
+// ── Keyboard shortcut SLD: Ctrl+C, Ctrl+V, Ctrl+D, Delete ────
+document.addEventListener('keydown', function(e) {
+  // Hanya aktif saat SLD admin mode dan fokus bukan di input/textarea
+  if (!SLD_IS_ADMIN) return
+  var tag = document.activeElement && document.activeElement.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  // Cek apakah panel SLD sedang tampil
+  var sldWrap = document.getElementById('sld-wrap')
+  if (!sldWrap || sldWrap.classList.contains('hidden')) return
+
+  var ctrl = e.ctrlKey || e.metaKey
+  if (ctrl && e.key === 'z') { e.preventDefault(); sldUndo() }
+  else if (ctrl && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); sldRedo() }
+  else if (ctrl && e.key === 'c') { e.preventDefault(); sldCopy() }
+  else if (ctrl && e.key === 'v') { e.preventDefault(); sldPaste() }
+  else if (ctrl && e.key === 'd') { e.preventDefault(); sldDuplicate() }
+  else if (e.key === 'Delete' || e.key === 'Backspace') {
+    // Backspace hanya kalau bukan di input
+    if (e.key === 'Backspace' && document.activeElement !== document.body) return
+    e.preventDefault()
+    sldDeleteSelected()
   }
 })

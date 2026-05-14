@@ -76,6 +76,13 @@ async function initDB(db: D1Database) {
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_mesin_jam ON data_monitoring(mesin_id, tanggal, jam)`
   ).run()
 
+  // Index tambahan untuk mempercepat query berdasarkan tanggal
+  try { await db.prepare(`CREATE INDEX IF NOT EXISTS idx_dm_tanggal ON data_monitoring(tanggal)`).run() } catch(_) {}
+  // Index untuk query SFC & neraca (GROUP BY kode_unit + tanggal via JOIN mesin_cache)
+  try { await db.prepare(`CREATE INDEX IF NOT EXISTS idx_dm_mesin_tanggal ON data_monitoring(mesin_id, tanggal)`).run() } catch(_) {}
+  // Index untuk lap_operasional berdasarkan tanggal
+  try { await db.prepare(`CREATE INDEX IF NOT EXISTS idx_lap_tanggal ON lap_operasional(tanggal)`).run() } catch(_) {}
+
   await db.prepare(`CREATE TABLE IF NOT EXISTS lap_operasional (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     kode_unit INTEGER NOT NULL,
@@ -1061,6 +1068,235 @@ app.get('/api/event-padam-bulanan', async (c) => {
   }
 })
 
+// ─── SFC ───────────────────────────────────────────────────────────────────
+app.get('/api/sfc', async (c) => {
+  try {
+    const db      = c.env.DB
+    const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
+
+    // SFC per mesin dari data_monitoring jam malam (jam >= 18 atau jam <= 5)
+    const rows = await db.prepare(`
+      SELECT
+        mc.kode_unit,
+        mc.nama_unit,
+        mc.id_mesin,
+        mc.nama_mesin,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+            AND dm.status_mesin = 'Operasi'
+            THEN COALESCE(dm.pemakaian_bbm, 0) ELSE 0 END) as total_pemakaian_bbm,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+            AND dm.status_mesin = 'Operasi'
+            THEN COALESCE(dm.kwh_produksi, 0) ELSE 0 END) as total_kwh_produksi,
+        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+            AND dm.status_mesin = 'Operasi' THEN 1 END) as jumlah_jam
+      FROM data_monitoring dm
+      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+      WHERE dm.tanggal = ?
+        AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+      GROUP BY mc.kode_unit, mc.id_mesin
+      ORDER BY mc.kode_unit, mc.nama_mesin
+    `).bind(tanggal).all<{
+      kode_unit: number, nama_unit: string,
+      id_mesin: number, nama_mesin: string,
+      total_pemakaian_bbm: number, total_kwh_produksi: number, jumlah_jam: number
+    }>()
+
+    // Kelompokkan per ULD
+    const unitMap: Record<number, {
+      kode_unit: number, nama_unit: string,
+      mesin: { id_mesin: number, nama_mesin: string, pemakaian_bbm: number, kwh_produksi: number, sfc: number | null }[],
+      total_pemakaian_bbm: number, total_kwh_produksi: number
+    }> = {}
+
+    for (const r of rows.results) {
+      if (!unitMap[r.kode_unit]) {
+        unitMap[r.kode_unit] = {
+          kode_unit: r.kode_unit,
+          nama_unit: r.nama_unit,
+          mesin: [],
+          total_pemakaian_bbm: 0,
+          total_kwh_produksi: 0
+        }
+      }
+      const sfc = (r.total_kwh_produksi > 0)
+        ? Math.round(r.total_pemakaian_bbm / r.total_kwh_produksi * 1000) / 1000
+        : null
+      unitMap[r.kode_unit].mesin.push({
+        id_mesin:       r.id_mesin,
+        nama_mesin:     r.nama_mesin,
+        pemakaian_bbm:  Math.round(r.total_pemakaian_bbm * 100) / 100,
+        kwh_produksi:   Math.round(r.total_kwh_produksi  * 100) / 100,
+        sfc
+      })
+      unitMap[r.kode_unit].total_pemakaian_bbm += r.total_pemakaian_bbm
+      unitMap[r.kode_unit].total_kwh_produksi  += r.total_kwh_produksi
+    }
+
+    // Konversi ke array, hitung SFC total per ULD
+    const data = Object.values(unitMap).map(u => ({
+      kode_unit:           u.kode_unit,
+      nama_unit:           u.nama_unit,
+      total_pemakaian_bbm: Math.round(u.total_pemakaian_bbm * 100) / 100,
+      total_kwh_produksi:  Math.round(u.total_kwh_produksi  * 100) / 100,
+      sfc: u.total_kwh_produksi > 0
+        ? Math.round(u.total_pemakaian_bbm / u.total_kwh_produksi * 1000) / 1000
+        : null,
+      mesin: u.mesin
+    }))
+
+    return c.json({ success: true, data })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ─── DETAIL MESIN PER ULD PER TANGGAL (untuk popup neraca daya) ────────────
+app.get('/api/detail-mesin', async (c) => {
+  try {
+    const db        = c.env.DB
+    const kode_unit = Number(c.req.query('kode_unit'))
+    const tanggal   = c.req.query('tanggal') || ''
+    if (!kode_unit || !tanggal) return c.json({ success: false, error: 'kode_unit dan tanggal wajib' }, 400)
+
+    const rows = await db.prepare(`
+      SELECT
+        mc.id_mesin,
+        mc.nama_mesin,
+        mc.terpasang,
+        -- Status mesin malam (ambil status paling dominan jam malam)
+        (SELECT dm2.status_mesin FROM data_monitoring dm2
+         WHERE dm2.mesin_id = mc.id_mesin AND dm2.tanggal = ?
+           AND (CAST(dm2.jam AS INTEGER) >= 18 OR CAST(dm2.jam AS INTEGER) <= 5)
+         GROUP BY dm2.status_mesin ORDER BY COUNT(*) DESC LIMIT 1
+        ) as status_mesin,
+        -- Daya mampu malam (max)
+        MAX(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+            THEN dm.daya_mampu ELSE NULL END) as daya_mampu,
+        -- Beban malam (max)
+        MAX(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+            THEN dm.beban ELSE NULL END) as beban,
+        -- SFC malam: sum(pemakaian_bbm) / sum(kwh_produksi) saat Operasi
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+            AND dm.status_mesin = 'Operasi'
+            THEN COALESCE(dm.pemakaian_bbm, 0) ELSE 0 END) as total_bbm,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+            AND dm.status_mesin = 'Operasi'
+            THEN COALESCE(dm.kwh_produksi, 0) ELSE 0 END) as total_kwh,
+        -- has_data: 1 jika mesin punya minimal 1 record di tanggal ini, 0 jika tidak
+        COUNT(dm.id) as jumlah_record
+      FROM mesin_cache mc
+      LEFT JOIN data_monitoring dm
+        ON dm.mesin_id = mc.id_mesin AND dm.tanggal = ?
+      WHERE mc.kode_unit = ?
+      GROUP BY mc.id_mesin, mc.nama_mesin, mc.terpasang
+      ORDER BY mc.id_mesin
+    `).bind(tanggal, tanggal, kode_unit).all<{
+      id_mesin: number, nama_mesin: string, terpasang: number | null,
+      status_mesin: string | null, daya_mampu: number | null, beban: number | null,
+      total_bbm: number, total_kwh: number, jumlah_record: number
+    }>()
+
+    const data = rows.results.map(r => ({
+      id_mesin:     r.id_mesin,
+      nama_mesin:   r.nama_mesin,
+      terpasang:    r.terpasang,
+      has_data:     (r.jumlah_record ?? 0) > 0,   // true = punya data di tanggal ini
+      status_mesin: r.status_mesin || '-',
+      daya_mampu:   r.daya_mampu   != null ? Math.round(r.daya_mampu) : null,
+      beban:        r.beban        != null ? Math.round(r.beban)       : null,
+      pemakaian_bbm: r.total_bbm > 0 ? Math.round(r.total_bbm * 100) / 100 : null,
+      kwh_produksi:  r.total_kwh > 0 ? Math.round(r.total_kwh * 100) / 100 : null,
+      sfc:          r.total_kwh > 0
+        ? Math.round(r.total_bbm / r.total_kwh * 10000) / 10000
+        : null
+    }))
+
+    return c.json({ success: true, data })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ─── SFC 30 HARI ───────────────────────────────────────────────────────────
+app.get('/api/sfc-bulanan', async (c) => {
+  try {
+    const db      = c.env.DB
+    const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
+
+    // Hitung 30 tanggal: H-29 s/d tanggal terpilih
+    const dates: string[] = []
+    const tglEnd = new Date(tanggal)
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(tglEnd)
+      d.setDate(d.getDate() - i)
+      dates.push(d.toISOString().split('T')[0])
+    }
+    const tglStart = dates[0]
+
+    // Query SFC per mesin per tanggal (jam malam)
+    const rows = await db.prepare(`
+      SELECT
+        mc.kode_unit,
+        mc.nama_unit,
+        mc.id_mesin,
+        mc.nama_mesin,
+        dm.tanggal,
+        SUM(CASE WHEN dm.status_mesin = 'Operasi' THEN COALESCE(dm.pemakaian_bbm, 0) ELSE 0 END) as total_bbm,
+        SUM(CASE WHEN dm.status_mesin = 'Operasi' THEN COALESCE(dm.kwh_produksi,  0) ELSE 0 END) as total_kwh
+      FROM data_monitoring dm
+      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+      WHERE dm.tanggal >= ? AND dm.tanggal <= ?
+        AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+      GROUP BY mc.kode_unit, mc.id_mesin, dm.tanggal
+      ORDER BY mc.kode_unit, mc.nama_mesin, dm.tanggal
+    `).bind(tglStart, tanggal).all<{
+      kode_unit: number, nama_unit: string,
+      id_mesin: number, nama_mesin: string,
+      tanggal: string, total_bbm: number, total_kwh: number
+    }>()
+
+    // Struktur: unitMap[kode_unit] = { nama_unit, mesin: { id_mesin, nama_mesin, daily: { tgl: sfc } }, daily: { tgl: sfc } }
+    const unitMap: Record<number, {
+      kode_unit: number, nama_unit: string,
+      daily: Record<string, { bbm: number, kwh: number }>,
+      mesinMap: Record<number, { nama_mesin: string, daily: Record<string, number | null> }>
+    }> = {}
+
+    for (const r of rows.results) {
+      if (!unitMap[r.kode_unit]) {
+        unitMap[r.kode_unit] = { kode_unit: r.kode_unit, nama_unit: r.nama_unit, daily: {}, mesinMap: {} }
+      }
+      // Akumulasi per ULD per tanggal
+      if (!unitMap[r.kode_unit].daily[r.tanggal]) {
+        unitMap[r.kode_unit].daily[r.tanggal] = { bbm: 0, kwh: 0 }
+      }
+      unitMap[r.kode_unit].daily[r.tanggal].bbm += r.total_bbm
+      unitMap[r.kode_unit].daily[r.tanggal].kwh += r.total_kwh
+
+      // Per mesin per tanggal
+      if (!unitMap[r.kode_unit].mesinMap[r.id_mesin]) {
+        unitMap[r.kode_unit].mesinMap[r.id_mesin] = { nama_mesin: r.nama_mesin, daily: {} }
+      }
+      const sfc = r.total_kwh > 0 ? Math.round(r.total_bbm / r.total_kwh * 1000) / 1000 : null
+      unitMap[r.kode_unit].mesinMap[r.id_mesin].daily[r.tanggal] = sfc
+    }
+
+    // Konversi ke array
+    const data = Object.values(unitMap).map(u => {
+      // SFC per ULD per tanggal
+      const daily: Record<string, number | null> = {}
+      for (const tgl of dates) {
+        const d = u.daily[tgl]
+        daily[tgl] = (d && d.kwh > 0) ? Math.round(d.bbm / d.kwh * 1000) / 1000 : null
+      }
+      // Per mesin
+      const mesin = Object.values(u.mesinMap).map(m => ({
+        nama_mesin: m.nama_mesin,
+        daily: m.daily
+      }))
+      return { kode_unit: u.kode_unit, nama_unit: u.nama_unit, daily, mesin }
+    })
+
+    return c.json({ success: true, data, dates })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
 // ─── NERACA DAYA ───────────────────────────────────────────────────────────
 app.get('/api/neraca-daya', async (c) => {
   try {
@@ -1392,9 +1628,9 @@ app.get('/api/data-stok', async (c) => {
       const noUrut       = meta?.no ?? '-'
 
       const stockBersih  = stokAkhir !== null ? Math.max(0, stokAkhir - stockMati) : null
-      // SAFETY STOCK = STOCK BERSIH / PEMAKAIAN TERTINGGI
-      const safetyStock  = (stockBersih !== null && avgPakai !== null && avgPakai > 0)
-                           ? Math.round(stockBersih / avgPakai)
+      // SAFETY STOCK = STOCK BERSIH / PEMAKAIAN RATA-RATA
+      const safetyStock  = (stockBersih !== null && rataaPakai !== null && rataaPakai > 0)
+                           ? Math.round(stockBersih / rataaPakai)
                            : null
       // DAYA TAMPUNG = (KAPASITAS - STOCK AWAL) / KAPASITAS
       const dayaTampung  = (kapasitasTangki !== null && stokAwal !== null && kapasitasTangki > 0)
@@ -1440,6 +1676,10 @@ app.get('/api/data-stok', async (c) => {
         estimasi_bbm_habis: estimasiBbmHabis,
         kondisi_stock: kondisi,
         pemakaian_bbm: pemakaianBbm,
+        saldo_awal: lapSaldoAwal !== null ? Math.round(lapSaldoAwal) : null,
+        saldo_akhir: lapSaldoAkhir !== null ? Math.round(lapSaldoAkhir) : null,
+        penerimaan_bbm: penerimaanBbm !== null ? Math.round(penerimaanBbm) : null,
+        kwh_produksi: lapKwhProd !== null ? Math.round(lapKwhProd) : null,
         sfc
       }
     })
@@ -1940,6 +2180,9 @@ app.get('/', (c) => {
   <title>DILAN [DIGITALISASI LAPORAN]</title>
   <meta name="theme-color" content="#1e3a5f"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
+  <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
   <link rel="preload" href="/static/style.css?v=20260508z4" as="style"/>
   <link rel="preload" href="/static/app.js?v=20260509e" as="script"/>
   <link href="/static/style.css?v=20260508z4" rel="stylesheet"/>
@@ -2001,7 +2244,7 @@ app.get('/', (c) => {
       <div id="loading-indicator-mesin" class="hidden"><span class="spinner"></span></div>
       <div id="loading-indicator" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-mesin-count"></span>
-      <span class="toolbar-info" id="info-record"></span>
+
       <button id="btn-padam-desktop" onclick="onPadamClick()" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:6px 18px;font-weight:700;font-size:0.85rem;cursor:pointer;letter-spacing:0.05em;flex-shrink:0;margin-left:8px;">PADAM</button>
       <button id="btn-simpan-semua" onclick="saveAllData()" disabled style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 18px;font-weight:700;font-size:0.85rem;cursor:not-allowed;letter-spacing:0.05em;flex-shrink:0;margin-left:8px;opacity:0.5;">SIMPAN</button>
     </div>
@@ -2011,10 +2254,13 @@ app.get('/', (c) => {
   <div id="toolbar-data" class="hidden">
     <!-- Sub-tab row: NERACA DAYA | HOP BBM | STOCK OLI | Tanggal/Filter | info -->
     <div class="data-subtab-row" style="flex-wrap:wrap;gap:4px;">
-      <button id="subtab-btn-neraca-daya" class="data-subtab-btn" onclick="switchDataView('neraca-daya')">
+      <button id="subtab-btn-neraca-daya" class="data-subtab-btn active" onclick="switchDataView('neraca-daya')">
         NERACA DAYA
       </button>
-      <button id="subtab-btn-hop-bbm" class="data-subtab-btn active" onclick="switchDataView('hop-bbm')">
+      <button id="subtab-btn-sfc" class="data-subtab-btn" onclick="switchDataView('sfc')">
+        SFC
+      </button>
+      <button id="subtab-btn-hop-bbm" class="data-subtab-btn" onclick="switchDataView('hop-bbm')">
         HOP BBM
       </button>
       <button id="subtab-btn-stock-oli" class="data-subtab-btn" onclick="switchDataView('stock-oli')">
@@ -2025,19 +2271,22 @@ app.get('/', (c) => {
         <label class="toolbar-label">Tanggal</label>
         <input type="date" id="data-tanggal" class="toolbar-input" onchange="onDataTanggalChange()"/>
       </div>
-      <!-- Periode (untuk RESUME) -->
-      <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
-        <label class="toolbar-label" style="width:auto;">Periode</label>
-        <select id="data-sel-periode" class="toolbar-select" style="width:90px;">
-          <option value="malam">MALAM</option>
-          <option value="siang">SIANG</option>
+
+
+
+      <!-- Filter ULD untuk SFC -->
+      <div id="sfc-filter-wrap" style="display:none;align-items:center;gap:4px;flex-shrink:0;">
+        <label class="toolbar-label">ULD</label>
+        <select id="sfc-sel-uld" class="toolbar-select" style="width:180px;" onchange="onSfcUldChange()">
+          <option value="">Semua ULD</option>
         </select>
       </div>
-
-
+      <button id="btn-download-neraca" onclick="downloadNeracaExcel()" style="display:none;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;flex-shrink:0;" title="Download Excel Neraca Daya">
+        EXCEL
+      </button>
+      <button id="btn-resume-data" onclick="onResumeDataClick()" style="display:none;background:#2563eb;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-weight:700;font-size:0.78rem;cursor:pointer;letter-spacing:0.05em;flex-shrink:0;">RESUME</button>
       <div id="loading-indicator-data" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-data-record"></span>
-      <button id="btn-resume-data" onclick="onResumeDataClick()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:6px 18px;font-weight:700;font-size:0.85rem;cursor:pointer;letter-spacing:0.05em;flex-shrink:0;margin-left:8px;">RESUME</button>
     </div>
   </div>
 
@@ -2071,15 +2320,21 @@ app.get('/', (c) => {
           <option value="">-- Pilih Unit --</option>
         </select>
       </div>
-      <div id="sld-toolbar-actions" class="hidden" style="display:none;align-items:center;gap:6px;">
+      <div id="sld-toolbar-actions" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
+        <button id="sld-btn-autogen" onclick="sldAutoGenerate()" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;" title="Generate ulang simbol Generator dari daftar mesin">AUTO GEN</button>
+        <button id="sld-btn-group"   onclick="sldGroupSelected()"   style="display:none;background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;" title="Group elemen terpilih">GROUP</button>
+        <button id="sld-btn-ungroup" onclick="sldUngroupSelected()" style="display:none;background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;" title="Lepas group">UNGROUP</button>
+        <button id="sld-btn-copy"   onclick="sldCopy()"      style="display:none;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;" title="Copy (Ctrl+C)">COPY</button>
+        <button id="sld-btn-paste"  onclick="sldPaste()"     style="display:none;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;" title="Paste (Ctrl+V)">PASTE</button>
+        <button id="sld-btn-dup"    onclick="sldDuplicate()" style="display:none;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;" title="Duplicate (Ctrl+D)">DUPLIKAT</button>
+        <button id="sld-btn-undo"   onclick="sldUndo()" disabled style="background:#64748b;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;opacity:0.4;" title="Undo (Ctrl+Z)">↩ UNDO</button>
+        <button id="sld-btn-redo"   onclick="sldRedo()" disabled style="background:#64748b;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;opacity:0.4;" title="Redo (Ctrl+Y)">↪ REDO</button>
         <button id="sld-btn-fit"    onclick="sldFitView()"    style="background:#475569;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">FIT</button>
         <button id="sld-btn-grid"   onclick="sldToggleGrid()" style="background:#475569;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">GRID</button>
         <button id="sld-btn-delete" onclick="sldDeleteSelected()" style="background:#dc2626;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;display:none;">HAPUS</button>
         <button id="sld-btn-save"   onclick="sldSave()"       style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 14px;font-size:0.75rem;font-weight:700;cursor:pointer;">SIMPAN</button>
       </div>
-      <div id="sld-admin-badge" class="hidden" style="display:none;align-items:center;gap:6px;">
-        <span id="sld-mode-label" style="font-size:0.72rem;color:#64748b;"></span>
-      </div>
+      <span id="sld-mode-label" style="font-size:0.72rem;color:#64748b;cursor:pointer;padding:3px 8px;border-radius:4px;background:rgba(0,0,0,0.05);" onclick="sldAdminLogin()">Mode: VIEW</span>
       <div id="loading-indicator-sld" class="hidden"><span class="spinner"></span></div>
     </div>
   </div>
@@ -2116,6 +2371,12 @@ app.get('/', (c) => {
         <thead id="neraca-table-head"></thead>
         <tbody id="neraca-table-body"></tbody>
       </table>
+    </div>
+  </div>
+  <!-- SFC -->
+  <div id="sfc-table-wrap" class="hidden">
+    <div style="padding:8px 0;">
+      <canvas id="sfc-chart" style="width:100%;max-height:480px;"></canvas>
     </div>
   </div>
   <!-- HOP BBM -->
@@ -2187,6 +2448,7 @@ app.get('/', (c) => {
         <rect id="sld-grid-bg" width="100%" height="100%" fill="url(#sld-grid-pattern)"/>
         <g id="sld-lines-layer"></g>
         <g id="sld-components-layer"></g>
+        <g id="sld-overlay-layer"></g>
       </svg>
     </div>
     <!-- Properties panel (kanan bawah, muncul saat ada seleksi) -->
@@ -2244,6 +2506,27 @@ app.get('/', (c) => {
   </div>
 </div>
 
+<!-- Modal Detail Mesin per ULD -->
+<div id="modal-detail-mesin" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('modal-detail-mesin')">
+  <div class="modal-box" style="width:1050px;max-width:96vw;max-height:90vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div>
+        <div id="modal-detail-title" style="font-size:1rem;font-weight:700;color:#1e3a5f;"></div>
+        <div id="modal-detail-sub" style="font-size:0.75rem;color:#64748b;margin-top:2px;"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button id="btn-popup-edit" onclick="togglePopupEditMode()" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;">EDIT</button>
+        <button onclick="closeModal('modal-detail-mesin')" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#64748b;padding:4px 8px;">✕</button>
+      </div>
+    </div>
+    <div id="modal-detail-infobar" style="margin-bottom:0;"></div>
+    <div id="modal-detail-loading" style="text-align:center;padding:24px;display:none;"><span class="spinner"></span></div>
+    <div id="modal-detail-body"></div>
+  </div>
+</div>
+
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="/static/app.js?v=20260509e"></script>
 </body>
 </html>`
