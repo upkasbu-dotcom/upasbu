@@ -4151,7 +4151,7 @@ async function onSldUnitChange(val) {
   // Tampilkan tombol aksi admin
   var actEl = document.getElementById('sld-toolbar-actions')
   if (SLD_IS_ADMIN) { actEl.style.display = 'flex' } else { actEl.style.display = 'none' }
-  document.getElementById('sld-mode-label').textContent = SLD_IS_ADMIN ? '🔓 Mode: EDIT (klik untuk logout)' : '🔒 Mode: VIEW (klik untuk login admin)'
+  document.getElementById('sld-mode-label').textContent = SLD_IS_ADMIN ? 'Mode: EDIT' : 'Mode: VIEW'
 
   showLoading(true, 'loading-indicator-sld')
   // Fetch daftar mesin untuk unit ini (dipakai dropdown label generator)
@@ -4256,27 +4256,9 @@ async function sldAutoGenerate(kodeUnit) {
 }
 
 // ── Admin login / logout toggle ───────────────────────────────
+// SLD tidak punya password sendiri — ikut login admin PENGATURAN
 function sldAdminLogin() {
-  if (SLD_IS_ADMIN) {
-    SLD_IS_ADMIN = false
-    document.getElementById('sld-toolbar-actions').style.display = 'none'
-    document.getElementById('sld-mode-label').textContent = '🔒 Mode: VIEW (klik untuk login admin)'
-    sldSelected = null
-    sldRender()
-    sldHideProps()
-    showToast('Keluar dari mode admin', 'info')
-    return
-  }
-  var pw = prompt('Masukkan password admin:')
-  if (pw === SLD_ADMIN_PASS) {
-    SLD_IS_ADMIN = true
-    document.getElementById('sld-toolbar-actions').style.display = 'flex'
-    document.getElementById('sld-mode-label').textContent = '🔓 Mode: EDIT (klik untuk logout)'
-    showToast('Mode admin aktif', 'success')
-    sldRender()
-  } else if (pw !== null) {
-    showToast('Password salah', 'error')
-  }
+  showToast('Gunakan tombol MASUK SEBAGAI ADMIN di toolbar untuk login', 'info')
 }
 
 // ── Toggle grid ───────────────────────────────────────────────
@@ -5462,6 +5444,12 @@ var _currentPengView = 'mesin'
 
 // Toggle sub-tab di dalam PENGATURAN
 function switchPengView(view) {
+  // Guard: SLD hanya bisa diakses setelah login admin PENGATURAN
+  if (view === 'sld' && !_pengIsAdmin) {
+    showToast('Login sebagai admin untuk mengakses SLD', 'error')
+    return
+  }
+
   _currentPengView = view
 
   // Update tombol sub-tab aktif
@@ -5514,16 +5502,32 @@ function pengInitPage() {
 // Login / logout admin pengaturan
 function pengAdminLogin() {
   if (_pengIsAdmin) {
-    // Sudah login → logout
+    // Sudah login → logout: reset semua state admin termasuk SLD
     _pengIsAdmin = false
+    SLD_IS_ADMIN = false
+    // Jika sedang di sub-tab SLD, paksa balik ke MESIN
+    if (_currentPengView === 'sld') _currentPengView = 'mesin'
     _pengUpdateAdminBtn()
-    document.getElementById('peng-state-content').style.display = 'none'
+    // Update tampilan mode SLD jika elemen sudah ada
+    var modeLbl = document.getElementById('sld-mode-label')
+    if (modeLbl) modeLbl.textContent = 'Mode: VIEW'
+    var actEl = document.getElementById('sld-toolbar-actions')
+    if (actEl) actEl.style.display = 'none'
+    // Sembunyikan konten mesin
+    var content = document.getElementById('peng-state-content')
+    if (content) content.style.display = 'none'
+    // Paksa tampil sub-tab MESIN (locked)
+    switchPengView('mesin')
     return
   }
   var pw = prompt('Masukkan password admin:')
   if (pw === null) return
   if (pw === ADMIN_PASSWORD) {
     _pengIsAdmin = true
+    // Sinkronisasi: login PENGATURAN → SLD otomatis mode EDIT
+    SLD_IS_ADMIN = true
+    var modeLbl = document.getElementById('sld-mode-label')
+    if (modeLbl) modeLbl.textContent = 'Mode: EDIT'
     pengInitPage()
   } else {
     showToast('Password salah!', 'error')
