@@ -2251,7 +2251,7 @@ app.get('/', (c) => {
           <span class="btn-text">DATA</span>
         </button>
         <button id="tab-btn-pengaturan" class="tab-btn" onclick="switchTab('pengaturan')">
-          <span class="btn-text">PENGATURAN</span>
+          <span class="btn-text">ADMIN</span>
         </button>
       </div>
       <div class="header-actions" id="header-actions-monitoring"></div>
