@@ -1732,17 +1732,31 @@ function captureKamera() {
 // TAB SWITCHING
 // =============================================
 function switchTab(tab) {
+  // toggle tab content active
   ['monitoring','laporan','data','pengaturan'].forEach(function(t) {
-    document.getElementById('tab-' + t).classList.toggle('active', tab === t)
-    document.getElementById('tab-btn-' + t).classList.toggle('active', tab === t)
+    var tabEl    = document.getElementById('tab-' + t)
+    var tabBtnEl = document.getElementById('tab-btn-' + t)
+    if (tabEl)    tabEl.classList.toggle('active', tab === t)
+    if (tabBtnEl) tabBtnEl.classList.toggle('active', tab === t)
   })
-  document.getElementById('toolbar-monitoring').classList.toggle('hidden', tab !== 'monitoring')
-  document.getElementById('toolbar-laporan').classList.toggle('hidden', tab !== 'laporan')
-  document.getElementById('toolbar-data').classList.toggle('hidden', tab !== 'data')
-  document.getElementById('toolbar-pengaturan').classList.toggle('hidden', tab !== 'pengaturan')
-  document.getElementById('header-actions-monitoring').style.display = (tab === 'monitoring') ? 'flex' : 'none'
-  document.getElementById('header-actions-laporan').style.display   = (tab === 'laporan')    ? 'flex' : 'none'
-  document.getElementById('header-actions-data').style.display      = (tab === 'data')       ? 'flex' : 'none'
+  // toggle toolbar visibility — pakai display langsung agar tidak bergantung class hidden
+  var toolbars = {
+    'monitoring' : document.getElementById('toolbar-monitoring'),
+    'laporan'    : document.getElementById('toolbar-laporan'),
+    'data'       : document.getElementById('toolbar-data'),
+    'pengaturan' : document.getElementById('toolbar-pengaturan')
+  }
+  Object.keys(toolbars).forEach(function(k) {
+    var el = toolbars[k]
+    if (el) el.style.display = (k === tab) ? '' : 'none'
+  })
+  // header actions
+  var haMonEl  = document.getElementById('header-actions-monitoring')
+  var haLapEl  = document.getElementById('header-actions-laporan')
+  var haDataEl = document.getElementById('header-actions-data')
+  if (haMonEl)  haMonEl.style.display  = (tab === 'monitoring') ? 'flex' : 'none'
+  if (haLapEl)  haLapEl.style.display  = (tab === 'laporan')    ? 'flex' : 'none'
+  if (haDataEl) haDataEl.style.display = (tab === 'data')       ? 'flex' : 'none'
 
   if (tab === 'laporan' && !lapSelectedKode) showLapState('empty')
   if (tab === 'data') switchDataView(currentDataView)
