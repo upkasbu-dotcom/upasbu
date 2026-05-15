@@ -1528,6 +1528,65 @@ app.get('/api/neraca-daya-bulanan', async (c) => {
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
+// ─── BEBAN PUNCAK BULANAN PER ULD ──────────────────────────────────────────
+// Query: /api/bp-bulanan?bulan=YYYY-MM&kode_unit=NNN&periode=siang|malam
+app.get('/api/bp-bulanan', async (c) => {
+  try {
+    const db       = c.env.DB
+    const bulan    = c.req.query('bulan')     || new Date().toISOString().slice(0, 7)
+    const kodeUnit = c.req.query('kode_unit') || ''
+    const periode  = c.req.query('periode')   || 'malam'   // 'siang' | 'malam'
+
+    const [yr, mo] = bulan.split('-').map(Number)
+    const daysInMonth = new Date(yr, mo, 0).getDate()
+
+    // Kondisi jam berdasarkan periode
+    const jamCond = periode === 'siang'
+      ? `(CAST(dm.jam AS INTEGER) >= 6 AND CAST(dm.jam AS INTEGER) <= 17)`
+      : `(CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)`
+
+    let rows
+    if (kodeUnit) {
+      rows = await db.prepare(`
+        SELECT
+          dm.tanggal,
+          SUM(CASE WHEN dm.status_mesin = 'Operasi' AND ${jamCond} THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak
+        FROM data_monitoring dm
+        JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+        WHERE dm.tanggal LIKE ? AND mc.kode_unit = ?
+        GROUP BY dm.tanggal
+        ORDER BY dm.tanggal
+      `).bind(`${bulan}-%`, parseInt(kodeUnit)).all<{ tanggal: string, beban_puncak: number }>()
+    } else {
+      rows = await db.prepare(`
+        SELECT
+          dm.tanggal,
+          SUM(CASE WHEN dm.status_mesin = 'Operasi' AND ${jamCond} THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak
+        FROM data_monitoring dm
+        WHERE dm.tanggal LIKE ?
+        GROUP BY dm.tanggal
+        ORDER BY dm.tanggal
+      `).bind(`${bulan}-%`).all<{ tanggal: string, beban_puncak: number }>()
+    }
+
+    // Build array tanggal lengkap (semua hari dalam bulan)
+    const dataMap: Record<string, number> = {}
+    for (const r of rows.results) {
+      dataMap[r.tanggal] = Math.round(r.beban_puncak || 0)
+    }
+
+    const dates: string[] = []
+    const values: (number | null)[] = []
+    for (let d = 1; d <= daysInMonth; d++) {
+      const tgl = `${bulan}-${String(d).padStart(2, '0')}`
+      dates.push(tgl)
+      values.push(dataMap[tgl] !== undefined ? dataMap[tgl] : null)
+    }
+
+    return c.json({ success: true, bulan, kode_unit: kodeUnit, periode, dates, values })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
 app.get('/api/data-stok', async (c) => {
   try {
     const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
@@ -2229,9 +2288,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260515d" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260515d" as="script"/>
-  <link href="/static/style.css?v=20260515d" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260515e" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260515e" as="script"/>
+  <link href="/static/style.css?v=20260515e" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2328,6 +2387,18 @@ app.get('/', (c) => {
         <label class="toolbar-label">ULD</label>
         <select id="sfc-sel-uld" class="toolbar-select" style="width:180px;" onchange="onSfcUldChange()">
           <option value="">Semua ULD</option>
+        </select>
+      </div>
+      <!-- Filter ULD + Periode untuk Grafik BP Neraca Daya -->
+      <div id="neraca-chart-filter-wrap" style="display:none;align-items:center;gap:4px;flex-shrink:0;flex-wrap:wrap;">
+        <label class="toolbar-label">ULD</label>
+        <select id="neraca-chart-uld" class="toolbar-select" style="width:160px;" onchange="loadNeracaChart()">
+          <option value="">-- Pilih ULD --</option>
+        </select>
+        <label class="toolbar-label">Periode</label>
+        <select id="neraca-chart-periode" class="toolbar-select" style="width:90px;" onchange="loadNeracaChart()">
+          <option value="siang">SIANG</option>
+          <option value="malam">MALAM</option>
         </select>
       </div>
       <button id="btn-download-neraca" onclick="downloadNeracaExcel()" style="display:none;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;flex-shrink:0;" title="Download Excel Neraca Daya">
@@ -2448,6 +2519,12 @@ app.get('/', (c) => {
         <thead id="neraca-table-head"></thead>
         <tbody id="neraca-table-body"></tbody>
       </table>
+    </div>
+    <!-- Grafik Beban Puncak 1 Bulan per ULD -->
+    <div id="neraca-chart-wrap" style="display:none;margin-top:16px;padding:12px;background:#fff;border-radius:8px;border:1px solid #e2e8f0;">
+      <div id="neraca-chart-title" style="font-size:0.82rem;font-weight:700;color:#1a3352;margin-bottom:10px;text-align:center;"></div>
+      <canvas id="neraca-bp-chart" style="width:100%;max-height:360px;"></canvas>
+      <div id="neraca-chart-empty" style="display:none;text-align:center;color:#94a3b8;font-size:0.82rem;padding:32px 0;">Pilih ULD untuk menampilkan grafik beban puncak</div>
     </div>
   </div>
   <!-- SFC -->
@@ -2707,7 +2784,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260515d"></script>
+<script src="/static/app.js?v=20260515e"></script>
 </body>
 </html>`
   const resp = c.html(html)

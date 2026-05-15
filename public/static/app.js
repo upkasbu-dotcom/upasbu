@@ -2685,6 +2685,13 @@ function switchDataView(view) {
   // Show/hide filter ULD (hanya di SFC)
   var sfcFilter = document.getElementById('sfc-filter-wrap')
   if (sfcFilter) sfcFilter.style.display = (view === 'sfc') ? 'flex' : 'none'
+  // Show/hide filter grafik BP (hanya di neraca-daya)
+  var neracaFilter = document.getElementById('neraca-chart-filter-wrap')
+  if (neracaFilter) {
+    neracaFilter.style.display = (view === 'neraca-daya') ? 'flex' : 'none'
+    // Inisialisasi dropdown ULD jika belum
+    if (view === 'neraca-daya') initNeracaChartUldSelect()
+  }
   // Show/hide input tanggal
   var dateWrap = document.getElementById('data-subtab-date-wrap')
   dateWrap.style.display = ''
@@ -2880,7 +2887,12 @@ async function downloadNeracaExcel() {
 }
 
 function onDataTanggalChange() {
-  if (currentDataView === 'neraca-daya') loadNeracaDayaTab()
+  if (currentDataView === 'neraca-daya') {
+    loadNeracaDayaTab()
+    // Reload grafik BP jika ada ULD yang dipilih
+    var selUld = document.getElementById('neraca-chart-uld')
+    if (selUld && selUld.value) loadNeracaChart()
+  }
   else if (currentDataView === 'sfc') loadSfcTab()
   else if (currentDataView === 'hop-bbm') loadDataTab()
   else loadStockOliTab()
@@ -3651,6 +3663,144 @@ async function showNeracaDetailPopup(kodeUnit, namaUnit, tanggal) {
 }
 
 // =============================================
+// =============================================
+// NERACA DAYA — Grafik Batang Beban Puncak 1 Bulan per ULD
+// =============================================
+var neracaBpChartInstance = null  // simpan instance Chart.js agar bisa di-destroy
+
+function initNeracaChartUldSelect() {
+  var sel = document.getElementById('neraca-chart-uld')
+  if (!sel) return
+  // Populate dari UNIT_DATA (sudah tersedia global)
+  sel.innerHTML = '<option value="">-- Pilih ULD --</option>'
+  UNIT_DATA.forEach(function(u) {
+    var opt = document.createElement('option')
+    opt.value = u.kode_unit
+    opt.textContent = u.nama_unit
+    sel.appendChild(opt)
+  })
+}
+
+async function loadNeracaChart() {
+  var tanggal = document.getElementById('data-tanggal').value
+  var kodeUnit = document.getElementById('neraca-chart-uld').value
+  var periode  = document.getElementById('neraca-chart-periode').value
+
+  var chartWrap  = document.getElementById('neraca-chart-wrap')
+  var emptyEl    = document.getElementById('neraca-chart-empty')
+  var titleEl    = document.getElementById('neraca-chart-title')
+
+  // Tampilkan panel grafik
+  if (chartWrap) chartWrap.style.display = ''
+
+  if (!kodeUnit) {
+    // Belum pilih ULD — tampilkan pesan kosong
+    if (emptyEl)  emptyEl.style.display  = ''
+    var canvas = document.getElementById('neraca-bp-chart')
+    if (canvas)   canvas.style.display   = 'none'
+    if (titleEl)  titleEl.textContent    = ''
+    if (neracaBpChartInstance) { neracaBpChartInstance.destroy(); neracaBpChartInstance = null }
+    return
+  }
+
+  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu', 'info'); return }
+
+  // Derive bulan dari tanggal
+  var bulan = tanggal.substring(0, 7)
+
+  // Cari nama unit
+  var unitObj  = UNIT_DATA.find(function(u) { return String(u.kode_unit) === String(kodeUnit) })
+  var namaUnit = unitObj ? unitObj.nama_unit : 'ULD ' + kodeUnit
+
+  showLoading(true, 'loading-indicator-data')
+  try {
+    var res  = await fetch('/api/bp-bulanan?bulan=' + bulan + '&kode_unit=' + kodeUnit + '&periode=' + periode)
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error || 'Gagal memuat data BP')
+
+    var dates  = json.dates   // array YYYY-MM-DD
+    var values = json.values  // array angka | null
+
+    // Label sumbu X: tanggal (DD/MM)
+    var labels = dates.map(function(d) {
+      var p = d.split('-'); return p[2] + '/' + p[1]
+    })
+
+    // Warna bar: biru untuk siang, ungu gelap untuk malam
+    var barColor = periode === 'siang' ? 'rgba(37,99,235,0.75)' : 'rgba(109,40,217,0.75)'
+    var borderColor = periode === 'siang' ? '#1e40af' : '#5b21b6'
+
+    // Title grafik
+    var periodeLbl = periode === 'siang' ? 'SIANG (06:00–17:00)' : 'MALAM (18:00–05:00)'
+    var bulanParts = bulan.split('-')
+    var BULAN_ID = ['','Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
+    var bulanLbl = BULAN_ID[parseInt(bulanParts[1])] + ' ' + bulanParts[0]
+    if (titleEl) titleEl.textContent = 'Beban Puncak ' + namaUnit + ' — ' + periodeLbl + ' — ' + bulanLbl
+
+    // Sembunyikan pesan kosong, tampilkan canvas
+    if (emptyEl) emptyEl.style.display = 'none'
+    var canvas = document.getElementById('neraca-bp-chart')
+    if (canvas) canvas.style.display = ''
+
+    // Destroy chart lama jika ada
+    if (neracaBpChartInstance) { neracaBpChartInstance.destroy(); neracaBpChartInstance = null }
+
+    var ctx = canvas.getContext('2d')
+    neracaBpChartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Beban Puncak (kW) — ' + (periode === 'siang' ? 'Siang' : 'Malam'),
+          data: values,
+          backgroundColor: barColor,
+          borderColor: borderColor,
+          borderWidth: 1,
+          borderRadius: 3,
+          spanGaps: false
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) {
+                var v = ctx.parsed.y
+                return v != null ? 'BP: ' + v.toLocaleString('id-ID') + ' kW' : 'Tidak ada data'
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { font: { size: 10 }, maxRotation: 0 }
+          },
+          y: {
+            beginAtZero: true,
+            title: { display: true, text: 'kW', font: { size: 11 } },
+            ticks: {
+              font: { size: 10 },
+              callback: function(val) { return val.toLocaleString('id-ID') }
+            }
+          }
+        }
+      }
+    })
+
+    document.getElementById('info-data-record').textContent =
+      namaUnit + ' | ' + (periode === 'siang' ? 'Siang' : 'Malam') + ' | ' + bulanLbl
+
+  } catch(e) {
+    showToast('Gagal memuat grafik BP: ' + e.message, 'error')
+  } finally {
+    showLoading(false, 'loading-indicator-data')
+  }
+}
+
 // SFC — Grafik Garis
 // =============================================
 var sfcChartInstance = null  // simpan instance Chart.js agar bisa di-destroy
