@@ -5460,7 +5460,7 @@ function _pengUpdateAdminBtn() {
   }
 }
 
-// State sub-tab pengaturan saat ini ('mesin' atau 'sld')
+// State sub-tab pengaturan saat ini ('mesin', 'sld', atau 'budgeting')
 var _currentPengView = 'mesin'
 
 // Toggle sub-tab di dalam PENGATURAN
@@ -5470,28 +5470,235 @@ function switchPengView(view) {
     showToast('Login sebagai admin untuk mengakses SLD', 'error')
     return
   }
+  // Guard: BUDGETING hanya bisa diakses setelah login admin PENGATURAN
+  if (view === 'budgeting' && !_pengIsAdmin) {
+    showToast('Login sebagai admin untuk mengakses Budgeting', 'error')
+    return
+  }
 
   _currentPengView = view
 
   // Update tombol sub-tab aktif
   document.getElementById('peng-sub-btn-mesin').classList.toggle('active', view === 'mesin')
   document.getElementById('peng-sub-btn-sld').classList.toggle('active', view === 'sld')
+  document.getElementById('peng-sub-btn-budgeting').classList.toggle('active', view === 'budgeting')
 
   // Toggle konten sub-view
-  var viewMesin = document.getElementById('peng-view-mesin')
-  var viewSld   = document.getElementById('peng-view-sld')
-  if (viewMesin) viewMesin.style.display = (view === 'mesin') ? '' : 'none'
-  if (viewSld)   viewSld.style.display   = (view === 'sld')   ? '' : 'none'
+  var viewMesin      = document.getElementById('peng-view-mesin')
+  var viewSld        = document.getElementById('peng-view-sld')
+  var viewBudgeting  = document.getElementById('peng-view-budgeting')
+  if (viewMesin)     viewMesin.style.display     = (view === 'mesin')      ? '' : 'none'
+  if (viewSld)       viewSld.style.display       = (view === 'sld')        ? '' : 'none'
+  if (viewBudgeting) viewBudgeting.style.display = (view === 'budgeting')  ? '' : 'none'
 
   // Toggle toolbar sub-panel
-  var tbMesin = document.getElementById('peng-toolbar-mesin')
-  var tbSld   = document.getElementById('peng-toolbar-sld')
-  if (tbMesin) tbMesin.style.display = (view === 'mesin') ? 'flex' : 'none'
-  if (tbSld)   tbSld.style.display   = (view === 'sld')   ? 'flex' : 'none'
+  var tbMesin     = document.getElementById('peng-toolbar-mesin')
+  var tbSld       = document.getElementById('peng-toolbar-sld')
+  var tbBudgeting = document.getElementById('peng-toolbar-budgeting')
+  if (tbMesin)     tbMesin.style.display     = (view === 'mesin')     ? 'flex' : 'none'
+  if (tbSld)       tbSld.style.display       = (view === 'sld')       ? 'flex' : 'none'
+  if (tbBudgeting) tbBudgeting.style.display = (view === 'budgeting') ? 'flex' : 'none'
 
   // Inisialisasi SLD unit select saat pertama kali masuk sub-tab SLD
   if (view === 'sld') sldInitUnitSelect()
+
+  // Inisialisasi Budgeting saat pertama kali masuk sub-tab
+  if (view === 'budgeting') budgetingInit()
 }
+
+// ===== BUDGETING =====
+
+var _budgetingData = []
+var _budgetingInited = false
+
+function budgetingInit() {
+  // Populate dropdown unit (sekali saja)
+  var selUnit = document.getElementById('budgeting-sel-unit')
+  if (selUnit && selUnit.options.length <= 1) {
+    UNIT_DATA.forEach(function(u) {
+      var opt = document.createElement('option')
+      opt.value = u.kode_unit
+      opt.textContent = u.nama_unit
+      selUnit.appendChild(opt)
+    })
+  }
+  // Populate dropdown tahun (5 tahun ke belakang s/d sekarang)
+  var selTahun = document.getElementById('budgeting-sel-tahun')
+  if (selTahun && selTahun.options.length === 0) {
+    var thisYear = new Date().getFullYear()
+    for (var y = thisYear; y >= thisYear - 4; y--) {
+      var opt = document.createElement('option')
+      opt.value = y
+      opt.textContent = y
+      selTahun.appendChild(opt)
+    }
+  }
+  loadBudgetingData()
+}
+
+function loadBudgetingData() {
+  // Render ulang tabel dari _budgetingData sesuai filter
+  var unitFilter     = (document.getElementById('budgeting-sel-unit')     || {}).value || ''
+  var tahunFilter    = (document.getElementById('budgeting-sel-tahun')    || {}).value || ''
+  var katFilter      = (document.getElementById('budgeting-sel-kategori') || {}).value || ''
+
+  var filtered = _budgetingData.filter(function(row) {
+    if (unitFilter  && row.unit      !== unitFilter)  return false
+    if (tahunFilter && String(row.tahun) !== String(tahunFilter)) return false
+    if (katFilter   && row.kategori  !== katFilter)   return false
+    return true
+  })
+
+  // Hitung summary
+  var totalAnggaran  = 0, totalRealisasi = 0
+  filtered.forEach(function(r) {
+    totalAnggaran  += r.anggaran  || 0
+    totalRealisasi += r.realisasi || 0
+  })
+  var totalSisa = totalAnggaran - totalRealisasi
+  var pctSerapan = totalAnggaran > 0 ? Math.round((totalRealisasi / totalAnggaran) * 100) : 0
+
+  function fmtRp(n) {
+    return 'Rp ' + Math.abs(n).toLocaleString('id-ID')
+  }
+
+  var elTA  = document.getElementById('budget-total-anggaran')
+  var elTR  = document.getElementById('budget-total-realisasi')
+  var elTS  = document.getElementById('budget-total-sisa')
+  var elPct = document.getElementById('budget-pct-serapan')
+  if (elTA)  elTA.textContent  = fmtRp(totalAnggaran)
+  if (elTR)  elTR.textContent  = fmtRp(totalRealisasi)
+  if (elTS)  elTS.textContent  = fmtRp(totalSisa)
+  if (elPct) elPct.textContent = pctSerapan + '%'
+
+  // Render tabel
+  var tbody = document.getElementById('budgeting-table-body')
+  if (!tbody) return
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:#94a3b8;font-size:0.85rem;">Belum ada data anggaran</td></tr>'
+    return
+  }
+  tbody.innerHTML = filtered.map(function(row, i) {
+    var sisa    = (row.anggaran || 0) - (row.realisasi || 0)
+    var pct     = row.anggaran > 0 ? Math.round((row.realisasi / row.anggaran) * 100) : 0
+    var pctColor = pct >= 90 ? '#dc2626' : pct >= 70 ? '#ca8a04' : '#16a34a'
+    var katLabel = { operasional: 'Operasional', pemeliharaan: 'Pemeliharaan', investasi: 'Investasi' }[row.kategori] || row.kategori
+    return '<tr style="border-bottom:1px solid #f1f5f9;">' +
+      '<td style="padding:7px 10px;color:#64748b;">' + (i + 1) + '</td>' +
+      '<td style="padding:7px 10px;font-weight:600;color:#1e3a5f;">' + (row.unit || '-') + '</td>' +
+      '<td style="padding:7px 10px;">' +
+        '<span style="background:#e0e7ff;color:#3730a3;padding:2px 7px;border-radius:4px;font-size:0.72rem;font-weight:600;">' + katLabel + '</span>' +
+      '</td>' +
+      '<td style="padding:7px 10px;">' + (row.uraian || '-') + '</td>' +
+      '<td style="padding:7px 10px;text-align:right;">' + fmtRp(row.anggaran) + '</td>' +
+      '<td style="padding:7px 10px;text-align:right;">' + fmtRp(row.realisasi) + '</td>' +
+      '<td style="padding:7px 10px;text-align:right;color:' + (sisa < 0 ? '#dc2626' : '#15803d') + ';">' + fmtRp(sisa) + '</td>' +
+      '<td style="padding:7px 10px;text-align:center;">' +
+        '<span style="color:' + pctColor + ';font-weight:700;">' + pct + '%</span>' +
+      '</td>' +
+      '<td style="padding:7px 10px;text-align:center;">' +
+        '<button onclick="editBudgetingRow(' + i + ')" style="background:#1e3a5f;color:#fff;border:none;border-radius:4px;padding:3px 8px;font-size:0.72rem;cursor:pointer;margin-right:4px;">Edit</button>' +
+        '<button onclick="deleteBudgetingRow(' + i + ')" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:3px 8px;font-size:0.72rem;cursor:pointer;">Hapus</button>' +
+      '</td>' +
+    '</tr>'
+  }).join('')
+}
+
+function showBudgetingForm(editIdx) {
+  var isEdit  = (editIdx !== undefined && editIdx !== null)
+  var rowData = isEdit ? _budgetingData[editIdx] : {}
+  var unitOpts = '<option value="">-- Pilih Unit --</option>' +
+    UNIT_DATA.map(function(u) {
+      return '<option value="' + u.kode_unit + '"' + (rowData.unit === u.kode_unit ? ' selected' : '') + '>' + u.nama_unit + '</option>'
+    }).join('')
+  var thisYear = new Date().getFullYear()
+  var tahunOpts = ''
+  for (var y = thisYear; y >= thisYear - 4; y--) {
+    tahunOpts += '<option value="' + y + '"' + (String(rowData.tahun) === String(y) ? ' selected' : '') + '>' + y + '</option>'
+  }
+
+  var overlay = document.createElement('div')
+  overlay.id  = 'budgeting-modal-overlay'
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9000;display:flex;align-items:center;justify-content:center;'
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:10px;padding:20px 24px;width:min(96vw,440px);box-shadow:0 8px 32px rgba(0,0,0,0.18);">' +
+      '<div style="font-size:0.92rem;font-weight:700;color:#1e3a5f;margin-bottom:14px;">' + (isEdit ? 'Edit Anggaran' : 'Tambah Anggaran') + '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:10px;">' +
+        '<div><label style="font-size:0.75rem;font-weight:600;color:#475569;display:block;margin-bottom:3px;">Unit</label>' +
+          '<select id="bf-unit" class="toolbar-select" style="width:100%;">' + unitOpts + '</select></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+          '<div><label style="font-size:0.75rem;font-weight:600;color:#475569;display:block;margin-bottom:3px;">Tahun</label>' +
+            '<select id="bf-tahun" class="toolbar-select" style="width:100%;">' + tahunOpts + '</select></div>' +
+          '<div><label style="font-size:0.75rem;font-weight:600;color:#475569;display:block;margin-bottom:3px;">Kategori</label>' +
+            '<select id="bf-kategori" class="toolbar-select" style="width:100%;">' +
+              '<option value="operasional"'   + (rowData.kategori === 'operasional'   ? ' selected' : '') + '>Operasional</option>' +
+              '<option value="pemeliharaan"'  + (rowData.kategori === 'pemeliharaan'  ? ' selected' : '') + '>Pemeliharaan</option>' +
+              '<option value="investasi"'     + (rowData.kategori === 'investasi'     ? ' selected' : '') + '>Investasi</option>' +
+            '</select></div>' +
+        '</div>' +
+        '<div><label style="font-size:0.75rem;font-weight:600;color:#475569;display:block;margin-bottom:3px;">Uraian</label>' +
+          '<input id="bf-uraian" type="text" placeholder="Deskripsi item anggaran..." value="' + (rowData.uraian || '') + '" ' +
+          'style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.82rem;box-sizing:border-box;"/></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+          '<div><label style="font-size:0.75rem;font-weight:600;color:#475569;display:block;margin-bottom:3px;">Anggaran (Rp)</label>' +
+            '<input id="bf-anggaran" type="number" min="0" value="' + (rowData.anggaran || '') + '" ' +
+            'style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.82rem;box-sizing:border-box;"/></div>' +
+          '<div><label style="font-size:0.75rem;font-weight:600;color:#475569;display:block;margin-bottom:3px;">Realisasi (Rp)</label>' +
+            '<input id="bf-realisasi" type="number" min="0" value="' + (rowData.realisasi || '') + '" ' +
+            'style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.82rem;box-sizing:border-box;"/></div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">' +
+        '<button onclick="closeBudgetingModal()" style="background:#f1f5f9;color:#475569;border:none;border-radius:6px;padding:7px 18px;font-weight:600;font-size:0.8rem;cursor:pointer;">Batal</button>' +
+        '<button onclick="saveBudgetingRow(' + (isEdit ? editIdx : 'null') + ')" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:7px 18px;font-weight:700;font-size:0.8rem;cursor:pointer;">Simpan</button>' +
+      '</div>' +
+    '</div>'
+  document.body.appendChild(overlay)
+  // Tutup saat klik luar modal
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) closeBudgetingModal() })
+}
+
+function closeBudgetingModal() {
+  var el = document.getElementById('budgeting-modal-overlay')
+  if (el) el.remove()
+}
+
+function saveBudgetingRow(editIdx) {
+  var unit     = (document.getElementById('bf-unit')      || {}).value || ''
+  var tahun    = parseInt((document.getElementById('bf-tahun')     || {}).value) || new Date().getFullYear()
+  var kategori = (document.getElementById('bf-kategori')  || {}).value || 'operasional'
+  var uraian   = ((document.getElementById('bf-uraian')   || {}).value || '').trim()
+  var anggaran = parseFloat((document.getElementById('bf-anggaran')  || {}).value) || 0
+  var realisasi= parseFloat((document.getElementById('bf-realisasi') || {}).value) || 0
+
+  if (!unit)   { showToast('Pilih unit terlebih dahulu', 'error'); return }
+  if (!uraian) { showToast('Uraian tidak boleh kosong', 'error'); return }
+
+  var row = { unit: unit, tahun: tahun, kategori: kategori, uraian: uraian, anggaran: anggaran, realisasi: realisasi }
+
+  if (editIdx !== null && editIdx !== undefined && editIdx !== 'null') {
+    _budgetingData[editIdx] = row
+    showToast('Data anggaran berhasil diperbarui', 'success')
+  } else {
+    _budgetingData.push(row)
+    showToast('Data anggaran berhasil ditambahkan', 'success')
+  }
+  closeBudgetingModal()
+  loadBudgetingData()
+}
+
+function editBudgetingRow(idx) {
+  showBudgetingForm(idx)
+}
+
+function deleteBudgetingRow(idx) {
+  if (!confirm('Hapus data anggaran ini?')) return
+  _budgetingData.splice(idx, 1)
+  loadBudgetingData()
+  showToast('Data anggaran dihapus', 'success')
+}
+
+// ===== END BUDGETING =====
 
 // Inisialisasi halaman Pengaturan saat tab diklik
 function pengInitPage() {
@@ -5526,8 +5733,8 @@ function pengAdminLogin() {
     // Sudah login → logout: reset semua state admin termasuk SLD
     _pengIsAdmin = false
     SLD_IS_ADMIN = false
-    // Jika sedang di sub-tab SLD, paksa balik ke MESIN
-    if (_currentPengView === 'sld') _currentPengView = 'mesin'
+    // Jika sedang di sub-tab SLD atau BUDGETING, paksa balik ke MESIN
+    if (_currentPengView === 'sld' || _currentPengView === 'budgeting') _currentPengView = 'mesin'
     _pengUpdateAdminBtn()
     // Update tampilan mode SLD jika elemen sudah ada
     var modeLbl = document.getElementById('sld-mode-label')
