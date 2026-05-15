@@ -59,6 +59,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 }
 .tab-btn.active { background: rgba(255,255,255,0.18); color: #fff; border-bottom: 3px solid #38bdf8; }
 .tab-btn:not(.active):hover { background: rgba(255,255,255,0.13); color: #e0f2fe; }
+/* Icon admin di pojok kanan tab-row */
+.tab-btn-admin-icon {
+  width: 32px;
+  flex: 0 0 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  border-radius: 6px;
+  opacity: 0.55;
+}
+.tab-btn-admin-icon:not(.active):hover { opacity: 1; }
+.tab-btn-admin-icon.active { opacity: 1; border-bottom: 3px solid #f59e0b; color: #fbbf24; background: rgba(251,191,36,0.15); }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
 
