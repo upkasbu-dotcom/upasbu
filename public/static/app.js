@@ -5514,7 +5514,7 @@ function _renderPengTable(data) {
   var body = document.getElementById('peng-table-body')
 
   head.innerHTML = '<tr style="background:#1e3a5f;color:#fff;font-size:0.78rem;">' +
-    '<th style="padding:8px 6px;text-align:center;white-space:nowrap;">No</th>' +
+    '<th style="padding:8px 2px;text-align:center;">No</th>' +
     '<th style="padding:8px 6px;text-align:left;white-space:nowrap;">ULD</th>' +
     '<th style="padding:8px 6px;text-align:left;white-space:nowrap;">Nama Mesin</th>' +
     '<th style="padding:8px 6px;text-align:left;white-space:nowrap;">Mesin</th>' +
@@ -5541,7 +5541,7 @@ function _renderPengTable(data) {
       : '<span style="color:#94a3b8;font-size:0.75rem;">–</span>'
     var rowBg = i % 2 === 0 ? '#fff' : '#f8fafc'
     return '<tr style="background:' + rowBg + ';font-size:0.8rem;" data-id="' + m.id_mesin + '">' +
-      '<td style="padding:6px;text-align:center;color:#64748b;">' + (i+1) + '</td>' +
+      '<td style="padding:6px 2px;text-align:center;color:#64748b;">' + (i+1) + '</td>' +
       '<td style="padding:6px;white-space:nowrap;">' + (m.nama_unit || '-') + '</td>' +
       '<td style="padding:6px;">' + (m.nama_mesin || '-') + '</td>' +
       '<td style="padding:6px;white-space:nowrap;">' + (m.mesin || '-') + '</td>' +

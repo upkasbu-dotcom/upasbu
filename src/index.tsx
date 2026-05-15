@@ -2464,8 +2464,19 @@ app.get('/', (c) => {
     <button onclick="pengAdminLogin()" style="background:#1e3a5f;color:#fff;border:none;border-radius:8px;padding:10px 28px;font-weight:700;font-size:0.9rem;cursor:pointer;">MASUK SEBAGAI ADMIN</button>
   </div>
   <div id="peng-state-content" style="display:none;">
-    <div id="peng-table-wrap">
-      <table id="peng-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+    <div id="peng-table-wrap" style="overflow-x:auto;">
+      <table id="peng-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed;">
+        <colgroup>
+          <col style="width:3%;"/>        <!-- No -->
+          <col style="width:11%;"/>       <!-- ULD -->
+          <col style="width:20%;"/>       <!-- Nama Mesin -->
+          <col style="width:20%;"/>       <!-- Mesin -->
+          <col style="width:9%;"/>        <!-- Tipe -->
+          <col style="width:9%;"/>        <!-- S/N -->
+          <col style="width:7%;"/>        <!-- DM (kW) -->
+          <col style="width:7%;"/>        <!-- Source -->
+          <col style="width:10%;"/>       <!-- Aksi -->
+        </colgroup>
         <thead id="peng-table-head"></thead>
         <tbody id="peng-table-body"></tbody>
       </table>
