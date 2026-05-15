@@ -2412,8 +2412,6 @@ app.get('/', (c) => {
   </div>
 </div>
 
-</div>
-
 <!-- ===== TAB: LOG SHEET HARIAN ===== -->
 <div id="tab-monitoring" class="tab-content" style="padding:10px 12px;">
   <div id="mon-state-empty" style="display:flex;"></div>
