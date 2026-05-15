@@ -387,7 +387,7 @@ app.post('/api/mesin-kode', async (c) => {
 app.get('/api/mesin-cache', async (c) => {
   try {
     const rows = await c.env.DB.prepare(
-      `SELECT id_mesin, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, terpasang, is_manual FROM mesin_cache ORDER BY kode_unit, id_mesin`
+      `SELECT id_mesin, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, terpasang FROM mesin_cache ORDER BY kode_unit, id_mesin`
     ).all()
     return c.json({ success: true, data: rows.results })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
@@ -414,46 +414,10 @@ app.post('/api/mesin-cache/add', async (c) => {
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
-// Edit mesin manual (hanya is_manual=1)
-app.put('/api/mesin-cache/:id_mesin', async (c) => {
-  try {
-    const id = Number(c.req.param('id_mesin'))
-    // Cek apakah mesin ini is_manual=1
-    const check = await c.env.DB.prepare(
-      `SELECT is_manual FROM mesin_cache WHERE id_mesin = ?`
-    ).bind(id).first() as { is_manual: number } | null
-    if (!check) return c.json({ success: false, error: 'Mesin tidak ditemukan' }, 404)
-    if (!check.is_manual) return c.json({ success: false, error: 'Hanya mesin manual yang bisa diedit' }, 403)
-    const body = await c.req.json() as {
-      up3?: string, kode_unit?: number, nama_unit?: string,
-      mesin?: string, type?: string, s_n?: string, nama_mesin?: string, terpasang?: number
-    }
-    await c.env.DB.prepare(`
-      UPDATE mesin_cache
-      SET up3=?, kode_unit=?, nama_unit=?, mesin=?, type=?, s_n=?, nama_mesin=?, terpasang=?
-      WHERE id_mesin = ? AND is_manual = 1
-    `).bind(
-      body.up3 || '', body.kode_unit || 0, body.nama_unit || '',
-      body.mesin || '', body.type || null, body.s_n || null,
-      body.nama_mesin || body.mesin || '', body.terpasang || null, id
-    ).run()
-    return c.json({ success: true, id_mesin: id })
-  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
-})
-
-// Hapus mesin (hanya is_manual=1)
 app.delete('/api/mesin-cache/:id_mesin', async (c) => {
   try {
     const id = Number(c.req.param('id_mesin'))
-    // Cek apakah mesin ini is_manual=1
-    const check = await c.env.DB.prepare(
-      `SELECT is_manual FROM mesin_cache WHERE id_mesin = ?`
-    ).bind(id).first() as { is_manual: number } | null
-    if (!check) return c.json({ success: false, error: 'Mesin tidak ditemukan' }, 404)
-    if (!check.is_manual) return c.json({ success: false, error: 'Hanya mesin manual yang bisa dihapus' }, 403)
-    const r = await c.env.DB.prepare(
-      `DELETE FROM mesin_cache WHERE id_mesin = ? AND is_manual = 1`
-    ).bind(id).run()
+    const r = await c.env.DB.prepare(`DELETE FROM mesin_cache WHERE id_mesin = ?`).bind(id).run()
     return c.json({ success: true, deleted: r.meta.changes })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
@@ -1215,9 +1179,7 @@ app.get('/api/detail-mesin', async (c) => {
             THEN COALESCE(dm.pemakaian_bbm, 0) ELSE 0 END) as total_bbm,
         SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
             AND dm.status_mesin = 'Operasi'
-            THEN COALESCE(dm.kwh_produksi, 0) ELSE 0 END) as total_kwh,
-        -- has_data: 1 jika mesin punya minimal 1 record di tanggal ini, 0 jika tidak
-        COUNT(dm.id) as jumlah_record
+            THEN COALESCE(dm.kwh_produksi, 0) ELSE 0 END) as total_kwh
       FROM mesin_cache mc
       LEFT JOIN data_monitoring dm
         ON dm.mesin_id = mc.id_mesin AND dm.tanggal = ?
@@ -1227,14 +1189,13 @@ app.get('/api/detail-mesin', async (c) => {
     `).bind(tanggal, tanggal, kode_unit).all<{
       id_mesin: number, nama_mesin: string, terpasang: number | null,
       status_mesin: string | null, daya_mampu: number | null, beban: number | null,
-      total_bbm: number, total_kwh: number, jumlah_record: number
+      total_bbm: number, total_kwh: number
     }>()
 
     const data = rows.results.map(r => ({
       id_mesin:     r.id_mesin,
       nama_mesin:   r.nama_mesin,
       terpasang:    r.terpasang,
-      has_data:     (r.jumlah_record ?? 0) > 0,   // true = punya data di tanggal ini
       status_mesin: r.status_mesin || '-',
       daya_mampu:   r.daya_mampu   != null ? Math.round(r.daya_mampu) : null,
       beban:        r.beban        != null ? Math.round(r.beban)       : null,
@@ -2219,9 +2180,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260515b" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260515b" as="script"/>
-  <link href="/static/style.css?v=20260515b" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260508z4" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260509e" as="script"/>
+  <link href="/static/style.css?v=20260508z4" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2242,9 +2203,6 @@ app.get('/', (c) => {
         </button>
         <button id="tab-btn-sld" class="tab-btn" onclick="switchTab('sld')">
           <span class="btn-text">SLD</span>
-        </button>
-        <button id="tab-btn-pengaturan" class="tab-btn" onclick="switchTab('pengaturan')">
-          <span class="btn-text">PENGATURAN</span>
         </button>
       </div>
       <div class="header-actions" id="header-actions-monitoring"></div>
@@ -2326,23 +2284,6 @@ app.get('/', (c) => {
       <button id="btn-resume-data" onclick="onResumeDataClick()" style="display:none;background:#2563eb;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-weight:700;font-size:0.78rem;cursor:pointer;letter-spacing:0.05em;flex-shrink:0;">RESUME</button>
       <div id="loading-indicator-data" class="hidden"><span class="spinner"></span></div>
       <span class="toolbar-info" id="info-data-record"></span>
-    </div>
-  </div>
-
-  <!-- Pengaturan toolbar -->
-  <div id="toolbar-pengaturan" class="hidden">
-    <div class="toolbar">
-      <div class="toolbar-group">
-        <label class="toolbar-label">Filter ULD</label>
-        <select id="peng-sel-unit" class="toolbar-select" style="min-width:180px;" onchange="loadPengaturanMesin(this.value)">
-          <option value="">Semua ULD</option>
-        </select>
-      </div>
-      <button onclick="showTambahMesinForm()" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:6px 16px;font-weight:700;font-size:0.82rem;cursor:pointer;flex-shrink:0;">
-        + Tambah Mesin
-      </button>
-      <div id="loading-indicator-peng" class="hidden"><span class="spinner"></span></div>
-      <span class="toolbar-info" id="info-peng-count"></span>
     </div>
   </div>
 
@@ -2454,23 +2395,6 @@ app.get('/', (c) => {
     </div>
   </div>
 
-</div>
-
-<!-- ===== TAB: PENGATURAN MESIN ===== -->
-<div id="tab-pengaturan" class="tab-content" style="padding:10px 12px;">
-  <div id="peng-state-locked" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;height:300px;">
-    <div style="font-size:2.5rem;">🔒</div>
-    <div style="color:#64748b;font-size:0.95rem;">Halaman ini memerlukan autentikasi admin</div>
-    <button onclick="pengAdminLogin()" style="background:#1e3a5f;color:#fff;border:none;border-radius:8px;padding:10px 28px;font-weight:700;font-size:0.9rem;cursor:pointer;">MASUK SEBAGAI ADMIN</button>
-  </div>
-  <div id="peng-state-content" style="display:none;">
-    <div id="peng-table-wrap">
-      <table id="peng-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;">
-        <thead id="peng-table-head"></thead>
-        <tbody id="peng-table-body"></tbody>
-      </table>
-    </div>
-  </div>
 </div>
 
 <!-- ===== TAB: SLD ===== -->
@@ -2587,10 +2511,7 @@ app.get('/', (c) => {
         <div id="modal-detail-title" style="font-size:1rem;font-weight:700;color:#1e3a5f;"></div>
         <div id="modal-detail-sub" style="font-size:0.75rem;color:#64748b;margin-top:2px;"></div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <button id="btn-popup-edit" onclick="togglePopupEditMode()" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;">EDIT</button>
-        <button onclick="closeModal('modal-detail-mesin')" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#64748b;padding:4px 8px;">✕</button>
-      </div>
+      <button onclick="closeModal('modal-detail-mesin')" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#64748b;padding:4px 8px;">✕</button>
     </div>
     <div id="modal-detail-infobar" style="margin-bottom:0;"></div>
     <div id="modal-detail-loading" style="text-align:center;padding:24px;display:none;"><span class="spinner"></span></div>
@@ -2600,7 +2521,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260515b"></script>
+<script src="/static/app.js?v=20260509e"></script>
 </body>
 </html>`
   const resp = c.html(html)
