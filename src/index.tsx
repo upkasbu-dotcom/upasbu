@@ -387,9 +387,19 @@ app.post('/api/mesin-kode', async (c) => {
 app.get('/api/mesin-cache', async (c) => {
   try {
     const rows = await c.env.DB.prepare(
-      `SELECT id_mesin, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, terpasang, is_manual FROM mesin_cache ORDER BY kode_unit, id_mesin`
+      `SELECT id_mesin, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, terpasang, is_manual, up3 FROM mesin_cache ORDER BY kode_unit, id_mesin`
     ).all()
     return c.json({ success: true, data: rows.results })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// GET daftar UP3 unik dari database
+app.get('/api/mesin-cache/up3-list', async (c) => {
+  try {
+    const rows = await c.env.DB.prepare(
+      `SELECT DISTINCT up3 FROM mesin_cache WHERE up3 IS NOT NULL AND up3 != '' ORDER BY up3`
+    ).all()
+    return c.json({ success: true, data: rows.results.map((r: any) => r.up3) })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
@@ -2240,9 +2250,6 @@ app.get('/', (c) => {
         <button id="tab-btn-data" class="tab-btn" onclick="switchTab('data')">
           <span class="btn-text">DATA</span>
         </button>
-        <button id="tab-btn-sld" class="tab-btn" onclick="switchTab('sld')">
-          <span class="btn-text">SLD</span>
-        </button>
         <button id="tab-btn-pengaturan" class="tab-btn" onclick="switchTab('pengaturan')">
           <span class="btn-text">PENGATURAN</span>
         </button>
@@ -2332,17 +2339,52 @@ app.get('/', (c) => {
   <!-- Pengaturan toolbar -->
   <div id="toolbar-pengaturan" class="hidden">
     <div class="toolbar">
-      <div class="toolbar-group">
-        <label class="toolbar-label">Filter ULD</label>
-        <select id="peng-sel-unit" class="toolbar-select" style="min-width:180px;" onchange="loadPengaturanMesin(this.value)">
-          <option value="">Semua ULD</option>
-        </select>
+      <div id="peng-subtab-row" style="display:flex;gap:4px;">
+        <button id="peng-sub-btn-mesin" class="data-subtab-btn active" onclick="switchPengView('mesin')">MESIN</button>
+        <button id="peng-sub-btn-sld"   class="data-subtab-btn"        onclick="switchPengView('sld')">SLD</button>
       </div>
-      <button onclick="showTambahMesinForm()" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:6px 16px;font-weight:700;font-size:0.82rem;cursor:pointer;flex-shrink:0;">
-        + Tambah Mesin
+      <!-- Toolbar Mesin -->
+      <div id="peng-toolbar-mesin" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div class="toolbar-group">
+          <label class="toolbar-label">Filter ULD</label>
+          <select id="peng-sel-unit" class="toolbar-select" style="min-width:180px;" onchange="loadPengaturanMesin(this.value)">
+            <option value="">Semua ULD</option>
+          </select>
+        </div>
+        <button onclick="showTambahMesinForm()" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:6px 16px;font-weight:700;font-size:0.75rem;cursor:pointer;flex-shrink:0;">
+          TAMBAH MESIN
+        </button>
+        <div id="loading-indicator-peng" class="hidden"><span class="spinner"></span></div>
+        <span class="toolbar-info" id="info-peng-count"></span>
+      </div>
+      <!-- Toolbar SLD -->
+      <div id="peng-toolbar-sld" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
+        <div class="toolbar-group">
+          <label class="toolbar-label">Unit</label>
+          <select id="sld-sel-unit" class="toolbar-select" onchange="onSldUnitChange(this.value)">
+            <option value="">-- Pilih Unit --</option>
+          </select>
+        </div>
+        <div id="sld-toolbar-actions" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
+          <button id="sld-btn-autogen" onclick="sldAutoGenerate()" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">AUTO GEN</button>
+          <button id="sld-btn-group"   onclick="sldGroupSelected()"   style="display:none;background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">GROUP</button>
+          <button id="sld-btn-ungroup" onclick="sldUngroupSelected()" style="display:none;background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">UNGROUP</button>
+          <button id="sld-btn-copy"   onclick="sldCopy()"      style="display:none;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">COPY</button>
+          <button id="sld-btn-paste"  onclick="sldPaste()"     style="display:none;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">PASTE</button>
+          <button id="sld-btn-dup"    onclick="sldDuplicate()" style="display:none;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">DUPLIKAT</button>
+          <button id="sld-btn-undo"   onclick="sldUndo()" disabled style="background:#64748b;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;opacity:0.4;">↩ UNDO</button>
+          <button id="sld-btn-redo"   onclick="sldRedo()" disabled style="background:#64748b;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;opacity:0.4;">↪ REDO</button>
+          <button id="sld-btn-fit"    onclick="sldFitView()"    style="background:#475569;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">FIT</button>
+          <button id="sld-btn-grid"   onclick="sldToggleGrid()" style="background:#475569;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">GRID</button>
+          <button id="sld-btn-delete" onclick="sldDeleteSelected()" style="display:none;background:#dc2626;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">HAPUS</button>
+          <button id="sld-btn-save"   onclick="sldSave()"       style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 14px;font-size:0.75rem;font-weight:700;cursor:pointer;">SIMPAN</button>
+        </div>
+        <span id="sld-mode-label" style="font-size:0.72rem;color:#64748b;cursor:pointer;padding:3px 8px;border-radius:4px;background:rgba(0,0,0,0.05);" onclick="sldAdminLogin()">Mode: VIEW</span>
+        <div id="loading-indicator-sld" class="hidden"><span class="spinner"></span></div>
+      </div>
+      <button id="btn-peng-admin" onclick="pengAdminLogin()" style="margin-left:auto;background:#dc2626;color:#fff;border:none;border-radius:6px;padding:6px 16px;font-weight:700;font-size:0.75rem;cursor:pointer;flex-shrink:0;">
+        MASUK SEBAGAI ADMIN
       </button>
-      <div id="loading-indicator-peng" class="hidden"><span class="spinner"></span></div>
-      <span class="toolbar-info" id="info-peng-count"></span>
     </div>
   </div>
 
@@ -2367,33 +2409,6 @@ app.get('/', (c) => {
   </div>
 </div>
 
-  <!-- SLD toolbar -->
-  <div id="toolbar-sld" class="hidden">
-    <div class="toolbar" style="align-items:center;">
-      <div class="toolbar-group">
-        <label class="toolbar-label">Unit</label>
-        <select id="sld-sel-unit" class="toolbar-select" onchange="onSldUnitChange(this.value)">
-          <option value="">-- Pilih Unit --</option>
-        </select>
-      </div>
-      <div id="sld-toolbar-actions" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
-        <button id="sld-btn-autogen" onclick="sldAutoGenerate()" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;" title="Generate ulang simbol Generator dari daftar mesin">AUTO GEN</button>
-        <button id="sld-btn-group"   onclick="sldGroupSelected()"   style="display:none;background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;" title="Group elemen terpilih">GROUP</button>
-        <button id="sld-btn-ungroup" onclick="sldUngroupSelected()" style="display:none;background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;" title="Lepas group">UNGROUP</button>
-        <button id="sld-btn-copy"   onclick="sldCopy()"      style="display:none;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;" title="Copy (Ctrl+C)">COPY</button>
-        <button id="sld-btn-paste"  onclick="sldPaste()"     style="display:none;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;" title="Paste (Ctrl+V)">PASTE</button>
-        <button id="sld-btn-dup"    onclick="sldDuplicate()" style="display:none;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;" title="Duplicate (Ctrl+D)">DUPLIKAT</button>
-        <button id="sld-btn-undo"   onclick="sldUndo()" disabled style="background:#64748b;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;opacity:0.4;" title="Undo (Ctrl+Z)">↩ UNDO</button>
-        <button id="sld-btn-redo"   onclick="sldRedo()" disabled style="background:#64748b;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;opacity:0.4;" title="Redo (Ctrl+Y)">↪ REDO</button>
-        <button id="sld-btn-fit"    onclick="sldFitView()"    style="background:#475569;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">FIT</button>
-        <button id="sld-btn-grid"   onclick="sldToggleGrid()" style="background:#475569;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;">GRID</button>
-        <button id="sld-btn-delete" onclick="sldDeleteSelected()" style="background:#dc2626;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;display:none;">HAPUS</button>
-        <button id="sld-btn-save"   onclick="sldSave()"       style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 14px;font-size:0.75rem;font-weight:700;cursor:pointer;">SIMPAN</button>
-      </div>
-      <span id="sld-mode-label" style="font-size:0.72rem;color:#64748b;cursor:pointer;padding:3px 8px;border-radius:4px;background:rgba(0,0,0,0.05);" onclick="sldAdminLogin()">Mode: VIEW</span>
-      <div id="loading-indicator-sld" class="hidden"><span class="spinner"></span></div>
-    </div>
-  </div>
 </div>
 
 <!-- ===== TAB: LOG SHEET HARIAN ===== -->
@@ -2456,89 +2471,87 @@ app.get('/', (c) => {
 
 </div>
 
-<!-- ===== TAB: PENGATURAN MESIN ===== -->
-<div id="tab-pengaturan" class="tab-content" style="padding:10px 12px;">
-  <div id="peng-state-locked" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;height:300px;">
-    <div style="font-size:2.5rem;">🔒</div>
-    <div style="color:#64748b;font-size:0.95rem;">Halaman ini memerlukan autentikasi admin</div>
-    <button onclick="pengAdminLogin()" style="background:#1e3a5f;color:#fff;border:none;border-radius:8px;padding:10px 28px;font-weight:700;font-size:0.9rem;cursor:pointer;">MASUK SEBAGAI ADMIN</button>
-  </div>
-  <div id="peng-state-content" style="display:none;">
-    <div id="peng-table-wrap" style="overflow-x:auto;">
-      <table id="peng-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed;">
-        <colgroup>
-          <col style="width:3%;"/>        <!-- No -->
-          <col style="width:11%;"/>       <!-- ULD -->
-          <col style="width:20%;"/>       <!-- Nama Mesin -->
-          <col style="width:20%;"/>       <!-- Mesin -->
-          <col style="width:9%;"/>        <!-- Tipe -->
-          <col style="width:9%;"/>        <!-- S/N -->
-          <col style="width:7%;"/>        <!-- DM (kW) -->
-          <col style="width:7%;"/>        <!-- Source -->
-          <col style="width:10%;"/>       <!-- Aksi -->
-        </colgroup>
-        <thead id="peng-table-head"></thead>
-        <tbody id="peng-table-body"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- ===== TAB: SLD ===== -->
-<div id="tab-sld" class="tab-content" style="padding:0;">
-  <div id="sld-state-empty" style="display:flex;align-items:center;justify-content:center;height:300px;color:#94a3b8;font-size:0.9rem;">
-    Pilih unit untuk melihat / mengedit SLD
-  </div>
-  <div id="sld-wrap" class="hidden" style="position:relative;width:100%;background:#f1f5f9;border-top:1px solid #e2e8f0;">
-    <!-- Palette komponen (kiri) -->
-    <div id="sld-palette" style="position:absolute;left:0;top:0;bottom:0;width:72px;background:#1e3a5f;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px;overflow-y:auto;z-index:10;">
-      <div class="sld-pal-item" data-type="generator"  title="Generator/PLTD">
-        <svg width="36" height="36" viewBox="0 0 36 36"><circle cx="18" cy="18" r="14" fill="none" stroke="#93c5fd" stroke-width="2"/><text x="18" y="22" text-anchor="middle" font-size="11" fill="#93c5fd" font-weight="bold">G</text></svg>
-        <span>GEN</span>
-      </div>
-      <div class="sld-pal-item" data-type="trafo" title="Transformator">
-        <svg width="36" height="36" viewBox="0 0 36 36"><circle cx="13" cy="18" r="8" fill="none" stroke="#93c5fd" stroke-width="2"/><circle cx="23" cy="18" r="8" fill="none" stroke="#93c5fd" stroke-width="2"/></svg>
-        <span>TRF</span>
-      </div>
-      <div class="sld-pal-item" data-type="busbar" title="Busbar">
-        <svg width="36" height="20" viewBox="0 0 36 20"><rect x="2" y="8" width="32" height="4" fill="#93c5fd" rx="1"/></svg>
-        <span>BUS</span>
-      </div>
-      <div class="sld-pal-item" data-type="cb" title="Circuit Breaker">
-        <svg width="36" height="36" viewBox="0 0 36 36"><rect x="12" y="12" width="12" height="12" fill="none" stroke="#93c5fd" stroke-width="2" rx="2"/><line x1="18" y1="2" x2="18" y2="12" stroke="#93c5fd" stroke-width="2"/><line x1="18" y1="24" x2="18" y2="34" stroke="#93c5fd" stroke-width="2"/></svg>
-        <span>CB</span>
-      </div>
-      <div class="sld-pal-item" data-type="load" title="Beban/Load">
-        <svg width="36" height="36" viewBox="0 0 36 36"><polygon points="18,4 32,30 4,30" fill="none" stroke="#93c5fd" stroke-width="2"/><line x1="18" y1="30" x2="18" y2="34" stroke="#93c5fd" stroke-width="2"/></svg>
-        <span>LOAD</span>
-      </div>
-      <div class="sld-pal-item" data-type="line" title="Kabel/Line">
-        <svg width="36" height="36" viewBox="0 0 36 36"><line x1="4" y1="18" x2="32" y2="18" stroke="#93c5fd" stroke-width="2.5"/><polygon points="28,13 36,18 28,23" fill="#93c5fd"/></svg>
-        <span>LINE</span>
-      </div>
-      <div class="sld-pal-item" data-type="label" title="Label Teks">
-        <svg width="36" height="36" viewBox="0 0 36 36"><text x="18" y="24" text-anchor="middle" font-size="18" fill="#93c5fd" font-weight="bold">T</text></svg>
-        <span>TXT</span>
+<!-- ===== TAB: PENGATURAN MESIN + SLD ===== -->
+<div id="tab-pengaturan" class="tab-content" style="padding:0;">
+  <!-- Sub-view: MESIN -->
+  <div id="peng-view-mesin" style="padding:10px 12px;">
+    <div id="peng-state-locked" style="display:none;"></div>
+    <div id="peng-state-content" style="display:none;">
+      <div id="peng-table-wrap" style="overflow-x:auto;">
+        <table id="peng-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed;">
+          <colgroup>
+            <col style="width:3%;"/>        <!-- No -->
+            <col style="width:11%;"/>       <!-- ULD -->
+            <col style="width:20%;"/>       <!-- Nama Mesin -->
+            <col style="width:20%;"/>       <!-- Mesin -->
+            <col style="width:9%;"/>        <!-- Tipe -->
+            <col style="width:9%;"/>        <!-- S/N -->
+            <col style="width:7%;"/>        <!-- DM (kW) -->
+            <col style="width:7%;"/>        <!-- Source -->
+            <col style="width:10%;"/>       <!-- Aksi -->
+          </colgroup>
+          <thead id="peng-table-head"></thead>
+          <tbody id="peng-table-body"></tbody>
+        </table>
       </div>
     </div>
-    <!-- Canvas SVG -->
-    <div id="sld-canvas-wrap" style="margin-left:72px;overflow:auto;position:relative;height:580px;cursor:default;">
-      <svg id="sld-canvas" width="2000" height="1500" style="display:block;background:#f8fafc;">
-        <defs>
-          <pattern id="sld-grid-pattern" width="20" height="20" patternUnits="userSpaceOnUse">
-            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e2e8f0" stroke-width="0.5"/>
-          </pattern>
-        </defs>
-        <rect id="sld-grid-bg" width="100%" height="100%" fill="url(#sld-grid-pattern)"/>
-        <g id="sld-lines-layer"></g>
-        <g id="sld-components-layer"></g>
-        <g id="sld-overlay-layer"></g>
-      </svg>
+  </div>
+  <!-- Sub-view: SLD -->
+  <div id="peng-view-sld" style="display:none;padding:0;">
+    <div id="sld-state-empty" style="display:flex;align-items:center;justify-content:center;height:300px;color:#94a3b8;font-size:0.9rem;">
+      Pilih unit untuk melihat / mengedit SLD
     </div>
-    <!-- Properties panel (kanan bawah, muncul saat ada seleksi) -->
-    <div id="sld-props-panel" style="display:none;position:absolute;right:8px;top:8px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;min-width:180px;box-shadow:0 2px 8px rgba(0,0,0,0.1);z-index:20;">
-      <div style="font-size:0.72rem;font-weight:700;color:#1e3a5f;margin-bottom:8px;text-transform:uppercase;">Properti</div>
-      <div style="display:flex;flex-direction:column;gap:6px;" id="sld-props-fields"></div>
+    <div id="sld-wrap" class="hidden" style="position:relative;width:100%;background:#f1f5f9;border-top:1px solid #e2e8f0;">
+      <!-- Palette komponen (kiri) -->
+      <div id="sld-palette" style="position:absolute;left:0;top:0;bottom:0;width:72px;background:#1e3a5f;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px;overflow-y:auto;z-index:10;">
+        <div class="sld-pal-item" data-type="generator"  title="Generator/PLTD">
+          <svg width="36" height="36" viewBox="0 0 36 36"><circle cx="18" cy="18" r="14" fill="none" stroke="#93c5fd" stroke-width="2"/><text x="18" y="22" text-anchor="middle" font-size="11" fill="#93c5fd" font-weight="bold">G</text></svg>
+          <span>GEN</span>
+        </div>
+        <div class="sld-pal-item" data-type="trafo" title="Transformator">
+          <svg width="36" height="36" viewBox="0 0 36 36"><circle cx="13" cy="18" r="8" fill="none" stroke="#93c5fd" stroke-width="2"/><circle cx="23" cy="18" r="8" fill="none" stroke="#93c5fd" stroke-width="2"/></svg>
+          <span>TRF</span>
+        </div>
+        <div class="sld-pal-item" data-type="busbar" title="Busbar">
+          <svg width="36" height="20" viewBox="0 0 36 20"><rect x="2" y="8" width="32" height="4" fill="#93c5fd" rx="1"/></svg>
+          <span>BUS</span>
+        </div>
+        <div class="sld-pal-item" data-type="cb" title="Circuit Breaker">
+          <svg width="36" height="36" viewBox="0 0 36 36"><rect x="12" y="12" width="12" height="12" fill="none" stroke="#93c5fd" stroke-width="2" rx="2"/><line x1="18" y1="2" x2="18" y2="12" stroke="#93c5fd" stroke-width="2"/><line x1="18" y1="24" x2="18" y2="34" stroke="#93c5fd" stroke-width="2"/></svg>
+          <span>CB</span>
+        </div>
+        <div class="sld-pal-item" data-type="load" title="Beban/Load">
+          <svg width="36" height="36" viewBox="0 0 36 36"><polygon points="18,4 32,30 4,30" fill="none" stroke="#93c5fd" stroke-width="2"/><line x1="18" y1="30" x2="18" y2="34" stroke="#93c5fd" stroke-width="2"/></svg>
+          <span>LOAD</span>
+        </div>
+        <div class="sld-pal-item" data-type="line" title="Kabel/Line">
+          <svg width="36" height="36" viewBox="0 0 36 36"><line x1="4" y1="18" x2="32" y2="18" stroke="#93c5fd" stroke-width="2.5"/><polygon points="28,13 36,18 28,23" fill="#93c5fd"/></svg>
+          <span>LINE</span>
+        </div>
+        <div class="sld-pal-item" data-type="label" title="Label Teks">
+          <svg width="36" height="36" viewBox="0 0 36 36"><text x="18" y="24" text-anchor="middle" font-size="18" fill="#93c5fd" font-weight="bold">T</text></svg>
+          <span>TXT</span>
+        </div>
+      </div>
+      <!-- Canvas SVG -->
+      <div id="sld-canvas-wrap" style="margin-left:72px;overflow:auto;position:relative;height:580px;cursor:default;">
+        <svg id="sld-canvas" width="2000" height="1500" style="display:block;background:#f8fafc;">
+          <defs>
+            <pattern id="sld-grid-pattern" width="20" height="20" patternUnits="userSpaceOnUse">
+              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e2e8f0" stroke-width="0.5"/>
+            </pattern>
+          </defs>
+          <rect id="sld-grid-bg" width="100%" height="100%" fill="url(#sld-grid-pattern)"/>
+          <g id="sld-lines-layer"></g>
+          <g id="sld-components-layer"></g>
+          <g id="sld-overlay-layer"></g>
+        </svg>
+      </div>
+      <!-- Properties panel (kanan bawah, muncul saat ada seleksi) -->
+      <div id="sld-props-panel" style="display:none;position:absolute;right:8px;top:8px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;min-width:180px;box-shadow:0 2px 8px rgba(0,0,0,0.1);z-index:20;">
+        <div style="font-size:0.72rem;font-weight:700;color:#1e3a5f;margin-bottom:8px;text-transform:uppercase;">Properti</div>
+        <div style="display:flex;flex-direction:column;gap:6px;" id="sld-props-fields"></div>
+      </div>
     </div>
   </div>
 </div>

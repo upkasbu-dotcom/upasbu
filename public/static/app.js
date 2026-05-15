@@ -1732,14 +1732,13 @@ function captureKamera() {
 // TAB SWITCHING
 // =============================================
 function switchTab(tab) {
-  ['monitoring','laporan','data','sld','pengaturan'].forEach(function(t) {
+  ['monitoring','laporan','data','pengaturan'].forEach(function(t) {
     document.getElementById('tab-' + t).classList.toggle('active', tab === t)
     document.getElementById('tab-btn-' + t).classList.toggle('active', tab === t)
   })
   document.getElementById('toolbar-monitoring').classList.toggle('hidden', tab !== 'monitoring')
   document.getElementById('toolbar-laporan').classList.toggle('hidden', tab !== 'laporan')
   document.getElementById('toolbar-data').classList.toggle('hidden', tab !== 'data')
-  document.getElementById('toolbar-sld').classList.toggle('hidden', tab !== 'sld')
   document.getElementById('toolbar-pengaturan').classList.toggle('hidden', tab !== 'pengaturan')
   document.getElementById('header-actions-monitoring').style.display = (tab === 'monitoring') ? 'flex' : 'none'
   document.getElementById('header-actions-laporan').style.display   = (tab === 'laporan')    ? 'flex' : 'none'
@@ -1747,7 +1746,6 @@ function switchTab(tab) {
 
   if (tab === 'laporan' && !lapSelectedKode) showLapState('empty')
   if (tab === 'data') switchDataView(currentDataView)
-  if (tab === 'sld') sldInitUnitSelect()
   if (tab === 'pengaturan') pengInitPage()
 }
 
@@ -5446,6 +5444,46 @@ var _pengCurrentFilter = ''      // kode_unit filter saat ini
 var _pengAllMesin      = []      // cache semua mesin dari API
 var ADMIN_PASSWORD     = 'dilan2025'  // password admin pengaturan
 
+// Update tampilan tombol admin di toolbar sesuai status login
+function _pengUpdateAdminBtn() {
+  var btn = document.getElementById('btn-peng-admin')
+  if (!btn) return
+  if (_pengIsAdmin) {
+    btn.textContent = 'KELUAR ADMIN'
+    btn.style.background = '#64748b'
+  } else {
+    btn.textContent = 'MASUK SEBAGAI ADMIN'
+    btn.style.background = '#dc2626'
+  }
+}
+
+// State sub-tab pengaturan saat ini ('mesin' atau 'sld')
+var _currentPengView = 'mesin'
+
+// Toggle sub-tab di dalam PENGATURAN
+function switchPengView(view) {
+  _currentPengView = view
+
+  // Update tombol sub-tab aktif
+  document.getElementById('peng-sub-btn-mesin').classList.toggle('active', view === 'mesin')
+  document.getElementById('peng-sub-btn-sld').classList.toggle('active', view === 'sld')
+
+  // Toggle konten sub-view
+  var viewMesin = document.getElementById('peng-view-mesin')
+  var viewSld   = document.getElementById('peng-view-sld')
+  if (viewMesin) viewMesin.style.display = (view === 'mesin') ? '' : 'none'
+  if (viewSld)   viewSld.style.display   = (view === 'sld')   ? '' : 'none'
+
+  // Toggle toolbar sub-panel
+  var tbMesin = document.getElementById('peng-toolbar-mesin')
+  var tbSld   = document.getElementById('peng-toolbar-sld')
+  if (tbMesin) tbMesin.style.display = (view === 'mesin') ? 'flex' : 'none'
+  if (tbSld)   tbSld.style.display   = (view === 'sld')   ? 'flex' : 'none'
+
+  // Inisialisasi SLD unit select saat pertama kali masuk sub-tab SLD
+  if (view === 'sld') sldInitUnitSelect()
+}
+
 // Inisialisasi halaman Pengaturan saat tab diklik
 function pengInitPage() {
   // Populate dropdown filter ULD
@@ -5458,23 +5496,32 @@ function pengInitPage() {
       sel.appendChild(opt)
     })
   }
-  // Tampilkan state: locked atau content
-  var locked  = document.getElementById('peng-state-locked')
-  var content = document.getElementById('peng-state-content')
-  if (_pengIsAdmin) {
-    locked.style.display  = 'none'
-    content.style.display = 'block'
-    loadPengaturanMesin(_pengCurrentFilter)
-  } else {
-    locked.style.display  = 'flex'
-    content.style.display = 'none'
+  _pengUpdateAdminBtn()
+  // Pastikan tampilan sub-tab sesuai state saat ini
+  switchPengView(_currentPengView)
+  // Jika view mesin aktif, update konten tabel
+  if (_currentPengView === 'mesin') {
+    var content = document.getElementById('peng-state-content')
+    if (_pengIsAdmin) {
+      content.style.display = 'block'
+      loadPengaturanMesin(_pengCurrentFilter)
+    } else {
+      content.style.display = 'none'
+    }
   }
 }
 
-// Login admin pengaturan
+// Login / logout admin pengaturan
 function pengAdminLogin() {
+  if (_pengIsAdmin) {
+    // Sudah login → logout
+    _pengIsAdmin = false
+    _pengUpdateAdminBtn()
+    document.getElementById('peng-state-content').style.display = 'none'
+    return
+  }
   var pw = prompt('Masukkan password admin:')
-  if (pw === null) return  // dibatalkan
+  if (pw === null) return
   if (pw === ADMIN_PASSWORD) {
     _pengIsAdmin = true
     pengInitPage()
@@ -5515,11 +5562,11 @@ function _renderPengTable(data) {
 
   head.innerHTML = '<tr style="background:#1e3a5f;color:#fff;font-size:0.78rem;">' +
     '<th style="padding:8px 2px;text-align:center;">No</th>' +
-    '<th style="padding:8px 6px;text-align:left;white-space:nowrap;">ULD</th>' +
-    '<th style="padding:8px 6px;text-align:left;white-space:nowrap;">Nama Mesin</th>' +
-    '<th style="padding:8px 6px;text-align:left;white-space:nowrap;">Mesin</th>' +
-    '<th style="padding:8px 6px;text-align:left;white-space:nowrap;">Tipe</th>' +
-    '<th style="padding:8px 6px;text-align:left;white-space:nowrap;">S/N</th>' +
+    '<th style="padding:8px 6px;text-align:center;white-space:nowrap;">ULD</th>' +
+    '<th style="padding:8px 6px;text-align:center;white-space:nowrap;">Nama Mesin</th>' +
+    '<th style="padding:8px 6px;text-align:center;white-space:nowrap;">Mesin</th>' +
+    '<th style="padding:8px 6px;text-align:center;white-space:nowrap;">Tipe</th>' +
+    '<th style="padding:8px 6px;text-align:center;white-space:nowrap;">S/N</th>' +
     '<th style="padding:8px 6px;text-align:center;white-space:nowrap;">DM (kW)</th>' +
     '<th style="padding:8px 6px;text-align:center;white-space:nowrap;">Source</th>' +
     '<th style="padding:8px 6px;text-align:center;white-space:nowrap;">Aksi</th>' +
@@ -5542,9 +5589,9 @@ function _renderPengTable(data) {
     var rowBg = i % 2 === 0 ? '#fff' : '#f8fafc'
     return '<tr style="background:' + rowBg + ';font-size:0.8rem;" data-id="' + m.id_mesin + '">' +
       '<td style="padding:6px 2px;text-align:center;color:#64748b;">' + (i+1) + '</td>' +
-      '<td style="padding:6px;white-space:nowrap;">' + (m.nama_unit || '-') + '</td>' +
-      '<td style="padding:6px;">' + (m.nama_mesin || '-') + '</td>' +
-      '<td style="padding:6px;white-space:nowrap;">' + (m.mesin || '-') + '</td>' +
+      '<td style="padding:6px;text-align:left;white-space:nowrap;">' + (m.nama_unit || '-') + '</td>' +
+      '<td style="padding:6px;text-align:left;">' + (m.nama_mesin || '-') + '</td>' +
+      '<td style="padding:6px;text-align:left;white-space:nowrap;">' + (m.mesin || '-') + '</td>' +
       '<td style="padding:6px;white-space:nowrap;">' + (m.type || '-') + '</td>' +
       '<td style="padding:6px;white-space:nowrap;">' + (m.s_n || '-') + '</td>' +
       '<td style="padding:6px;text-align:center;">' + (m.terpasang !== null && m.terpasang !== undefined ? m.terpasang : '-') + '</td>' +
@@ -5554,10 +5601,28 @@ function _renderPengTable(data) {
   }).join('')
 }
 
+// Cache UP3 list dari database
+var _up3List = []
+
+// Fetch UP3 list dari database, lalu tampilkan modal
+async function _pengOpenModal(mesin) {
+  try {
+    if (_up3List.length === 0) {
+      var res  = await fetch('/api/mesin-cache/up3-list')
+      var json = await res.json()
+      var _up3Exclude = ['UP3 KOTABARU', 'UP3 MUARA TEWEH']
+      if (json.success && json.data.length > 0) _up3List = json.data.filter(function(u) { return _up3Exclude.indexOf(u) === -1 })
+    }
+  } catch(e) { /* gunakan fallback jika fetch gagal */ }
+  // Fallback jika database kosong / error
+  if (_up3List.length === 0) _up3List = ['PLN UP3 MUARA TEWEH','PLN UP3 PANGKALAN BUN','PLN UP3 TANAH BUMBU']
+  _pengShowMesinModal(mesin)
+}
+
 // Tampilkan form Tambah Mesin Baru
 function showTambahMesinForm() {
   if (!_pengIsAdmin) { showToast('Harap login sebagai admin terlebih dahulu', 'error'); return }
-  _pengShowMesinModal(null)
+  _pengOpenModal(null)
 }
 
 // Edit mesin manual
@@ -5565,7 +5630,7 @@ function _pengEditMesin(idMesin) {
   var m = _pengAllMesin.find(function(x) { return x.id_mesin == idMesin })
   if (!m) { showToast('Mesin tidak ditemukan', 'error'); return }
   if (!m.is_manual) { showToast('Hanya mesin manual yang bisa diedit', 'error'); return }
-  _pengShowMesinModal(m)
+  _pengOpenModal(m)
 }
 
 // Hapus mesin manual
@@ -5595,10 +5660,16 @@ function _pengShowMesinModal(mesin) {
   var isEdit = !!mesin
   var title  = isEdit ? 'Edit Mesin Manual' : 'Tambah Mesin Baru'
 
-  // Hitung id_mesin default (max + 1) untuk form tambah
+  // Hitung id_mesin default (max + 1)
   var maxId = 0
   _pengAllMesin.forEach(function(x) { if (x.id_mesin > maxId) maxId = x.id_mesin })
   var defaultId = isEdit ? mesin.id_mesin : (maxId + 1)
+
+  // Build option UP3 dari database (via _up3List yang sudah di-fetch)
+  var curUp3 = isEdit ? (mesin.up3 || '') : (_up3List[0] || '')
+  var up3Options = _up3List.map(function(u) {
+    return '<option value="' + u + '"' + (u === curUp3 ? ' selected' : '') + '>' + u + '</option>'
+  }).join('')
 
   // Build option ULD
   var unitOptions = UNIT_DATA.map(function(u) {
@@ -5622,8 +5693,8 @@ function _pengShowMesinModal(mesin) {
             '<input id="_pf-id" type="number" value="' + defaultId + '" ' + (isEdit ? 'readonly style="background:#f1f5f9;"' : '') + ' style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:7px 10px;font-size:0.85rem;box-sizing:border-box;"/>' +
           '</div>' +
           '<div>' +
-            '<label style="font-size:0.78rem;color:#64748b;display:block;margin-bottom:4px;">UP3</label>' +
-            '<input id="_pf-up3" type="text" value="' + (isEdit && mesin.up3 ? mesin.up3 : 'PLN UP3 MUARA TEWEH') + '" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:7px 10px;font-size:0.85rem;box-sizing:border-box;"/>' +
+            '<label style="font-size:0.78rem;color:#64748b;display:block;margin-bottom:4px;">UP3 *</label>' +
+            '<select id="_pf-up3" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:7px 10px;font-size:0.85rem;box-sizing:border-box;">' + up3Options + '</select>' +
           '</div>' +
         '</div>' +
         '<div>' +
@@ -5654,9 +5725,7 @@ function _pengShowMesinModal(mesin) {
           '<label style="font-size:0.78rem;color:#64748b;display:block;margin-bottom:4px;">Daya Mampu Terpasang (kW)</label>' +
           '<input id="_pf-terpasang" type="number" placeholder="Cth: 250" value="' + (isEdit && mesin.terpasang !== null && mesin.terpasang !== undefined ? mesin.terpasang : '') + '" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:7px 10px;font-size:0.85rem;box-sizing:border-box;"/>' +
         '</div>' +
-        '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;font-size:0.78rem;color:#92400e;">' +
-          '⚠️ Mesin dengan flag <strong>MANUAL</strong> tidak akan terhapus saat sinkronisasi Google Sheets.' +
-        '</div>' +
+
         '<div style="display:flex;gap:10px;justify-content:flex-end;padding-top:4px;">' +
           '<button onclick="document.getElementById(\'_peng-mesin-modal\').remove()" style="background:#f1f5f9;color:#475569;border:none;border-radius:6px;padding:9px 20px;font-weight:600;font-size:0.85rem;cursor:pointer;">Batal</button>' +
           '<button onclick="_pengSaveMesin(' + (isEdit ? mesin.id_mesin : 'null') + ')" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:9px 24px;font-weight:700;font-size:0.85rem;cursor:pointer;">' + (isEdit ? 'Simpan Perubahan' : 'Tambah Mesin') + '</button>' +
@@ -5675,16 +5744,17 @@ function _pengUnitChange(sel) {
 
 // Simpan mesin (tambah atau edit)
 async function _pengSaveMesin(editId) {
-  var idEl   = document.getElementById('_pf-id')
-  var unitEl = document.getElementById('_pf-unit')
-  var namaEl = document.getElementById('_pf-nama-mesin')
-  var mesinEl= document.getElementById('_pf-mesin')
-  var typeEl = document.getElementById('_pf-type')
-  var snEl   = document.getElementById('_pf-sn')
-  var tpEl   = document.getElementById('_pf-terpasang')
-  var up3El  = document.getElementById('_pf-up3')
+  var idEl    = document.getElementById('_pf-id')
+  var up3El   = document.getElementById('_pf-up3')
+  var unitEl  = document.getElementById('_pf-unit')
+  var namaEl  = document.getElementById('_pf-nama-mesin')
+  var mesinEl = document.getElementById('_pf-mesin')
+  var typeEl  = document.getElementById('_pf-type')
+  var snEl    = document.getElementById('_pf-sn')
+  var tpEl    = document.getElementById('_pf-terpasang')
 
   var idMesin   = parseInt(idEl.value) || 0
+  var up3       = up3El.value
   var kodeUnit  = parseInt(unitEl.value) || 0
   var namaUnit  = unitEl.options[unitEl.selectedIndex].textContent.trim()
   var namaMesin = namaEl.value.trim()
@@ -5692,7 +5762,6 @@ async function _pengSaveMesin(editId) {
   var type      = typeEl.value.trim()
   var sn        = snEl.value.trim()
   var terpasang = tpEl.value !== '' ? parseInt(tpEl.value) : null
-  var up3       = up3El.value.trim()
 
   // Validasi
   if (!idMesin)   { showToast('ID Mesin harus diisi', 'error'); idEl.focus(); return }
