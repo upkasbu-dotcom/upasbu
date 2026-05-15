@@ -1732,24 +1732,31 @@ function captureKamera() {
 // TAB SWITCHING
 // =============================================
 function switchTab(tab) {
-  // toggle tab content active
-  ['monitoring','laporan','data','pengaturan'].forEach(function(t) {
+  var TABS = ['monitoring','laporan','data','pengaturan']
+
+  // tab content: tambah/hapus class active
+  TABS.forEach(function(t) {
     var tabEl    = document.getElementById('tab-' + t)
     var tabBtnEl = document.getElementById('tab-btn-' + t)
-    if (tabEl)    tabEl.classList.toggle('active', tab === t)
-    if (tabBtnEl) tabBtnEl.classList.toggle('active', tab === t)
+    if (tabEl) {
+      if (t === tab) tabEl.classList.add('active')
+      else           tabEl.classList.remove('active')
+    }
+    if (tabBtnEl) {
+      if (t === tab) tabBtnEl.classList.add('active')
+      else           tabBtnEl.classList.remove('active')
+    }
   })
-  // toggle toolbar visibility — pakai display langsung agar tidak bergantung class hidden
-  var toolbars = {
-    'monitoring' : document.getElementById('toolbar-monitoring'),
-    'laporan'    : document.getElementById('toolbar-laporan'),
-    'data'       : document.getElementById('toolbar-data'),
-    'pengaturan' : document.getElementById('toolbar-pengaturan')
-  }
-  Object.keys(toolbars).forEach(function(k) {
-    var el = toolbars[k]
-    if (el) el.style.display = (k === tab) ? '' : 'none'
+
+  // toolbar: tambah/hapus class hidden
+  TABS.forEach(function(t) {
+    var el = document.getElementById('toolbar-' + t)
+    if (el) {
+      if (t === tab) el.classList.remove('hidden')
+      else           el.classList.add('hidden')
+    }
   })
+
   // header actions
   var haMonEl  = document.getElementById('header-actions-monitoring')
   var haLapEl  = document.getElementById('header-actions-laporan')

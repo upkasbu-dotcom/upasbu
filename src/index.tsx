@@ -2392,7 +2392,7 @@ app.get('/', (c) => {
   </div>
 
   <!-- Lap operasional toolbar -->
-  <div id="toolbar-laporan" class="hidden">
+  <div id="toolbar-laporan">
     <div class="toolbar">
       <div class="toolbar-group">
         <label class="toolbar-label">Unit</label>
@@ -2415,7 +2415,7 @@ app.get('/', (c) => {
 </div>
 
 <!-- ===== TAB: LOG SHEET HARIAN ===== -->
-<div id="tab-monitoring" class="tab-content active" style="padding:10px 12px;">
+<div id="tab-monitoring" class="tab-content" style="padding:10px 12px;">
   <div id="mon-state-empty" style="display:flex;"></div>
   <div id="mon-table-wrap" class="hidden">
     <div class="table-wrap">
@@ -2428,7 +2428,7 @@ app.get('/', (c) => {
 </div>
 
 <!-- ===== TAB: OPERASIONAL ===== -->
-<div id="tab-laporan" class="tab-content" style="padding:10px 12px;">
+<div id="tab-laporan" class="tab-content active" style="padding:10px 12px;">
   <div id="lap-state-empty" style="flex-direction:column;"></div>
   <div id="lap-state-pick-unit" style="display:none;flex-direction:column;"></div>
   <div id="lap-form-container" class="hidden" style="max-width:600px;margin:0 auto;width:100%;"></div>
