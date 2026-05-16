@@ -3199,9 +3199,9 @@ function _renderPopupTable() {
   // colgroup — tambah kolom Aksi saat edit mode
   var html = '<table style="width:100%;border-collapse:collapse;font-size:0.78rem;table-layout:fixed;">'
   if (em) {
-    html += '<colgroup><col style="width:36px"><col><col style="width:103px"><col style="width:81px"><col style="width:90px"><col style="width:90px"><col style="width:90px"><col style="width:73px"><col style="width:44px"></colgroup>'
+    html += '<colgroup><col style="width:36px"><col><col style="width:103px"><col style="width:81px"><col style="width:90px"><col style="width:90px"><col style="width:90px"><col style="width:73px"><col style="width:73px"><col style="width:44px"></colgroup>'
   } else {
-    html += '<colgroup><col style="width:36px"><col><col style="width:103px"><col style="width:81px"><col style="width:90px"><col style="width:90px"><col style="width:90px"><col style="width:73px"></colgroup>'
+    html += '<colgroup><col style="width:36px"><col><col style="width:103px"><col style="width:81px"><col style="width:90px"><col style="width:90px"><col style="width:90px"><col style="width:73px"><col style="width:73px"></colgroup>'
   }
   html += '<thead><tr style="background:#1e3a5f;color:#fff;">'
   html += '<th style="padding:8px 4px;text-align:center;border-right:1px solid #2d5a8e;font-size:0.78rem;font-weight:600;">No</th>'
@@ -3211,7 +3211,8 @@ function _renderPopupTable() {
   html += '<th style="padding:8px 6px;text-align:center;border-right:1px solid #2d5a8e;font-size:0.78rem;font-weight:600;">Beban (kW)</th>'
   html += '<th style="padding:8px 6px;text-align:center;border-right:1px solid #2d5a8e;font-size:0.78rem;font-weight:600;">BBM (L)</th>'
   html += '<th style="padding:8px 6px;text-align:center;border-right:1px solid #2d5a8e;font-size:0.78rem;font-weight:600;">kWh</th>'
-  html += '<th style="padding:8px 6px;text-align:center;' + (em ? 'border-right:1px solid #2d5a8e;' : '') + 'font-size:0.78rem;font-weight:600;">SFC</th>'
+  html += '<th style="padding:8px 6px;text-align:center;border-right:1px solid #2d5a8e;font-size:0.78rem;font-weight:600;">SFC</th>'
+  html += '<th style="padding:8px 6px;text-align:center;' + (em ? 'border-right:1px solid #2d5a8e;' : '') + 'font-size:0.78rem;font-weight:600;">Jam Kerja</th>'
   if (em) html += '<th style="padding:8px 4px;text-align:center;font-size:0.78rem;font-weight:600;"></th>'
   html += '</tr></thead><tbody>'
 
@@ -3249,7 +3250,9 @@ function _renderPopupTable() {
     html += '<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;text-align:center;">' + (m.beban != null ? m.beban.toLocaleString('id-ID') : '-') + '</td>'
     html += '<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;text-align:center;">' + (m.pemakaian_bbm != null ? m.pemakaian_bbm.toLocaleString('id-ID') : '-') + '</td>'
     html += '<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;text-align:center;">' + (m.kwh_produksi != null ? m.kwh_produksi.toLocaleString('id-ID') : '-') + '</td>'
-    html += '<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;' + (em ? 'border-right:1px solid #e2e8f0;' : '') + 'text-align:center;' + _sfcStyle(m.sfc) + '">' + (m.sfc != null ? m.sfc.toFixed(4) : '-') + '</td>'
+    html += '<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;text-align:center;' + _sfcStyle(m.sfc) + '">' + (m.sfc != null ? m.sfc.toFixed(4) : '-') + '</td>'
+    // Jam Kerja Mesin — read-only
+    html += '<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;' + (em ? 'border-right:1px solid #e2e8f0;' : '') + 'text-align:center;">' + (m.jam_kerja_mesin != null ? m.jam_kerja_mesin.toLocaleString('id-ID') : '-') + '</td>'
 
     // Kolom Aksi — hanya saat edit mode, hanya mesin _isNew yang bisa dihapus
     if (em) {
@@ -3639,15 +3642,16 @@ async function showNeracaDetailPopup(kodeUnit, namaUnit, tanggal) {
     // Simpan deep copy ke editedData (hanya mesin ber-data)
     _popupEditedData = mesinDenganData.map(function(m) {
       return {
-        id_mesin:      m.id_mesin,
-        nama_mesin:    m.nama_mesin,
-        terpasang:     m.terpasang,
-        status_mesin:  m.status_mesin,
-        daya_mampu:    m.daya_mampu,
-        beban:         m.beban,
-        pemakaian_bbm: m.pemakaian_bbm,
-        kwh_produksi:  m.kwh_produksi,
-        sfc:           m.sfc
+        id_mesin:        m.id_mesin,
+        nama_mesin:      m.nama_mesin,
+        terpasang:       m.terpasang,
+        status_mesin:    m.status_mesin,
+        daya_mampu:      m.daya_mampu,
+        beban:           m.beban,
+        pemakaian_bbm:   m.pemakaian_bbm,
+        kwh_produksi:    m.kwh_produksi,
+        jam_kerja_mesin: m.jam_kerja_mesin,
+        sfc:             m.sfc
       }
     })
     // Simpan snapshot awal untuk reset saat SELESAI / tutup popup

@@ -1226,6 +1226,10 @@ app.get('/api/detail-mesin', async (c) => {
         SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
             AND dm.status_mesin = 'Operasi'
             THEN COALESCE(dm.kwh_produksi, 0) ELSE 0 END) as total_kwh,
+        -- Jam kerja mesin malam: SUM jam_kerja_mesin saat Operasi di jam malam
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+            AND dm.status_mesin = 'Operasi'
+            THEN COALESCE(dm.jam_kerja_mesin, 0) ELSE 0 END) as total_jam_kerja,
         -- has_data: 1 jika mesin punya minimal 1 record di tanggal ini, 0 jika tidak
         COUNT(dm.id) as jumlah_record
       FROM mesin_cache mc
@@ -1237,7 +1241,7 @@ app.get('/api/detail-mesin', async (c) => {
     `).bind(tanggal, tanggal, kode_unit).all<{
       id_mesin: number, nama_mesin: string, terpasang: number | null,
       status_mesin: string | null, daya_mampu: number | null, beban: number | null,
-      total_bbm: number, total_kwh: number, jumlah_record: number
+      total_bbm: number, total_kwh: number, total_jam_kerja: number, jumlah_record: number
     }>()
 
     const data = rows.results.map(r => ({
@@ -1250,6 +1254,7 @@ app.get('/api/detail-mesin', async (c) => {
       beban:        r.beban        != null ? Math.round(r.beban)       : null,
       pemakaian_bbm: r.total_bbm > 0 ? Math.round(r.total_bbm * 100) / 100 : null,
       kwh_produksi:  r.total_kwh > 0 ? Math.round(r.total_kwh * 100) / 100 : null,
+      jam_kerja_mesin: r.total_jam_kerja > 0 ? Math.round(r.total_jam_kerja * 100) / 100 : null,
       sfc:          r.total_kwh > 0
         ? Math.round(r.total_bbm / r.total_kwh * 10000) / 10000
         : null
@@ -2288,9 +2293,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260515e" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260515e" as="script"/>
-  <link href="/static/style.css?v=20260515e" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260515f" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260515f" as="script"/>
+  <link href="/static/style.css?v=20260515f" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2784,7 +2789,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260515e"></script>
+<script src="/static/app.js?v=20260515f"></script>
 </body>
 </html>`
   const resp = c.html(html)
