@@ -4086,7 +4086,7 @@ function initDataTable() {
     var stickyStyle = i === 0 ? 'position:sticky;left:0;z-index:2;' : i === 1 ? 'position:sticky;left:0;z-index:2;' : ''
     var thExtra = i === 0 ? 'width:1px;white-space:nowrap;padding:8px 4px;border-right:1px solid #e2e8f0;' : 'padding:8px 10px;'
     var thAlign = 'text-align:center;'
-    var thWidth  = i === 2 ? 'min-width:198px;' : (i >= 16) ? 'min-width:160px;' : ''
+    var thWidth  = i === 2 ? 'min-width:198px;' : i === 16 ? 'min-width:152px;' : i === 17 ? 'min-width:140px;' : ''
     headHTML += '<th style="background:#1e3a5f;color:#fff;white-space:nowrap;font-size:0.72rem;' + thAlign + thWidth + thExtra + stickyStyle + '">' + cols[i] + '</th>'
   }
   headHTML += '</tr>'
@@ -4120,7 +4120,9 @@ async function loadDataTab() {
     var rows   = json.data || []
     var hopMap = (jsonHop.success && jsonHop.data) ? jsonHop.data : {}
 
-    var inputStyle = 'font-size:0.75rem;border:1px solid #cbd5e1;border-radius:4px;padding:3px 5px;width:100%;box-sizing:border-box;background:#f8fafc;'
+    var inputStyle    = 'font-size:0.75rem;border:1px solid #cbd5e1;border-radius:4px;padding:3px 5px;box-sizing:border-box;background:#f8fafc;'
+    var inputPosSt    = inputStyle + 'width:140px;'
+    var inputDateSt   = inputStyle + 'width:128px;cursor:pointer;'
     var bodyHTML = ''
     for (var r = 0; r < rows.length; r++) {
       var d = rows[r]
@@ -4167,16 +4169,16 @@ async function loadDataTab() {
       // Kolom POSISI TERAKHIR & ESTIMASI TIBA — hanya tampil jika HOP (safety_stock) < 8
       var showHopFields = (d.safety_stock !== null && d.safety_stock !== undefined && d.safety_stock < 8)
       if (showHopFields) {
-        bodyHTML += '<td style="padding:4px 6px;min-width:160px;">'
-        bodyHTML += '<input type="text" value="' + posVal.replace(/"/g,'&quot;') + '" placeholder="Posisi armada..." '
+        bodyHTML += '<td style="padding:4px 6px;white-space:nowrap;">'
+        bodyHTML += '<input type="text" value="' + posVal.replace(/"/g,'&quot;') + '" placeholder="Posisi..." '
         bodyHTML += 'data-ku="' + ku + '" data-field="posisi" '
-        bodyHTML += 'style="' + inputStyle + '" '
+        bodyHTML += 'style="' + inputPosSt + '" '
         bodyHTML += 'onblur="saveHopInfo(this)" onkeydown="if(event.key===\'Enter\')this.blur()"/>'
         bodyHTML += '</td>'
-        bodyHTML += '<td style="padding:4px 6px;min-width:140px;">'
+        bodyHTML += '<td style="padding:4px 6px;white-space:nowrap;">'
         bodyHTML += '<input type="date" value="' + etaVal + '" '
         bodyHTML += 'data-ku="' + ku + '" data-field="eta" '
-        bodyHTML += 'style="' + inputStyle + 'cursor:pointer;" '
+        bodyHTML += 'style="' + inputDateSt + '" '
         bodyHTML += 'onchange="saveHopInfo(this)"/>'
         bodyHTML += '</td>'
       } else {
