@@ -194,8 +194,11 @@ document.addEventListener('DOMContentLoaded', function() {
   var yWIB = new Date(nowWIB.getTime() - 24 * 60 * 60 * 1000)
   var yesterdayStr = yWIB.getUTCFullYear() + '-' + pad(yWIB.getUTCMonth()+1) + '-' + pad(yWIB.getUTCDate())
 
-  document.getElementById('sel-tanggal').value   = todayStr
-  // Tab OPERASIONAL: default H-1, max = hari ini
+  // Tab BEBAN PUNCAK: default H-1, max = H-1 (hari H dan setelahnya disabled)
+  var selTglEl = document.getElementById('sel-tanggal')
+  selTglEl.value = yesterdayStr
+  selTglEl.max   = yesterdayStr
+  // Tab OPERASIONAL: default H-1, max = H-1
   var lapTglEl = document.getElementById('lap-tanggal')
   lapTglEl.value = yesterdayStr
   lapTglEl.max   = yesterdayStr
