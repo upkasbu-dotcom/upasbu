@@ -4164,20 +4164,25 @@ async function loadDataTab() {
       }
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;">' + fmtEst + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;font-weight:700;color:' + kondisiColor + ';">' + d.kondisi_stock + '</td>'
-      // Kolom POSISI TERAKHIR — input teks inline
-      bodyHTML += '<td style="padding:4px 6px;min-width:160px;">'
-      bodyHTML += '<input type="text" value="' + posVal.replace(/"/g,'&quot;') + '" placeholder="Posisi armada..." '
-      bodyHTML += 'data-ku="' + ku + '" data-field="posisi" '
-      bodyHTML += 'style="' + inputStyle + '" '
-      bodyHTML += 'onblur="saveHopInfo(this)" onkeydown="if(event.key===\'Enter\')this.blur()"/>'
-      bodyHTML += '</td>'
-      // Kolom ESTIMASI TIBA — input date inline
-      bodyHTML += '<td style="padding:4px 6px;min-width:140px;">'
-      bodyHTML += '<input type="date" value="' + etaVal + '" '
-      bodyHTML += 'data-ku="' + ku + '" data-field="eta" '
-      bodyHTML += 'style="' + inputStyle + 'cursor:pointer;" '
-      bodyHTML += 'onchange="saveHopInfo(this)"/>'
-      bodyHTML += '</td>'
+      // Kolom POSISI TERAKHIR & ESTIMASI TIBA — hanya tampil jika HOP (safety_stock) < 8
+      var showHopFields = (d.safety_stock !== null && d.safety_stock !== undefined && d.safety_stock < 8)
+      if (showHopFields) {
+        bodyHTML += '<td style="padding:4px 6px;min-width:160px;">'
+        bodyHTML += '<input type="text" value="' + posVal.replace(/"/g,'&quot;') + '" placeholder="Posisi armada..." '
+        bodyHTML += 'data-ku="' + ku + '" data-field="posisi" '
+        bodyHTML += 'style="' + inputStyle + '" '
+        bodyHTML += 'onblur="saveHopInfo(this)" onkeydown="if(event.key===\'Enter\')this.blur()"/>'
+        bodyHTML += '</td>'
+        bodyHTML += '<td style="padding:4px 6px;min-width:140px;">'
+        bodyHTML += '<input type="date" value="' + etaVal + '" '
+        bodyHTML += 'data-ku="' + ku + '" data-field="eta" '
+        bodyHTML += 'style="' + inputStyle + 'cursor:pointer;" '
+        bodyHTML += 'onchange="saveHopInfo(this)"/>'
+        bodyHTML += '</td>'
+      } else {
+        bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;color:#cbd5e1;">—</td>'
+        bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;color:#cbd5e1;">—</td>'
+      }
       bodyHTML += '</tr>'
     }
     document.getElementById('data-table-body').innerHTML = bodyHTML
