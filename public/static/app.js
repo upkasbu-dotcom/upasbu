@@ -4083,11 +4083,11 @@ function initDataTable() {
               'ESTIMASI BBM HABIS','KONDISI STOCK','POSISI TERAKHIR','ESTIMASI TIBA']
   var headHTML = '<tr>'
   for (var i = 0; i < cols.length; i++) {
-    var stickyStyle = i === 0 ? 'position:sticky;left:0;z-index:2;' : i === 1 ? 'position:sticky;left:0;z-index:2;' : ''
-    var thExtra = i === 0 ? 'width:1px;white-space:nowrap;padding:8px 4px;border-right:1px solid #e2e8f0;' : 'padding:8px 10px;'
+    var stickyStyle = i === 0 ? 'position:sticky;left:0;z-index:4;' : i === 1 ? 'position:sticky;left:0;z-index:4;' : 'z-index:3;'
+    var thExtra = i === 0 ? 'width:1px;white-space:nowrap;padding:8px 4px;border-right:1px solid #4a7ab5;' : i === 1 ? 'padding:8px 10px;border-right:1px solid #4a7ab5;' : 'padding:8px 10px;'
     var thAlign = 'text-align:center;'
     var thWidth  = i === 2 ? 'min-width:198px;' : i === 16 ? 'min-width:152px;' : i === 17 ? 'min-width:140px;' : ''
-    headHTML += '<th style="background:#1e3a5f;color:#fff;white-space:nowrap;font-size:0.72rem;' + thAlign + thWidth + thExtra + stickyStyle + '">' + cols[i] + '</th>'
+    headHTML += '<th style="background:#1e3a5f;color:#fff;white-space:nowrap;font-size:0.72rem;position:sticky;top:0;' + thAlign + thWidth + thExtra + stickyStyle + '">' + cols[i] + '</th>'
   }
   headHTML += '</tr>'
   document.getElementById('data-table-head').innerHTML = headHTML
@@ -4137,9 +4137,9 @@ async function loadDataTab() {
       else if (d.kondisi_stock === 'AMAN')   kondisiColor = '#22c55e'
 
       bodyHTML += '<tr style="background:#fff;border-bottom:1px solid #e2e8f0;">'
-      bodyHTML += '<td style="width:1px;white-space:nowrap;padding:4px;text-align:center;font-size:0.7rem;position:sticky;left:0;background:#fff;z-index:1;border-right:1px solid #e2e8f0;">' + (r + 1) + '</td>'
+      bodyHTML += '<td style="width:1px;white-space:nowrap;padding:4px;text-align:center;font-size:0.7rem;position:sticky;left:0;background:#fff;z-index:2;border-right:1px solid #e2e8f0;">' + (r + 1) + '</td>'
       var uldColor = (d.stok_awal === null || d.stok_awal === undefined) ? '#e2e8f0' : '#1e3a5f'
-      bodyHTML += '<td style="padding:7px 10px;white-space:nowrap;font-size:0.78rem;font-weight:600;color:' + uldColor + ';text-align:left;position:sticky;left:0;background:#fff;z-index:1;">' + d.nama_unit + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;white-space:nowrap;font-size:0.78rem;font-weight:600;color:' + uldColor + ';text-align:left;position:sticky;left:0;background:#fff;z-index:2;border-right:1px solid #e2e8f0;">' + d.nama_unit + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:left;font-size:0.78rem;min-width:198px;white-space:nowrap;">' + (d.jalur || '—') + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.kapasitas_tangki) + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.stok_awal_bulan) + '</td>'
