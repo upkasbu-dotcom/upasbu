@@ -131,6 +131,14 @@ async function initDB(db: D1Database) {
   // Tambah kolom kode_mesin ke mesin_cache jika belum ada (migrasi)
   try { await db.prepare(`ALTER TABLE mesin_cache ADD COLUMN kode_mesin TEXT`).run() } catch(_){}
 
+  // Tabel HOP BBM info: posisi terakhir armada + estimasi tiba (per unit, bukan per tanggal)
+  await db.prepare(`CREATE TABLE IF NOT EXISTS hop_bbm_info (
+    kode_unit        INTEGER PRIMARY KEY,
+    posisi_terakhir  TEXT,
+    estimasi_tiba    TEXT,
+    updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`).run()
+
   // Tabel SLD (Single Line Diagram) per unit
   await db.prepare(`CREATE TABLE IF NOT EXISTS sld (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1799,6 +1807,38 @@ app.get('/api/data-stok', async (c) => {
 })
 
 // ===========================================================
+// API: HOP BBM INFO — posisi terakhir armada & estimasi tiba
+// ===========================================================
+app.get('/api/hop-info', async (c) => {
+  try {
+    const rows = await c.env.DB.prepare(
+      `SELECT kode_unit, posisi_terakhir, estimasi_tiba, updated_at FROM hop_bbm_info ORDER BY kode_unit`
+    ).all<{ kode_unit: number, posisi_terakhir: string | null, estimasi_tiba: string | null, updated_at: string }>()
+    const map: Record<number, { posisi_terakhir: string | null, estimasi_tiba: string | null }> = {}
+    for (const r of rows.results) map[r.kode_unit] = { posisi_terakhir: r.posisi_terakhir, estimasi_tiba: r.estimasi_tiba }
+    return c.json({ success: true, data: map })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+app.post('/api/hop-info', async (c) => {
+  try {
+    const { kode_unit, posisi_terakhir, estimasi_tiba } = await c.req.json<{
+      kode_unit: number, posisi_terakhir?: string, estimasi_tiba?: string
+    }>()
+    if (!kode_unit) return c.json({ success: false, error: 'kode_unit wajib' }, 400)
+    await c.env.DB.prepare(`
+      INSERT INTO hop_bbm_info (kode_unit, posisi_terakhir, estimasi_tiba, updated_at)
+      VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(kode_unit) DO UPDATE SET
+        posisi_terakhir = excluded.posisi_terakhir,
+        estimasi_tiba   = excluded.estimasi_tiba,
+        updated_at      = excluded.updated_at
+    `).bind(kode_unit, posisi_terakhir ?? null, estimasi_tiba ?? null).run()
+    return c.json({ success: true })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ===========================================================
 // API: REKAP LAPORAN (summary per periode & unit)
 // ===========================================================
 app.get('/api/laporan', async (c) => {
@@ -2293,9 +2333,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260515f" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260515f" as="script"/>
-  <link href="/static/style.css?v=20260515f" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260515g" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260515g" as="script"/>
+  <link href="/static/style.css?v=20260515g" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2789,7 +2829,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260515f"></script>
+<script src="/static/app.js?v=20260515g"></script>
 </body>
 </html>`
   const resp = c.html(html)

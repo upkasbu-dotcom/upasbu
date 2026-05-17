@@ -4080,13 +4080,13 @@ function initDataTable() {
   var cols = ['NO','ULD','JALUR','KAPASITAS','SALDO AWAL BULAN','SALDO AKHIR',
               'STOCK MATI','STOCK BERSIH','PEMAKAIAN BBM','PEMAKAIAN RATA-RATA',
               'PEMAKAIAN TERTINGGI','DAYA TAMPUNG','BBM SIAP KIRIM','SAFETY STOCK',
-              'ESTIMASI BBM HABIS','KONDISI STOCK','SFC']
+              'ESTIMASI BBM HABIS','KONDISI STOCK','POSISI TERAKHIR','ESTIMASI TIBA']
   var headHTML = '<tr>'
   for (var i = 0; i < cols.length; i++) {
     var stickyStyle = i === 0 ? 'position:sticky;left:0;z-index:2;' : i === 1 ? 'position:sticky;left:0;z-index:2;' : ''
     var thExtra = i === 0 ? 'width:1px;white-space:nowrap;padding:8px 4px;border-right:1px solid #e2e8f0;' : 'padding:8px 10px;'
     var thAlign = 'text-align:center;'
-    var thWidth  = i === 2 ? 'min-width:198px;' : ''
+    var thWidth  = i === 2 ? 'min-width:198px;' : (i >= 16) ? 'min-width:160px;' : ''
     headHTML += '<th style="background:#1e3a5f;color:#fff;white-space:nowrap;font-size:0.72rem;' + thAlign + thWidth + thExtra + stickyStyle + '">' + cols[i] + '</th>'
   }
   headHTML += '</tr>'
@@ -4110,14 +4110,25 @@ async function loadDataTab() {
   showLoading(true, 'loading-indicator-data')
 
   try {
-    var res  = await fetch('/api/data-stok?tanggal=' + tanggal)
-    var json = await res.json()
+    var [resStok, resHop] = await Promise.all([
+      fetch('/api/data-stok?tanggal=' + tanggal),
+      fetch('/api/hop-info')
+    ])
+    var json    = await resStok.json()
+    var jsonHop = resHop.ok ? await resHop.json() : { success: false, data: {} }
     if (!json.success) throw new Error(json.error)
-    var rows = json.data || []
+    var rows   = json.data || []
+    var hopMap = (jsonHop.success && jsonHop.data) ? jsonHop.data : {}
 
+    var inputStyle = 'font-size:0.75rem;border:1px solid #cbd5e1;border-radius:4px;padding:3px 5px;width:100%;box-sizing:border-box;background:#f8fafc;'
     var bodyHTML = ''
     for (var r = 0; r < rows.length; r++) {
       var d = rows[r]
+      var ku = d.kode_unit
+      var hopInfo = hopMap[ku] || {}
+      var posVal  = hopInfo.posisi_terakhir || ''
+      var etaVal  = hopInfo.estimasi_tiba  || ''
+
       var kondisiColor = '#475569'
       if (d.kondisi_stock === 'KRITIS')      kondisiColor = '#ef4444'
       else if (d.kondisi_stock === 'SIAGA')  kondisiColor = '#eab308'
@@ -4153,8 +4164,20 @@ async function loadDataTab() {
       }
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;">' + fmtEst + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;font-weight:700;color:' + kondisiColor + ';">' + d.kondisi_stock + '</td>'
-      var sfcVal = (d.sfc !== null && d.sfc !== undefined) ? d.sfc.toFixed(3) : '<span style="color:#cbd5e1">—</span>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + sfcVal + '</td>'
+      // Kolom POSISI TERAKHIR — input teks inline
+      bodyHTML += '<td style="padding:4px 6px;min-width:160px;">'
+      bodyHTML += '<input type="text" value="' + posVal.replace(/"/g,'&quot;') + '" placeholder="Posisi armada..." '
+      bodyHTML += 'data-ku="' + ku + '" data-field="posisi" '
+      bodyHTML += 'style="' + inputStyle + '" '
+      bodyHTML += 'onblur="saveHopInfo(this)" onkeydown="if(event.key===\'Enter\')this.blur()"/>'
+      bodyHTML += '</td>'
+      // Kolom ESTIMASI TIBA — input date inline
+      bodyHTML += '<td style="padding:4px 6px;min-width:140px;">'
+      bodyHTML += '<input type="date" value="' + etaVal + '" '
+      bodyHTML += 'data-ku="' + ku + '" data-field="eta" '
+      bodyHTML += 'style="' + inputStyle + 'cursor:pointer;" '
+      bodyHTML += 'onchange="saveHopInfo(this)"/>'
+      bodyHTML += '</td>'
       bodyHTML += '</tr>'
     }
     document.getElementById('data-table-body').innerHTML = bodyHTML
@@ -4183,6 +4206,31 @@ async function loadDataTab() {
   } finally {
     showLoading(false, 'loading-indicator-data')
   }
+}
+
+// Simpan posisi terakhir / estimasi tiba ke server
+function saveHopInfo(inputEl) {
+  var ku    = parseInt(inputEl.getAttribute('data-ku'), 10)
+  var field = inputEl.getAttribute('data-field')   // 'posisi' | 'eta'
+  var val   = inputEl.value.trim()
+
+  // Kumpulkan nilai field lain dari baris yang sama
+  var row   = inputEl.closest('tr')
+  var posEl = row ? row.querySelector('input[data-field="posisi"]') : null
+  var etaEl = row ? row.querySelector('input[data-field="eta"]')    : null
+  var posVal = posEl ? posEl.value.trim() : ''
+  var etaVal = etaEl ? etaEl.value.trim() : ''
+
+  fetch('/api/hop-info', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kode_unit: ku, posisi_terakhir: posVal, estimasi_tiba: etaVal || null })
+  }).then(function(r) { return r.json() }).then(function(j) {
+    if (!j.success) showToast('Gagal simpan: ' + (j.error || ''), 'error')
+    // visual feedback singkat
+    inputEl.style.background = '#dcfce7'
+    setTimeout(function() { inputEl.style.background = '#f8fafc' }, 800)
+  }).catch(function() { showToast('Gagal simpan', 'error') })
 }
 
 function closeModal(id) {
