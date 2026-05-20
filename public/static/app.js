@@ -738,16 +738,25 @@ async function onResumeDataClick() {
   var btnResume = document.getElementById('btn-resume-data')
   if (btnResume) { btnResume.disabled = true; btnResume.textContent = 'Memuat...' }
 
+  // Hitung tanggal H-1 dari tanggal yang dipilih
+  var tglDateObj = new Date(tanggal + 'T00:00:00')
+  tglDateObj.setDate(tglDateObj.getDate() - 1)
+  var tanggalH1 = tglDateObj.getFullYear() + '-' +
+    String(tglDateObj.getMonth() + 1).padStart(2, '0') + '-' +
+    String(tglDateObj.getDate()).padStart(2, '0')
+
   try {
-    // ── Fetch 3 API secara paralel ───────────────────────────────────────
+    // ── Fetch 4 API secara paralel ───────────────────────────────────────
     var results = await Promise.all([
       fetch('/api/neraca-daya?tanggal=' + tanggal).then(function(r){ return r.json() }),
       fetch('/api/data-stok?tanggal='   + tanggal).then(function(r){ return r.json() }),
-      fetch('/api/stock-oli?tanggal='   + tanggal).then(function(r){ return r.json() })
+      fetch('/api/stock-oli?tanggal='   + tanggal).then(function(r){ return r.json() }),
+      fetch('/api/data-stok?tanggal='   + tanggalH1).then(function(r){ return r.json() })
     ])
     var jsonNeraca = results[0]
     var jsonStok   = results[1]
     var jsonOli    = results[2]
+    var jsonStokH1 = results[3]
 
     // ── Neraca Daya: hitung kondisi tiap unit ───────────────────────────
     var neracaRows  = (jsonNeraca.success && jsonNeraca.data) ? jsonNeraca.data : []
@@ -807,17 +816,21 @@ async function onResumeDataClick() {
     }
     var totalCAD = totalDMP - totalBP
 
-    // ── HOP BBM rata-rata (sama seperti di loadDataTab) ─────────────────
-    var stokRows = (jsonStok.success && jsonStok.data) ? jsonStok.data : []
-    var totalStockBersih = 0, totalPemTertinggi = 0, hasStok = false
-    for (var si = 0; si < stokRows.length; si++) {
-      if (stokRows[si].stock_bersih   != null) { totalStockBersih  += stokRows[si].stock_bersih;    hasStok = true }
-      if (stokRows[si].rata_rata_harian != null) { totalPemTertinggi += stokRows[si].rata_rata_harian }
+    // ── HOP BBM rata-rata hari H ─────────────────────────────────────────
+    function calcHopBbm(stokData) {
+      var totalSB = 0, totalPT = 0, hasS = false
+      for (var si = 0; si < stokData.length; si++) {
+        if (stokData[si].stock_bersih    != null) { totalSB += stokData[si].stock_bersih;    hasS = true }
+        if (stokData[si].rata_rata_harian != null) { totalPT += stokData[si].rata_rata_harian }
+      }
+      return (hasS && totalPT > 0) ? Math.round(totalSB / totalPT) : null
     }
-    var hopBbm = (hasStok && totalPemTertinggi > 0)
-      ? Math.round(totalStockBersih / totalPemTertinggi)
-      : null
-    var hopBbmStr = hopBbm !== null ? hopBbm + ' hari' : '...'
+    var stokRows   = (jsonStok.success   && jsonStok.data)   ? jsonStok.data   : []
+    var stokRowsH1 = (jsonStokH1.success && jsonStokH1.data) ? jsonStokH1.data : []
+    var hopBbm   = calcHopBbm(stokRows)
+    var hopBbmH1 = calcHopBbm(stokRowsH1)
+    var hopBbmStr   = hopBbm   !== null ? hopBbm   + ' hari' : '...'
+    var hopBbmH1Str = hopBbmH1 !== null ? hopBbmH1 + ' hari' : '...'
 
     // ── Baris kondisi siaga & defisit ──────────────────────────────────
     function fmtKW(n) {
@@ -896,7 +909,8 @@ siagaSistemLine + siagaSubLines + '\n' +
 defisitSistemLine + defisitSubLines + '\n' +
 '\n' +
 '5. BBM dan Pelumas\n' +
-'   HOP BBM Rata-rata        : ' + hopBbmStr + '\n' +
+'   HOP BBM Rata-rata        : ' + hopBbmStr   + '\n' +
+'   HOP BBM Rata-rata H-1    : ' + hopBbmH1Str + '\n' +
 '   HOP Pelumas Rata-rata    :        hari\n' +
 '   (Tambahkan pasokan / stock berjalan)\n' +
 '\n' +
