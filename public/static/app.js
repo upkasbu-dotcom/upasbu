@@ -909,8 +909,7 @@ siagaSistemLine + siagaSubLines + '\n' +
 defisitSistemLine + defisitSubLines + '\n' +
 '\n' +
 '5. BBM dan Pelumas\n' +
-'   HOP BBM Rata-rata        : ' + hopBbmStr   + '\n' +
-'   HOP BBM Rata-rata H-1    : ' + hopBbmH1Str + '\n' +
+'   HOP BBM Rata-rata        : ' + hopBbmH1Str + '\n' +
 '   HOP Pelumas Rata-rata    :        hari\n' +
 '\n' +
 'Demikian, mohon petunjuk dan arahan \uD83D\uDE4F'
