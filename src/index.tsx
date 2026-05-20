@@ -2333,9 +2333,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260515m" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260515m" as="script"/>
-  <link href="/static/style.css?v=20260515m" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260515n" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260515n" as="script"/>
+  <link href="/static/style.css?v=20260515n" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2829,7 +2829,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260515m"></script>
+<script src="/static/app.js?v=20260515n"></script>
 </body>
 </html>`
   const resp = c.html(html)

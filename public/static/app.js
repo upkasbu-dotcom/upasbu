@@ -912,7 +912,6 @@ defisitSistemLine + defisitSubLines + '\n' +
 '   HOP BBM Rata-rata        : ' + hopBbmStr   + '\n' +
 '   HOP BBM Rata-rata H-1    : ' + hopBbmH1Str + '\n' +
 '   HOP Pelumas Rata-rata    :        hari\n' +
-'   (Tambahkan pasokan / stock berjalan)\n' +
 '\n' +
 'Demikian, mohon petunjuk dan arahan \uD83D\uDE4F'
 
