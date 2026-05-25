@@ -3614,15 +3614,27 @@ async function showNeracaDetailPopup(kodeUnit, namaUnit, tanggal) {
         else if (cad < (maks||0)){ statusTxt = 'SIAGA';   scBg = '#fef3c7'; scTx = '#e67e22' }
         else                     { statusTxt = 'NORMAL';  scBg = '#dcfce7'; scTx = '#27ae60' }
         _popupOrigBp = bp != null ? Number(bp) : 0
+
+        // Hitung SFC rata-rata dari semua mesin unit ini (total_bbm / total_kwh Operasi)
+        var allMesinUnit = (jsonMesin.data || []).filter(function(m) { return m.has_data })
+        var sumBbm = 0, sumKwh = 0
+        for (var mi = 0; mi < allMesinUnit.length; mi++) {
+          if (allMesinUnit[mi].pemakaian_bbm != null) sumBbm += allMesinUnit[mi].pemakaian_bbm
+          if (allMesinUnit[mi].kwh_produksi  != null) sumKwh += allMesinUnit[mi].kwh_produksi
+        }
+        var sfcRata = (sumKwh > 0) ? (sumBbm / sumKwh) : null
+        var sfcRataStr = sfcRata !== null ? sfcRata.toFixed(4) : '-'
+
         // Render info bar
         if (infoBar) {
           var cols0 = [
-            { label: 'DMN',    val: _fmtKW(dmn) },
-            { label: 'BP',     val: _fmtKW(bp) },
-            { label: 'CAD',    val: _fmtKW(cad) },
-            { label: 'MAKS',   val: _fmtKW(maks) },
-            { label: 'N-1',    val: _fmtKW(n1) },
-            { label: 'STATUS', val: null }
+            { label: 'DMN',      val: _fmtKW(dmn) },
+            { label: 'BP',       val: _fmtKW(bp) },
+            { label: 'CAD',      val: _fmtKW(cad) },
+            { label: 'MAKS',     val: _fmtKW(maks) },
+            { label: 'N-1',      val: _fmtKW(n1) },
+            { label: 'STATUS',   val: null },
+            { label: 'SFC RATA', val: sfcRataStr }
           ]
           var cs0 = 'flex:1;text-align:center;padding:6px 4px;border-right:1px solid #e2e8f0;'
           var cs0L = 'flex:1;text-align:center;padding:6px 4px;'
@@ -3632,6 +3644,10 @@ async function showNeracaDetailPopup(kodeUnit, namaUnit, tanggal) {
             r1 += '<div style="' + csi + 'font-size:0.7rem;font-weight:600;color:#64748b;background:#f1f5f9;">' + cols0[ci].label + '</div>'
             if (cols0[ci].label === 'STATUS') {
               r2 += '<div style="' + csi + 'font-size:0.78rem;font-weight:700;"><span style="background:' + scBg + ';color:' + scTx + ';padding:2px 10px;border-radius:10px;font-size:0.72rem;">' + statusTxt + '</span></div>'
+            } else if (cols0[ci].label === 'SFC RATA') {
+              // Warna SFC: hijau ≤0.3157, kuning ≤0.3188, merah >0.3188
+              var sfcColor = sfcRata === null ? '#64748b' : sfcRata <= 0.3157 ? '#16a34a' : sfcRata <= 0.3188 ? '#d97706' : '#dc2626'
+              r2 += '<div style="' + csi + 'font-size:0.78rem;font-weight:700;color:' + sfcColor + ';">' + sfcRataStr + '</div>'
             } else {
               r2 += '<div style="' + csi + 'font-size:0.78rem;font-weight:700;color:#1e3a5f;">' + cols0[ci].val + '</div>'
             }
