@@ -2333,9 +2333,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260515p" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260515p" as="script"/>
-  <link href="/static/style.css?v=20260515p" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260515q" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260515q" as="script"/>
+  <link href="/static/style.css?v=20260515q" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2811,7 +2811,7 @@ app.get('/', (c) => {
 <!-- Modal Detail Mesin per ULD -->
 <div id="modal-detail-mesin" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('modal-detail-mesin')">
   <div class="modal-box" style="width:1050px;max-width:96vw;max-height:90vh;overflow-y:auto;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <div>
         <div id="modal-detail-title" style="font-size:1rem;font-weight:700;color:#1e3a5f;"></div>
         <div id="modal-detail-sub" style="font-size:0.75rem;color:#64748b;margin-top:2px;"></div>
@@ -2819,6 +2819,18 @@ app.get('/', (c) => {
       <div style="display:flex;align-items:center;gap:8px;">
         <button id="btn-popup-edit" onclick="togglePopupEditMode()" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;">EDIT</button>
         <button onclick="closeModal('modal-detail-mesin')" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#64748b;padding:4px 8px;">✕</button>
+      </div>
+    </div>
+    <!-- Filter tanggal + unit di dalam popup -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;flex-wrap:wrap;">
+      <span style="font-size:0.72rem;font-weight:600;color:#64748b;white-space:nowrap;">TAMPILKAN:</span>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <label style="font-size:0.72rem;color:#64748b;white-space:nowrap;">Tanggal</label>
+        <input type="date" id="popup-filter-tanggal" onchange="reloadNeracaPopup()" style="font-size:0.75rem;padding:4px 7px;border:1px solid #cbd5e1;border-radius:6px;color:#1e3a5f;font-weight:600;cursor:pointer;"/>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <label style="font-size:0.72rem;color:#64748b;white-space:nowrap;">Unit</label>
+        <select id="popup-filter-unit" onchange="reloadNeracaPopup()" style="font-size:0.75rem;padding:4px 7px;border:1px solid #cbd5e1;border-radius:6px;color:#1e3a5f;font-weight:600;cursor:pointer;min-width:160px;"></select>
       </div>
     </div>
     <div id="modal-detail-infobar" style="margin-bottom:0;"></div>
@@ -2829,7 +2841,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260515p"></script>
+<script src="/static/app.js?v=20260515q"></script>
 </body>
 </html>`
   const resp = c.html(html)

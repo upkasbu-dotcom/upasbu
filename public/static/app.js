@@ -3561,6 +3561,28 @@ async function showNeracaDetailPopup(kodeUnit, namaUnit, tanggal) {
   var body    = document.getElementById('modal-detail-body')
   var infoBar = document.getElementById('modal-detail-infobar')
 
+  // ── Isi filter tanggal & unit ──────────────────────────────
+  var fTgl  = document.getElementById('popup-filter-tanggal')
+  var fUnit = document.getElementById('popup-filter-unit')
+
+  // Set max tanggal = hari ini (WIB)
+  var nowWib   = new Date(new Date().getTime() + 7*60*60*1000)
+  var todayStr = nowWib.toISOString().substring(0, 10)
+  if (fTgl) { fTgl.max = todayStr; fTgl.value = tanggal }
+
+  // Populate select unit (sekali saja — jika belum terisi)
+  if (fUnit && fUnit.options.length <= 1) {
+    fUnit.innerHTML = ''
+    UNIT_DATA.forEach(function(u) {
+      var opt = document.createElement('option')
+      opt.value = u.kode_unit
+      opt.textContent = u.nama_unit
+      fUnit.appendChild(opt)
+    })
+  }
+  if (fUnit) fUnit.value = String(kodeUnit)
+  // ───────────────────────────────────────────────────────────
+
   // Judul & tanggal
   title.textContent = namaUnit
   var tglParts  = tanggal.split('-')
@@ -3695,6 +3717,22 @@ async function showNeracaDetailPopup(kodeUnit, namaUnit, tanggal) {
   } finally {
     loading.style.display = 'none'
   }
+}
+
+// =============================================
+// Reload popup saat filter tanggal / unit berubah
+// =============================================
+function reloadNeracaPopup() {
+  var fTgl  = document.getElementById('popup-filter-tanggal')
+  var fUnit = document.getElementById('popup-filter-unit')
+  if (!fTgl || !fUnit) return
+  var tgl      = fTgl.value
+  var kuStr    = fUnit.value
+  if (!tgl || !kuStr) return
+  var ku       = parseInt(kuStr, 10)
+  var unitObj  = UNIT_DATA.find(function(u) { return u.kode_unit === ku })
+  var namaUnit = unitObj ? unitObj.nama_unit : 'ULD ' + ku
+  showNeracaDetailPopup(ku, namaUnit, tgl)
 }
 
 // =============================================
