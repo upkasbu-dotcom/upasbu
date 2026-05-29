@@ -1669,41 +1669,91 @@ app.get('/api/data-stok', async (c) => {
     const bulanTanggal = tanggal.substring(0, 7) // "YYYY-MM"
     const stokAwalBulanMap: Record<number, number> = {}
 
+    // ── Grup cut-off ────────────────────────────────────────────────────────
+    // Grup A (H-1): cut-off = akhir bulan - 1 (selalu, termasuk Februari)
+    const GRUP_A = new Set([366, 910, 385, 911, 913, 372, 915, 918, 919, 917, 920])
+    // Grup B (H-5): cut-off = akhir bulan - 5
+    //               Pengecualian Februari: selalu tanggal 25
+    const GRUP_B = new Set([399, 390, 382, 391, 376, 373, 395, 375])
+
+    // Hitung tanggal cut-off untuk sebuah unit berdasarkan tahun+bulan tertentu
+    function getCutoffDate(kode: number, yr: number, mo: number): string {
+      const lastDay = new Date(yr, mo, 0).getDate() // hari terakhir bulan mo
+      let cutDay: number
+      if (GRUP_A.has(kode)) {
+        cutDay = lastDay - 1
+      } else {
+        // Grup B — Februari selalu tgl 25, bulan lain akhir bulan - 5
+        if (mo === 2) {
+          cutDay = 25
+        } else {
+          cutDay = lastDay - 5
+        }
+      }
+      return `${yr}-${String(mo).padStart(2,'0')}-${String(cutDay).padStart(2,'0')}`
+    }
+
+    // Untuk tanggal T, tentukan cut-off mana yang berlaku per unit:
+    //   - Hitung cutoff bulan berjalan (mo berjalan)
+    //   - Jika T > cutoff bulan berjalan → pakai cutoff bulan berjalan
+    //   - Jika T <= cutoff bulan berjalan → pakai cutoff bulan sebelumnya
+    const [tYr, tMo, tDy] = tanggal.split('-').map(Number)
+
     if (bulanTanggal === '2026-04') {
-      // Bulan April 2026: pakai data referensi statis
+      // Bulan April 2026: pakai data referensi statis untuk semua unit
       for (const [kode, val] of Object.entries(STOK_AWAL_APRIL_2026)) {
         stokAwalBulanMap[Number(kode)] = val
       }
     } else {
-      // Bulan lain: ambil stock_bersih tanggal terakhir bulan sebelumnya dari DB
-      // tanggal terakhir bulan sebelumnya = hari terakhir bulan sebelum bulanTanggal
-      const [yr, mo] = bulanTanggal.split('-').map(Number)
-      const lastDayPrevMonth = new Date(yr, mo - 1, 0).toISOString().split('T')[0] // hari terakhir bulan lalu
-      const prevData = await c.env.DB.prepare(
-        `SELECT kode_unit, saldo_akhir FROM lap_operasional WHERE tanggal = ? ORDER BY kode_unit`
-      ).bind(lastDayPrevMonth).all<{ kode_unit: number, saldo_akhir: number }>()
+      // Kumpulkan set tanggal cut-off yang dibutuhkan (bisa berbeda per unit)
+      // key = "YYYY-MM-DD", value = array kode_unit yang butuh tanggal tsb
+      const cutoffNeeds: Record<string, number[]> = {}
 
-      if (prevData.results.length > 0) {
-        // Hitung stock_bersih = saldo_akhir - stock_mati per unit
-        for (const row of prevData.results) {
-          const meta = UNIT_META[row.kode_unit]
-          const stockMati = meta?.stock_mati ?? 0
-          stokAwalBulanMap[row.kode_unit] = Math.max(0, row.saldo_akhir - stockMati)
+      for (const kode of [...GRUP_A, ...GRUP_B]) {
+        // Cutoff bulan berjalan
+        const cutCurr = getCutoffDate(kode, tYr, tMo)
+        const cutCurrDay = parseInt(cutCurr.split('-')[2])
+
+        let cutoffTgl: string
+        if (tDy > cutCurrDay) {
+          // Setelah cut-off bulan ini → pakai saldo akhir cut-off bulan ini
+          cutoffTgl = cutCurr
+        } else {
+          // Sebelum / tepat cut-off bulan ini → pakai saldo akhir cut-off bulan lalu
+          const prevMo = tMo === 1 ? 12 : tMo - 1
+          const prevYr = tMo === 1 ? tYr - 1 : tYr
+          cutoffTgl = getCutoffDate(kode, prevYr, prevMo)
         }
-      } else {
-        // Fallback: cari tanggal terakhir yang ada di bulan sebelumnya
-        const fallback = await c.env.DB.prepare(`
-          SELECT kode_unit, saldo_akhir
-          FROM lap_operasional
-          WHERE tanggal = (
-            SELECT MAX(tanggal) FROM lap_operasional
-            WHERE tanggal < ?
-          )
-        `).bind(bulanTanggal + '-01').all<{ kode_unit: number, saldo_akhir: number }>()
-        for (const row of fallback.results) {
-          const meta = UNIT_META[row.kode_unit]
-          const stockMati = meta?.stock_mati ?? 0
-          stokAwalBulanMap[row.kode_unit] = Math.max(0, row.saldo_akhir - stockMati)
+
+        if (!cutoffNeeds[cutoffTgl]) cutoffNeeds[cutoffTgl] = []
+        cutoffNeeds[cutoffTgl].push(kode)
+      }
+
+      // Fetch saldo_akhir untuk setiap tanggal cut-off yang dibutuhkan
+      for (const [cutTgl, kodeList] of Object.entries(cutoffNeeds)) {
+        // Coba ambil data tepat di tanggal cut-off
+        const rows = await c.env.DB.prepare(
+          `SELECT kode_unit, saldo_akhir FROM lap_operasional WHERE tanggal = ? ORDER BY kode_unit`
+        ).bind(cutTgl).all<{ kode_unit: number, saldo_akhir: number }>()
+
+        const foundMap: Record<number, number> = {}
+        for (const row of rows.results) foundMap[row.kode_unit] = row.saldo_akhir
+
+        for (const kode of kodeList) {
+          if (foundMap[kode] !== undefined) {
+            // Data cut-off tersedia
+            stokAwalBulanMap[kode] = Math.max(0, foundMap[kode] - (UNIT_META[kode]?.stock_mati ?? 0))
+          } else {
+            // Fallback: cari tanggal terdekat sebelum cut-off yang ada datanya untuk unit ini
+            const fb = await c.env.DB.prepare(`
+              SELECT saldo_akhir FROM lap_operasional
+              WHERE kode_unit = ? AND tanggal <= ?
+              ORDER BY tanggal DESC LIMIT 1
+            `).bind(kode, cutTgl).first<{ saldo_akhir: number }>()
+            if (fb) {
+              stokAwalBulanMap[kode] = Math.max(0, fb.saldo_akhir - (UNIT_META[kode]?.stock_mati ?? 0))
+            }
+          }
         }
       }
     }
@@ -2333,9 +2383,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260515u" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260515u" as="script"/>
-  <link href="/static/style.css?v=20260515u" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260515v" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260515v" as="script"/>
+  <link href="/static/style.css?v=20260515v" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2774,7 +2824,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260515u"></script>
+<script src="/static/app.js?v=20260515v"></script>
 </body>
 </html>`
   const resp = c.html(html)
