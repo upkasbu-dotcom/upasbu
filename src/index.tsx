@@ -2333,9 +2333,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260515q" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260515q" as="script"/>
-  <link href="/static/style.css?v=20260515q" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260515r" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260515r" as="script"/>
+  <link href="/static/style.css?v=20260515r" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2461,7 +2461,7 @@ app.get('/', (c) => {
       <div id="peng-subtab-row" style="display:flex;gap:4px;">
         <button id="peng-sub-btn-mesin"      class="data-subtab-btn active" onclick="switchPengView('mesin')">MESIN</button>
         <button id="peng-sub-btn-sld"         class="data-subtab-btn"        onclick="switchPengView('sld')">SLD</button>
-        <button id="peng-sub-btn-budgeting"   class="data-subtab-btn"        onclick="switchPengView('budgeting')">BUDGETING</button>
+        <button id="peng-sub-btn-budgeting"   class="data-subtab-btn"        onclick="switchPengView('budgeting')">SALDO BBM</button>
       </div>
       <!-- Toolbar Mesin -->
       <div id="peng-toolbar-mesin" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -2624,82 +2624,15 @@ app.get('/', (c) => {
       </div>
     </div>
   </div>
-  <!-- Sub-view: BUDGETING -->
-  <div id="peng-view-budgeting" style="display:none;padding:10px 12px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-      <div>
-        <h3 style="font-size:0.9rem;font-weight:700;color:#1e3a5f;margin:0;">Budgeting &amp; Realisasi</h3>
-        <p style="font-size:0.75rem;color:#64748b;margin:4px 0 0;">Kelola anggaran dan realisasi belanja per unit</p>
-      </div>
-      <button onclick="showBudgetingForm()" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:6px 16px;font-weight:700;font-size:0.75rem;cursor:pointer;flex-shrink:0;">
-        + TAMBAH ANGGARAN
-      </button>
-    </div>
-    <!-- Filter row -->
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-      <div class="toolbar-group">
-        <label class="toolbar-label">Unit</label>
-        <select id="budgeting-sel-unit" class="toolbar-select" style="min-width:160px;" onchange="loadBudgetingData()">
-          <option value="">Semua Unit</option>
-        </select>
-      </div>
-      <div class="toolbar-group">
-        <label class="toolbar-label">Tahun</label>
-        <select id="budgeting-sel-tahun" class="toolbar-select" onchange="loadBudgetingData()">
-        </select>
-      </div>
-      <div class="toolbar-group">
-        <label class="toolbar-label">Kategori</label>
-        <select id="budgeting-sel-kategori" class="toolbar-select" onchange="loadBudgetingData()">
-          <option value="">Semua</option>
-          <option value="operasional">Operasional</option>
-          <option value="pemeliharaan">Pemeliharaan</option>
-          <option value="investasi">Investasi</option>
-        </select>
-      </div>
-    </div>
-    <!-- Summary cards -->
-    <div id="budgeting-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px;">
-      <div class="budget-card" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;">
-        <div style="font-size:0.7rem;color:#3b82f6;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Total Anggaran</div>
-        <div id="budget-total-anggaran" style="font-size:1.1rem;font-weight:700;color:#1e40af;margin-top:4px;">Rp 0</div>
-      </div>
-      <div class="budget-card" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;">
-        <div style="font-size:0.7rem;color:#16a34a;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Realisasi</div>
-        <div id="budget-total-realisasi" style="font-size:1.1rem;font-weight:700;color:#15803d;margin-top:4px;">Rp 0</div>
-      </div>
-      <div class="budget-card" style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;">
-        <div style="font-size:0.7rem;color:#ca8a04;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Sisa Anggaran</div>
-        <div id="budget-total-sisa" style="font-size:1.1rem;font-weight:700;color:#a16207;margin-top:4px;">Rp 0</div>
-      </div>
-      <div class="budget-card" style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:8px;padding:10px 14px;">
-        <div style="font-size:0.7rem;color:#9333ea;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Serapan</div>
-        <div id="budget-pct-serapan" style="font-size:1.1rem;font-weight:700;color:#7e22ce;margin-top:4px;">0%</div>
-      </div>
-    </div>
-    <!-- Tabel data -->
-    <div style="overflow-x:auto;">
-      <table id="budgeting-table" style="width:100%;border-collapse:collapse;font-size:0.8rem;">
-        <thead>
-          <tr style="background:#1e3a5f;color:#fff;">
-            <th style="padding:8px 10px;text-align:left;font-weight:600;">No</th>
-            <th style="padding:8px 10px;text-align:left;font-weight:600;">Unit</th>
-            <th style="padding:8px 10px;text-align:left;font-weight:600;">Kategori</th>
-            <th style="padding:8px 10px;text-align:left;font-weight:600;">Uraian</th>
-            <th style="padding:8px 10px;text-align:right;font-weight:600;">Anggaran (Rp)</th>
-            <th style="padding:8px 10px;text-align:right;font-weight:600;">Realisasi (Rp)</th>
-            <th style="padding:8px 10px;text-align:right;font-weight:600;">Sisa (Rp)</th>
-            <th style="padding:8px 10px;text-align:center;font-weight:600;">Serapan</th>
-            <th style="padding:8px 10px;text-align:center;font-weight:600;">Aksi</th>
-          </tr>
-        </thead>
-        <tbody id="budgeting-table-body">
-          <tr>
-            <td colspan="9" style="text-align:center;padding:40px;color:#94a3b8;font-size:0.85rem;">Belum ada data anggaran</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+  <!-- Sub-view: SALDO BBM -->
+  <div id="peng-view-budgeting" style="display:none;padding:0;">
+    <iframe
+      id="saldo-bbm-iframe"
+      src="https://bbm-monitor.pages.dev/"
+      style="width:100%;height:calc(90vh - 130px);min-height:500px;border:none;display:block;"
+      allowfullscreen
+      loading="lazy"
+    ></iframe>
   </div>
   <!-- Sub-view: SLD -->
   <div id="peng-view-sld" style="display:none;padding:0;">
@@ -2841,7 +2774,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260515q"></script>
+<script src="/static/app.js?v=20260515r"></script>
 </body>
 </html>`
   const resp = c.html(html)

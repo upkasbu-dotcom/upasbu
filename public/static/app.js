@@ -5748,9 +5748,9 @@ function switchPengView(view) {
     showToast('Login sebagai admin untuk mengakses SLD', 'error')
     return
   }
-  // Guard: BUDGETING hanya bisa diakses setelah login admin PENGATURAN
+  // Guard: SALDO BBM hanya bisa diakses setelah login admin PENGATURAN
   if (view === 'budgeting' && !_pengIsAdmin) {
-    showToast('Login sebagai admin untuk mengakses Budgeting', 'error')
+    showToast('Login sebagai admin untuk mengakses Saldo BBM', 'error')
     return
   }
 
@@ -5780,8 +5780,7 @@ function switchPengView(view) {
   // Inisialisasi SLD unit select saat pertama kali masuk sub-tab SLD
   if (view === 'sld') sldInitUnitSelect()
 
-  // Inisialisasi Budgeting saat pertama kali masuk sub-tab
-  if (view === 'budgeting') budgetingInit()
+  // Saldo BBM: iframe sudah auto-load saat ditampilkan, tidak perlu init
 }
 
 // ===== BUDGETING =====
