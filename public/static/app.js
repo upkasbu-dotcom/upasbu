@@ -2003,8 +2003,8 @@ function renderLapForm() {
       docPreview = '<div id="doc-preview-wrap" style="margin-top:6px;"><a href="' + currentLapForm.dokumen_url + '" target="_blank" rel="noopener" style="color:#1d4ed8;font-size:0.82rem;"><i class="fas fa-file-pdf"></i> ' + (currentLapForm.dokumen_nama||'dokumen') + '</a></div>'
     }
   }
-  html += '<div class="lap-field-row" style="flex-direction:column;align-items:flex-start;gap:6px;">'
-  html += '<label class="lap-field-label" style="min-width:unset;">Upload Dokumen <span style="font-size:0.72rem;color:#e2e8f0;">(maks 32MB)</span></label>'
+  html += '<div id="dokumen-field-wrap" class="lap-field-row" style="flex-direction:column;align-items:flex-start;gap:6px;">'
+  html += '<label class="lap-field-label" style="min-width:unset;">Upload Dokumen <span style="color:#dc2626;font-weight:700;">*</span> <span style="font-size:0.72rem;color:#94a3b8;">(wajib · maks 32MB)</span></label>'
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
   // Tombol galeri — input file tanpa capture
   html += '<label class="btn-upload-opt" for="field-dokumen-galeri"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Galeri</label>'
@@ -2448,6 +2448,25 @@ function validateLapForm() {
   if (!validOli(d.stock_oli_sae40))   { errors.push('Stock Oli SAE 40');  highlightOliError('field-stock-oli-sae40') }
   if (!validOli(d.stock_oli_sx))      { errors.push('Stock Oli SX');       highlightOliError('field-stock-oli-sx') }
   if (!validOli(d.stock_oli_sx_plus)) { errors.push('Stock Oli SX Plus');  highlightOliError('field-stock-oli-sx-plus') }
+  // Validasi dokumen wajib diupload
+  if (!d.dokumen_url) {
+    errors.push('Upload Dokumen')
+    var dokWrap = document.getElementById('dokumen-field-wrap')
+    if (dokWrap) {
+      dokWrap.style.outline = '2px solid #dc2626'
+      dokWrap.style.borderRadius = '8px'
+      dokWrap.style.padding = '6px'
+      // Hapus highlight begitu dokumen berhasil diupload
+      var observer = new MutationObserver(function() {
+        if (currentLapForm.dokumen_url) {
+          dokWrap.style.outline = ''
+          dokWrap.style.padding = ''
+          observer.disconnect()
+        }
+      })
+      observer.observe(dokWrap, { subtree: true, childList: true, characterData: true })
+    }
+  }
   return errors
 }
 
