@@ -2333,9 +2333,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260515r" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260515r" as="script"/>
-  <link href="/static/style.css?v=20260515r" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260515s" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260515s" as="script"/>
+  <link href="/static/style.css?v=20260515s" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2479,7 +2479,7 @@ app.get('/', (c) => {
       </div>
       <!-- Toolbar Budgeting -->
       <div id="peng-toolbar-budgeting" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span style="font-size:0.78rem;color:#64748b;">Kelola anggaran & realisasi belanja unit</span>
+
       </div>
       <!-- Toolbar SLD -->
       <div id="peng-toolbar-sld" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
@@ -2774,7 +2774,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260515r"></script>
+<script src="/static/app.js?v=20260515s"></script>
 </body>
 </html>`
   const resp = c.html(html)
