@@ -1643,6 +1643,31 @@ app.get('/api/data-stok', async (c) => {
     const avgRataMap: Record<number, number> = {}
     for (const row of avgRataResult.results) avgRataMap[row.kode_unit] = row.rata_pemakaian
 
+    // Ambil total penerimaan BBM bulan berjalan (awal bulan s.d. tanggal T)
+    const totalPenerimaanResult = await c.env.DB.prepare(`
+      SELECT kode_unit,
+             SUM(COALESCE(penerimaan_bbm, 0)) AS total_penerimaan
+      FROM lap_operasional
+      WHERE tanggal >= ? AND tanggal <= ?
+      GROUP BY kode_unit
+    `).bind(tanggal.substring(0,7) + '-01', tanggal).all<{ kode_unit: number, total_penerimaan: number }>()
+    const totalPenerimaanMap: Record<number, number> = {}
+    for (const row of totalPenerimaanResult.results) totalPenerimaanMap[row.kode_unit] = row.total_penerimaan
+
+    // Ambil total pemakaian BBM bulan berjalan (awal bulan s.d. tanggal T)
+    // pemakaian per hari = saldo_awal + penerimaan - saldo_akhir (hanya jika > 0)
+    const totalPemakaianResult = await c.env.DB.prepare(`
+      SELECT kode_unit,
+             SUM(CASE WHEN (saldo_awal + COALESCE(penerimaan_bbm,0) - saldo_akhir) > 0
+                      THEN (saldo_awal + COALESCE(penerimaan_bbm,0) - saldo_akhir)
+                      ELSE 0 END) AS total_pemakaian
+      FROM lap_operasional
+      WHERE tanggal >= ? AND tanggal <= ?
+      GROUP BY kode_unit
+    `).bind(tanggal.substring(0,7) + '-01', tanggal).all<{ kode_unit: number, total_pemakaian: number }>()
+    const totalPemakaianMap: Record<number, number> = {}
+    for (const row of totalPemakaianResult.results) totalPemakaianMap[row.kode_unit] = row.total_pemakaian
+
     // Stok awal bulan aktual (April 2026) — data referensi dari dokumen resmi
     const STOK_AWAL_APRIL_2026: Record<number, number> = {
       366: 6141,   // BABAI
@@ -1848,7 +1873,9 @@ app.get('/api/data-stok', async (c) => {
         saldo_akhir: lapSaldoAkhir !== null ? Math.round(lapSaldoAkhir) : null,
         penerimaan_bbm: penerimaanBbm !== null ? Math.round(penerimaanBbm) : null,
         kwh_produksi: lapKwhProd !== null ? Math.round(lapKwhProd) : null,
-        sfc
+        sfc,
+        total_penerimaan: totalPenerimaanMap[u.kode_unit] != null ? Math.round(totalPenerimaanMap[u.kode_unit]) : null,
+        total_pemakaian:  totalPemakaianMap[u.kode_unit]  != null ? Math.round(totalPemakaianMap[u.kode_unit])  : null
       }
     })
 
@@ -2383,9 +2410,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260515v" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260515v" as="script"/>
-  <link href="/static/style.css?v=20260515v" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260515w" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260515w" as="script"/>
+  <link href="/static/style.css?v=20260515w" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2824,7 +2851,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260515v"></script>
+<script src="/static/app.js?v=20260515w"></script>
 </body>
 </html>`
   const resp = c.html(html)

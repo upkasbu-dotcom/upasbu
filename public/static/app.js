@@ -73,20 +73,20 @@ var UNIT_DATA = [
 // DATA OPERATOR PER ULD
 // =============================================
 var OPERATOR_DATA = {
-  366: ["Eko Setiawan", "Syamsuri", "Dolarman", "Hasim", "Fahrija Rahman", "Ramadhani", "Randa Yudistira"],                          // ULD BABAI
+  366: ["Eko Setiawan", "Syamsuri", "Dolarman", "Hasim", "Fahrija Rahman", "Ramadhani", "Randa Yudistira", "Muhammad Kelvin", "Alfianor"],                          // ULD BABAI
   372: ["Ahmat Rida", "Supiansyah", "Fahmi", "Minghuandy", "Nurahman", "Eko Setiawan", "Husliansyah"],                             // ULD GUNUNG PUREI
   373: ["Aryuni", "Muliyarta", "Erwansyah", "Gusti Gustira", "M Arbani", "Sandi", "Suhaimi", "Amriansyah", "Rusdiansyah", "Junika Cucu Andika"],                          // ULD KENAMBUI
   375: ["Alex Sanderia", "Timbun Radiyanto", "Hery Optianus", "Sabriansyah", "Donny Prayogo", "Yosuarius YB", "Anto", "Basilius Yoga"],                       // ULD KUDANGAN
   376: ["Aripin", "Tomi Kuswoyo", "Mujianor", "Didin Wahono", "Zulkifli", "Hendri Purwanto", "Moh Taufiq", "M Ardianor", "Yoga Syahbandi", "Azkia El Murthada", "Rafdianor"],                   // ULD MENDAWAI
   382: ["Hidayat Saputra", "Abdul Haris", "Muhammad Pauzan", "Tedy Heriady", "Murdiansyah", "Ridy", "Megi", "Muhammad Hidayat", "Muhammad Ikhsan"],                         // ULD PAGATAN
-  385: ["M Ilman", "Muhammad Abidin", "Hendra Prianto", "M Ilham", "Hendri Irawan", "Ahmad Jainudin", "Muhammad Ari Sutarinda", "Alvyus Advent Bagaskara"],                           // ULD RANGGA ILUNG
+  385: ["Muhammad Abidin", "Hendra Prianto", "M Ilham", "Hendri Irawan", "Ahmad Jainudin", "Muhammad Ari Sutarinda", "Alvyus Advent Bagaskara"],                           // ULD RANGGA ILUNG
   390: ["Murjoko", "Adi Rahmad", "Irawan"],                        // ULD TELAGA
   391: ["Eko Prasetyo", "Mulyadi", "Tri Wahyono", "Adi Susanto", "Karnadie", "Didie", "Yesto", "Ahmad Boby Erlangga"],                           // ULD TELAGA PULANG
   395: ["Effendi", "A Rafiq", "Mulyadi", "Supian", "Alpian", "Gusna Nubin", "M Ipan Ali", "Wardani", "Alpianor", "Juljalali Wal Ikram"],                           // ULD TUMBANG MANJUL
   399: ["Naneng Ermadi", "Ahmad Budi Santoso", "Yudi Setiono", "Burhan", "Sutrisman", "Purwanto", "Muhammad Nudie", "Benny Rahmadani", "Dodi Kurniawan"],                              // ULD TUMBANG SENAMANG
-  910: ["M Kamawijaya", "Deniasyah", "Sukardiono", "Riduan", "Tajudin"],                       // ULD MANGKATIP
-  911: ["Hendri Aprius", "Kanserto", "Gupinda Ramadan", "M Indra Saputra", "Achrian Noor", "Rizki Permana"],                                 // ULD TELUK BETUNG
-  913: ["Herianor", "Yatno Eka Nugraha", "Murjani", "Masrawan", "Yuspida", "Agus Salim", "Lambri"],                    // ULD TUMPUNG LAUNG
+  910: ["Deniasyah", "Sukardiono", "Tajudin", "Alvyus Advent Bagaskara", "M Ilman"],                       // ULD MANGKATIP
+  911: ["Hendri Aprius", "Kanserto", "Gupinda Ramadan", "M Indra Saputra", "Achrian Noor", "Rizki Permana", "Jihad"],                                 // ULD TELUK BETUNG
+  913: ["Herianor", "Yatno Eka Nugraha", "Murjani", "Masrawan", "Yuspida", "Agus Salim", "Lambri", "Budi Hermonika Sosilo"],                    // ULD TUMPUNG LAUNG
   915: ["N Hirliyadi", "Husni Mubarak", "Bahrianor", "Muhammad Randi", "Gilang Ramadhan", "Muhammad Noviar Rahman", "Muhammad Riansyah", "Masriansyah"],                  // ULD SUNGAI BALI
   917: ["Arwin", "Darmawi", "Indrayadi", "Padli", "Suaib", "Suhardi"],                            // ULD KERASIAN
   918: ["Agus", "Alwir", "Khabir", "M Said", "Masjoni", "Muhammad Noor", "Roni Marten"],                     // ULD KERAYAAN
@@ -4168,13 +4168,15 @@ function initDataTable() {
   var cols = ['NO','ULD','JALUR','KAPASITAS','SALDO AWAL BULAN','SALDO AKHIR',
               'STOCK MATI','STOCK BERSIH','PEMAKAIAN BBM','PEMAKAIAN RATA-RATA',
               'PEMAKAIAN TERTINGGI','DAYA TAMPUNG','BBM SIAP KIRIM','SAFETY STOCK',
-              'ESTIMASI BBM HABIS','KONDISI STOCK','POSISI TERAKHIR','ESTIMASI TIBA']
+              'ESTIMASI BBM HABIS','KONDISI STOCK',
+              'TOTAL PENERIMAAN','TOTAL PEMAKAIAN',
+              'POSISI TERAKHIR','ESTIMASI TIBA']
   var headHTML = '<tr>'
   for (var i = 0; i < cols.length; i++) {
     var stickyStyle = i === 0 ? 'position:sticky;left:0;z-index:4;' : i === 1 ? 'position:sticky;left:0;z-index:4;' : 'z-index:3;'
     var thExtra = i === 0 ? 'width:1px;white-space:nowrap;padding:8px 4px;border-right:1px solid #4a7ab5;' : i === 1 ? 'padding:8px 10px;border-right:1px solid #4a7ab5;' : 'padding:8px 10px;'
     var thAlign = 'text-align:center;'
-    var thWidth  = i === 2 ? 'min-width:198px;' : i === 16 ? 'min-width:152px;' : i === 17 ? 'min-width:140px;' : ''
+    var thWidth  = i === 2 ? 'min-width:198px;' : i === 18 ? 'min-width:152px;' : i === 19 ? 'min-width:140px;' : ''
     headHTML += '<th style="background:#1e3a5f;color:#fff;white-space:nowrap;font-size:0.72rem;position:sticky;top:0;' + thAlign + thWidth + thExtra + stickyStyle + '">' + cols[i] + '</th>'
   }
   headHTML += '</tr>'
@@ -4254,6 +4256,9 @@ async function loadDataTab() {
       }
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;">' + fmtEst + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;font-weight:700;color:' + kondisiColor + ';">' + d.kondisi_stock + '</td>'
+      // Kolom TOTAL PENERIMAAN & TOTAL PEMAKAIAN (akumulasi bulan berjalan)
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;color:#1d4ed8;">' + fmtData(d.total_penerimaan) + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;font-weight:600;color:#dc2626;">' + fmtData(d.total_pemakaian) + '</td>'
       // Kolom POSISI TERAKHIR & ESTIMASI TIBA — hanya tampil jika HOP (safety_stock) < 8
       var showHopFields = (d.safety_stock !== null && d.safety_stock !== undefined && d.safety_stock < 8)
       if (showHopFields) {
