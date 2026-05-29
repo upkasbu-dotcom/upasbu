@@ -2514,7 +2514,7 @@ async function saveLapCurrent() {
     showLapState('review')
     // Langsung buka URL WA setelah simpan berhasil
     var ts = Date.now()
-    window.open('https://api.whatsapp.com/send?phone=6282252147896&text=' + encodeURIComponent(currentTeksLaporan) + '&_ts=' + ts, '_blank')
+    window.open('https://api.whatsapp.com/send?phone=6285285596663&text=' + encodeURIComponent(currentTeksLaporan) + '&_ts=' + ts, '_blank')
   } catch(e) {
     showToast('Gagal menyimpan: ' + e.message,'error')
     if (btnSave) { btnSave.disabled = false; btnSave.innerHTML = '<i class="fas fa-save"></i> Simpan Data' }
@@ -2640,7 +2640,7 @@ async function kirimWhatsApp() {
   // Gunakan window.location.href agar OS langsung intercept dan buka WA app
   // tanpa melalui tab browser baru yang bisa di-cache
   var encoded = encodeURIComponent(teks)
-  window.location.href = 'https://wa.me/6282252147896?text=' + encoded
+  window.location.href = 'https://wa.me/6285285596663?text=' + encoded
 }
 
 async function showRiwayatLap() {
