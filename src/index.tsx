@@ -1643,31 +1643,6 @@ app.get('/api/data-stok', async (c) => {
     const avgRataMap: Record<number, number> = {}
     for (const row of avgRataResult.results) avgRataMap[row.kode_unit] = row.rata_pemakaian
 
-    // Ambil total penerimaan BBM bulan berjalan (awal bulan s.d. tanggal T)
-    const totalPenerimaanResult = await c.env.DB.prepare(`
-      SELECT kode_unit,
-             SUM(COALESCE(penerimaan_bbm, 0)) AS total_penerimaan
-      FROM lap_operasional
-      WHERE tanggal >= ? AND tanggal <= ?
-      GROUP BY kode_unit
-    `).bind(tanggal.substring(0,7) + '-01', tanggal).all<{ kode_unit: number, total_penerimaan: number }>()
-    const totalPenerimaanMap: Record<number, number> = {}
-    for (const row of totalPenerimaanResult.results) totalPenerimaanMap[row.kode_unit] = row.total_penerimaan
-
-    // Ambil total pemakaian BBM bulan berjalan (awal bulan s.d. tanggal T)
-    // pemakaian per hari = saldo_awal + penerimaan - saldo_akhir (hanya jika > 0)
-    const totalPemakaianResult = await c.env.DB.prepare(`
-      SELECT kode_unit,
-             SUM(CASE WHEN (saldo_awal + COALESCE(penerimaan_bbm,0) - saldo_akhir) > 0
-                      THEN (saldo_awal + COALESCE(penerimaan_bbm,0) - saldo_akhir)
-                      ELSE 0 END) AS total_pemakaian
-      FROM lap_operasional
-      WHERE tanggal >= ? AND tanggal <= ?
-      GROUP BY kode_unit
-    `).bind(tanggal.substring(0,7) + '-01', tanggal).all<{ kode_unit: number, total_pemakaian: number }>()
-    const totalPemakaianMap: Record<number, number> = {}
-    for (const row of totalPemakaianResult.results) totalPemakaianMap[row.kode_unit] = row.total_pemakaian
-
     // Stok awal bulan aktual (April 2026) — data referensi dari dokumen resmi
     const STOK_AWAL_APRIL_2026: Record<number, number> = {
       366: 6141,   // BABAI
@@ -1784,6 +1759,67 @@ app.get('/api/data-stok', async (c) => {
     }
 
     const SAFETY_STOCK_HARI = 3  // hari safety stock
+
+    // ── Total Penerimaan & Total Pemakaian per unit (per periode cut-off) ──
+    // Periode = (cutoff berlaku + 1 hari) s.d. tanggal T
+    // cutoff berlaku = sama dengan yang dipakai untuk stok awal bulan
+    const totalPenerimaanMap: Record<number, number> = {}
+    const totalPemakaianMap:  Record<number, number> = {}
+
+    // Bangun map kode_unit → periodeAwal (cutoff + 1 hari)
+    const periodeAwalMap: Record<number, string> = {}
+    for (const kode of [...GRUP_A, ...GRUP_B]) {
+      const cutCurr    = getCutoffDate(kode, tYr, tMo)
+      const cutCurrDay = parseInt(cutCurr.split('-')[2])
+      let cutoffBerlaku: string
+      if (tDy > cutCurrDay) {
+        cutoffBerlaku = cutCurr
+      } else {
+        const prevMo = tMo === 1 ? 12 : tMo - 1
+        const prevYr = tMo === 1 ? tYr - 1 : tYr
+        cutoffBerlaku = getCutoffDate(kode, prevYr, prevMo)
+      }
+      // periodeAwal = cutoff + 1 hari
+      const cutDate = new Date(cutoffBerlaku)
+      cutDate.setDate(cutDate.getDate() + 1)
+      periodeAwalMap[kode] = cutDate.toISOString().split('T')[0]
+    }
+
+    // Kelompokkan unit berdasarkan periodeAwal yang sama → minimasi jumlah query
+    const periodeGroups: Record<string, number[]> = {}
+    for (const [kodeStr, awal] of Object.entries(periodeAwalMap)) {
+      if (!periodeGroups[awal]) periodeGroups[awal] = []
+      periodeGroups[awal].push(Number(kodeStr))
+    }
+
+    // Fetch per kelompok periodeAwal
+    for (const [periodeAwal, kodeList] of Object.entries(periodeGroups)) {
+      const placeholders = kodeList.map(() => '?').join(',')
+      const penRes = await c.env.DB.prepare(`
+        SELECT kode_unit,
+               SUM(COALESCE(penerimaan_bbm, 0)) AS total_penerimaan
+        FROM lap_operasional
+        WHERE tanggal >= ? AND tanggal <= ?
+          AND kode_unit IN (${placeholders})
+        GROUP BY kode_unit
+      `).bind(periodeAwal, tanggal, ...kodeList)
+        .all<{ kode_unit: number, total_penerimaan: number }>()
+      for (const row of penRes.results) totalPenerimaanMap[row.kode_unit] = row.total_penerimaan
+
+      const pakRes = await c.env.DB.prepare(`
+        SELECT kode_unit,
+               SUM(CASE WHEN (saldo_awal + COALESCE(penerimaan_bbm,0) - saldo_akhir) > 0
+                        THEN (saldo_awal + COALESCE(penerimaan_bbm,0) - saldo_akhir)
+                        ELSE 0 END) AS total_pemakaian
+        FROM lap_operasional
+        WHERE tanggal >= ? AND tanggal <= ?
+          AND kode_unit IN (${placeholders})
+        GROUP BY kode_unit
+      `).bind(periodeAwal, tanggal, ...kodeList)
+        .all<{ kode_unit: number, total_pemakaian: number }>()
+      for (const row of pakRes.results) totalPemakaianMap[row.kode_unit] = row.total_pemakaian
+    }
+    // ── End total penerimaan/pemakaian ──────────────────────────────────────
 
     // Urutkan unit sesuai nomor di UNIT_META, sisanya di akhir
     const sortedUnits = [...units.results].sort((a, b) => {
@@ -2410,9 +2446,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260515w" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260515w" as="script"/>
-  <link href="/static/style.css?v=20260515w" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260515x" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260515x" as="script"/>
+  <link href="/static/style.css?v=20260515x" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2851,7 +2887,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260515w"></script>
+<script src="/static/app.js?v=20260515x"></script>
 </body>
 </html>`
   const resp = c.html(html)
