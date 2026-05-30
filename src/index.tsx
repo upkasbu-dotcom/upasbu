@@ -148,6 +148,16 @@ async function initDB(db: D1Database) {
     updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
   )`).run()
 
+  // Tabel TAD (Tenaga Administrasi)
+  await db.prepare(`CREATE TABLE IF NOT EXISTS tad (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    nama        TEXT NOT NULL,
+    jabatan     TEXT NOT NULL,
+    penempatan  TEXT NOT NULL,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`).run()
+
   // Tabel event padam per unit per tanggal
   await db.prepare(`CREATE TABLE IF NOT EXISTS event_padam (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1952,6 +1962,49 @@ app.post('/api/hop-info', async (c) => {
 })
 
 // ===========================================================
+// API: TAD (Tenaga Administrasi)
+// ===========================================================
+app.get('/api/tad', async (c) => {
+  try {
+    const rows = await c.env.DB.prepare(
+      `SELECT id, nama, jabatan, penempatan, created_at, updated_at FROM tad ORDER BY id ASC`
+    ).all<{ id: number, nama: string, jabatan: string, penempatan: string, created_at: string, updated_at: string }>()
+    return c.json({ success: true, data: rows.results })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+app.post('/api/tad', async (c) => {
+  try {
+    const { nama, jabatan, penempatan } = await c.req.json<{ nama: string, jabatan: string, penempatan: string }>()
+    if (!nama || !jabatan || !penempatan) return c.json({ success: false, error: 'nama, jabatan, penempatan wajib diisi' }, 400)
+    const result = await c.env.DB.prepare(
+      `INSERT INTO tad (nama, jabatan, penempatan) VALUES (?, ?, ?)`
+    ).bind(nama.trim(), jabatan.trim(), penempatan.trim()).run()
+    return c.json({ success: true, id: result.meta.last_row_id })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+app.put('/api/tad/:id', async (c) => {
+  try {
+    const id = parseInt(c.req.param('id'))
+    const { nama, jabatan, penempatan } = await c.req.json<{ nama: string, jabatan: string, penempatan: string }>()
+    if (!nama || !jabatan || !penempatan) return c.json({ success: false, error: 'nama, jabatan, penempatan wajib diisi' }, 400)
+    await c.env.DB.prepare(
+      `UPDATE tad SET nama = ?, jabatan = ?, penempatan = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    ).bind(nama.trim(), jabatan.trim(), penempatan.trim(), id).run()
+    return c.json({ success: true })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+app.delete('/api/tad/:id', async (c) => {
+  try {
+    const id = parseInt(c.req.param('id'))
+    await c.env.DB.prepare(`DELETE FROM tad WHERE id = ?`).bind(id).run()
+    return c.json({ success: true })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ===========================================================
 // API: REKAP LAPORAN (summary per periode & unit)
 // ===========================================================
 app.get('/api/laporan', async (c) => {
@@ -2446,9 +2499,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260516a" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260516a" as="script"/>
-  <link href="/static/style.css?v=20260516a" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260516b" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260516b" as="script"/>
+  <link href="/static/style.css?v=20260516b" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2723,8 +2776,51 @@ app.get('/', (c) => {
         <h3 style="font-size:0.9rem;font-weight:700;color:#1e3a5f;margin:0;">TAD</h3>
         <p style="font-size:0.75rem;color:#64748b;margin:4px 0 0;">Tenaga Administrasi</p>
       </div>
+      <button onclick="tadOpenModal(null)" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:6px 16px;font-weight:700;font-size:0.75rem;cursor:pointer;">+ TAMBAH TAD</button>
     </div>
-    <div style="text-align:center;padding:40px;color:#94a3b8;font-size:0.85rem;">Fitur TAD belum tersedia</div>
+    <div style="overflow-x:auto;">
+      <table id="tad-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed;">
+        <colgroup>
+          <col style="width:4%;"/>
+          <col style="width:30%;"/>
+          <col style="width:28%;"/>
+          <col style="width:26%;"/>
+          <col style="width:12%;"/>
+        </colgroup>
+        <thead id="tad-table-head"></thead>
+        <tbody id="tad-table-body">
+          <tr><td colspan="5" style="text-align:center;padding:32px;color:#94a3b8;">Memuat data...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Modal TAD -->
+  <div id="modal-tad" class="modal-overlay hidden" onclick="if(event.target===this)closeTadModal()">
+    <div class="modal-box" style="width:440px;max-width:96vw;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <h3 id="modal-tad-title" style="font-size:0.95rem;font-weight:700;color:#1e3a5f;margin:0;">Tambah TAD</h3>
+        <button onclick="closeTadModal()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#64748b;">✕</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div>
+          <label style="font-size:0.75rem;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Nama <span style="color:#dc2626;">*</span></label>
+          <input id="tad-field-nama" type="text" placeholder="Nama lengkap..." style="width:100%;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.82rem;box-sizing:border-box;"/>
+        </div>
+        <div>
+          <label style="font-size:0.75rem;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Jabatan <span style="color:#dc2626;">*</span></label>
+          <input id="tad-field-jabatan" type="text" placeholder="Jabatan..." style="width:100%;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.82rem;box-sizing:border-box;"/>
+        </div>
+        <div>
+          <label style="font-size:0.75rem;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Penempatan <span style="color:#dc2626;">*</span></label>
+          <input id="tad-field-penempatan" type="text" placeholder="Penempatan..." style="width:100%;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.82rem;box-sizing:border-box;"/>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;">
+        <button onclick="closeTadModal()" style="background:#f1f5f9;color:#475569;border:none;border-radius:6px;padding:7px 18px;font-size:0.8rem;font-weight:600;cursor:pointer;">Batal</button>
+        <button id="btn-tad-simpan" onclick="tadSimpan()" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:7px 18px;font-size:0.8rem;font-weight:700;cursor:pointer;">Simpan</button>
+      </div>
+    </div>
   </div>
 
   <div id="peng-view-mesin" style="padding:10px 12px;">
@@ -2899,7 +2995,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260516a"></script>
+<script src="/static/app.js?v=20260516b"></script>
 </body>
 </html>`
   const resp = c.html(html)

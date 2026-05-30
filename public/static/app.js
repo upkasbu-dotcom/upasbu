@@ -5812,7 +5812,142 @@ function switchPengView(view) {
   // Inisialisasi SLD unit select saat pertama kali masuk sub-tab SLD
   if (view === 'sld') sldInitUnitSelect()
 
+  // Load data TAD saat pertama kali / setiap kali masuk sub-tab TAD
+  if (view === 'tad') loadTadData()
+
   // Saldo BBM: iframe sudah auto-load saat ditampilkan, tidak perlu init
+}
+
+// ===== TAD =====
+
+var _tadEditId = null  // null = tambah baru, number = edit existing
+
+async function loadTadData() {
+  var tbody = document.getElementById('tad-table-body')
+  var thead = document.getElementById('tad-table-head')
+  if (!tbody || !thead) return
+
+  thead.innerHTML = '<tr style="background:#1e3a5f;color:#fff;font-size:0.78rem;">' +
+    '<th style="padding:8px 4px;text-align:center;">No</th>' +
+    '<th style="padding:8px 10px;text-align:left;white-space:nowrap;">Nama</th>' +
+    '<th style="padding:8px 10px;text-align:left;white-space:nowrap;">Jabatan</th>' +
+    '<th style="padding:8px 10px;text-align:left;white-space:nowrap;">Penempatan</th>' +
+    '<th style="padding:8px 10px;text-align:center;white-space:nowrap;">Aksi</th>' +
+    '</tr>'
+
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#94a3b8;"><span class="spinner"></span></td></tr>'
+
+  try {
+    var res  = await fetch('/api/tad')
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error)
+    var data = json.data || []
+
+    if (data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:#94a3b8;">Belum ada data TAD</td></tr>'
+      return
+    }
+
+    tbody.innerHTML = data.map(function(t, i) {
+      var rowBg = i % 2 === 0 ? '#fff' : '#f8fafc'
+      return '<tr style="background:' + rowBg + ';font-size:0.82rem;" data-id="' + t.id + '">' +
+        '<td style="padding:7px 4px;text-align:center;color:#64748b;">' + (i + 1) + '</td>' +
+        '<td style="padding:7px 10px;text-align:left;">' + (t.nama || '-') + '</td>' +
+        '<td style="padding:7px 10px;text-align:left;">' + (t.jabatan || '-') + '</td>' +
+        '<td style="padding:7px 10px;text-align:left;">' + (t.penempatan || '-') + '</td>' +
+        '<td style="padding:5px 10px;text-align:center;white-space:nowrap;">' +
+          '<button onclick="tadOpenModal(' + t.id + ')" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.75rem;cursor:pointer;margin-right:4px;">Edit</button>' +
+          '<button onclick="tadHapus(' + t.id + ')" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.75rem;cursor:pointer;">Hapus</button>' +
+        '</td>' +
+        '</tr>'
+    }).join('')
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#dc2626;">Gagal memuat: ' + e.message + '</td></tr>'
+  }
+}
+
+var _tadData = []  // cache data untuk isi form edit
+
+function tadOpenModal(id) {
+  _tadEditId = id
+  var modal   = document.getElementById('modal-tad')
+  var titleEl = document.getElementById('modal-tad-title')
+  var fNama   = document.getElementById('tad-field-nama')
+  var fJab    = document.getElementById('tad-field-jabatan')
+  var fPenem  = document.getElementById('tad-field-penempatan')
+  if (!modal) return
+
+  if (id === null) {
+    // Mode tambah
+    titleEl.textContent = 'Tambah TAD'
+    fNama.value = ''; fJab.value = ''; fPenem.value = ''
+  } else {
+    // Mode edit — cari dari DOM (data sudah di TR)
+    titleEl.textContent = 'Edit TAD'
+    var row = document.querySelector('#tad-table-body tr[data-id="' + id + '"]')
+    if (row) {
+      var cells = row.querySelectorAll('td')
+      fNama.value  = cells[1] ? cells[1].textContent.trim() : ''
+      fJab.value   = cells[2] ? cells[2].textContent.trim() : ''
+      fPenem.value = cells[3] ? cells[3].textContent.trim() : ''
+    }
+  }
+  modal.classList.remove('hidden')
+  setTimeout(function() { fNama.focus() }, 100)
+}
+
+function closeTadModal() {
+  var modal = document.getElementById('modal-tad')
+  if (modal) modal.classList.add('hidden')
+  _tadEditId = null
+}
+
+async function tadSimpan() {
+  var fNama  = document.getElementById('tad-field-nama')
+  var fJab   = document.getElementById('tad-field-jabatan')
+  var fPenem = document.getElementById('tad-field-penempatan')
+  var nama   = fNama.value.trim()
+  var jabatan    = fJab.value.trim()
+  var penempatan = fPenem.value.trim()
+
+  if (!nama)       { fNama.focus();  showToast('Nama wajib diisi', 'error'); return }
+  if (!jabatan)    { fJab.focus();   showToast('Jabatan wajib diisi', 'error'); return }
+  if (!penempatan) { fPenem.focus(); showToast('Penempatan wajib diisi', 'error'); return }
+
+  var btn = document.getElementById('btn-tad-simpan')
+  if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan...' }
+
+  try {
+    var url    = _tadEditId === null ? '/api/tad' : '/api/tad/' + _tadEditId
+    var method = _tadEditId === null ? 'POST' : 'PUT'
+    var res    = await fetch(url, {
+      method: method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nama: nama, jabatan: jabatan, penempatan: penempatan })
+    })
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error)
+    showToast(_tadEditId === null ? 'TAD berhasil ditambahkan' : 'TAD berhasil diperbarui', 'success')
+    closeTadModal()
+    loadTadData()
+  } catch(e) {
+    showToast('Gagal: ' + e.message, 'error')
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Simpan' }
+  }
+}
+
+async function tadHapus(id) {
+  if (!confirm('Hapus data TAD ini?')) return
+  try {
+    var res  = await fetch('/api/tad/' + id, { method: 'DELETE' })
+    var json = await res.json()
+    if (!json.success) throw new Error(json.error)
+    showToast('TAD berhasil dihapus', 'success')
+    loadTadData()
+  } catch(e) {
+    showToast('Gagal menghapus: ' + e.message, 'error')
+  }
 }
 
 // ===== BUDGETING =====
