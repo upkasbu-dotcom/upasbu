@@ -2004,42 +2004,6 @@ app.delete('/api/tad/:id', async (c) => {
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
-// Seed TAD dari OPERATOR_DATA — hanya jalan jika tabel kosong
-app.post('/api/tad/seed', async (c) => {
-  try {
-    const db = c.env.DB
-    const existing = await db.prepare(`SELECT COUNT(*) as cnt FROM tad`).first<{ cnt: number }>()
-    if (existing && existing.cnt > 0) {
-      return c.json({ success: false, message: `Tabel sudah berisi ${existing.cnt} data, seed dilewati.` })
-    }
-    const data: Array<[string, string, string]> = [
-      ["Eko Setiawan","Operator","ULD BABAI"],["Syamsuri","Operator","ULD BABAI"],["Dolarman","Operator","ULD BABAI"],["Hasim","Operator","ULD BABAI"],["Fahrija Rahman","Operator","ULD BABAI"],["Ramadhani","Operator","ULD BABAI"],["Randa Yudistira","Operator","ULD BABAI"],["Muhammad Kelvin","Operator","ULD BABAI"],["Alfianor","Operator","ULD BABAI"],
-      ["Ahmat Rida","Operator","ULD GUNUNG PUREI"],["Supiansyah","Operator","ULD GUNUNG PUREI"],["Fahmi","Operator","ULD GUNUNG PUREI"],["Minghuandy","Operator","ULD GUNUNG PUREI"],["Nurahman","Operator","ULD GUNUNG PUREI"],["Eko Setiawan","Operator","ULD GUNUNG PUREI"],["Husliansyah","Operator","ULD GUNUNG PUREI"],
-      ["Aryuni","Operator","ULD KENAMBUI"],["Muliyarta","Operator","ULD KENAMBUI"],["Erwansyah","Operator","ULD KENAMBUI"],["Gusti Gustira","Operator","ULD KENAMBUI"],["M Arbani","Operator","ULD KENAMBUI"],["Sandi","Operator","ULD KENAMBUI"],["Suhaimi","Operator","ULD KENAMBUI"],["Amriansyah","Operator","ULD KENAMBUI"],["Rusdiansyah","Operator","ULD KENAMBUI"],["Junika Cucu Andika","Operator","ULD KENAMBUI"],
-      ["Alex Sanderia","Operator","ULD KUDANGAN"],["Timbun Radiyanto","Operator","ULD KUDANGAN"],["Hery Optianus","Operator","ULD KUDANGAN"],["Sabriansyah","Operator","ULD KUDANGAN"],["Donny Prayogo","Operator","ULD KUDANGAN"],["Yosuarius YB","Operator","ULD KUDANGAN"],["Anto","Operator","ULD KUDANGAN"],["Basilius Yoga","Operator","ULD KUDANGAN"],
-      ["Aripin","Operator","ULD MENDAWAI"],["Tomi Kuswoyo","Operator","ULD MENDAWAI"],["Mujianor","Operator","ULD MENDAWAI"],["Didin Wahono","Operator","ULD MENDAWAI"],["Zulkifli","Operator","ULD MENDAWAI"],["Hendri Purwanto","Operator","ULD MENDAWAI"],["Moh Taufiq","Operator","ULD MENDAWAI"],["M Ardianor","Operator","ULD MENDAWAI"],["Yoga Syahbandi","Operator","ULD MENDAWAI"],["Azkia El Murthada","Operator","ULD MENDAWAI"],["Rafdianor","Operator","ULD MENDAWAI"],
-      ["Hidayat Saputra","Operator","ULD PAGATAN"],["Abdul Haris","Operator","ULD PAGATAN"],["Muhammad Pauzan","Operator","ULD PAGATAN"],["Tedy Heriady","Operator","ULD PAGATAN"],["Murdiansyah","Operator","ULD PAGATAN"],["Ridy","Operator","ULD PAGATAN"],["Megi","Operator","ULD PAGATAN"],["Muhammad Hidayat","Operator","ULD PAGATAN"],["Muhammad Ikhsan","Operator","ULD PAGATAN"],
-      ["Muhammad Abidin","Operator","ULD RANGGA ILUNG"],["Hendra Prianto","Operator","ULD RANGGA ILUNG"],["M Ilham","Operator","ULD RANGGA ILUNG"],["Hendri Irawan","Operator","ULD RANGGA ILUNG"],["Ahmad Jainudin","Operator","ULD RANGGA ILUNG"],["Muhammad Ari Sutarinda","Operator","ULD RANGGA ILUNG"],["Alvyus Advent Bagaskara","Operator","ULD RANGGA ILUNG"],
-      ["Murjoko","Operator","ULD TELAGA"],["Adi Rahmad","Operator","ULD TELAGA"],["Irawan","Operator","ULD TELAGA"],
-      ["Eko Prasetyo","Operator","ULD TELAGA PULANG"],["Mulyadi","Operator","ULD TELAGA PULANG"],["Tri Wahyono","Operator","ULD TELAGA PULANG"],["Adi Susanto","Operator","ULD TELAGA PULANG"],["Karnadie","Operator","ULD TELAGA PULANG"],["Didie","Operator","ULD TELAGA PULANG"],["Yesto","Operator","ULD TELAGA PULANG"],["Ahmad Boby Erlangga","Operator","ULD TELAGA PULANG"],
-      ["Effendi","Operator","ULD TUMBANG MANJUL"],["A Rafiq","Operator","ULD TUMBANG MANJUL"],["Mulyadi","Operator","ULD TUMBANG MANJUL"],["Supian","Operator","ULD TUMBANG MANJUL"],["Alpian","Operator","ULD TUMBANG MANJUL"],["Gusna Nubin","Operator","ULD TUMBANG MANJUL"],["M Ipan Ali","Operator","ULD TUMBANG MANJUL"],["Wardani","Operator","ULD TUMBANG MANJUL"],["Alpianor","Operator","ULD TUMBANG MANJUL"],["Juljalali Wal Ikram","Operator","ULD TUMBANG MANJUL"],
-      ["Naneng Ermadi","Operator","ULD TUMBANG SENAMANG"],["Ahmad Budi Santoso","Operator","ULD TUMBANG SENAMANG"],["Yudi Setiono","Operator","ULD TUMBANG SENAMANG"],["Burhan","Operator","ULD TUMBANG SENAMANG"],["Sutrisman","Operator","ULD TUMBANG SENAMANG"],["Purwanto","Operator","ULD TUMBANG SENAMANG"],["Muhammad Nudie","Operator","ULD TUMBANG SENAMANG"],["Benny Rahmadani","Operator","ULD TUMBANG SENAMANG"],["Dodi Kurniawan","Operator","ULD TUMBANG SENAMANG"],
-      ["Deniasyah","Operator","ULD MANGKATIP"],["Sukardiono","Operator","ULD MANGKATIP"],["Tajudin","Operator","ULD MANGKATIP"],["Alvyus Advent Bagaskara","Operator","ULD MANGKATIP"],["M Ilman","Operator","ULD MANGKATIP"],
-      ["Hendri Aprius","Operator","ULD TELUK BETUNG"],["Kanserto","Operator","ULD TELUK BETUNG"],["Gupinda Ramadan","Operator","ULD TELUK BETUNG"],["M Indra Saputra","Operator","ULD TELUK BETUNG"],["Achrian Noor","Operator","ULD TELUK BETUNG"],["Rizki Permana","Operator","ULD TELUK BETUNG"],["Jihad","Operator","ULD TELUK BETUNG"],
-      ["Herianor","Operator","ULD TUMPUNG LAUNG"],["Yatno Eka Nugraha","Operator","ULD TUMPUNG LAUNG"],["Murjani","Operator","ULD TUMPUNG LAUNG"],["Masrawan","Operator","ULD TUMPUNG LAUNG"],["Yuspida","Operator","ULD TUMPUNG LAUNG"],["Agus Salim","Operator","ULD TUMPUNG LAUNG"],["Lambri","Operator","ULD TUMPUNG LAUNG"],["Budi Hermonika Sosilo","Operator","ULD TUMPUNG LAUNG"],
-      ["N Hirliyadi","Operator","ULD SUNGAI BALI"],["Husni Mubarak","Operator","ULD SUNGAI BALI"],["Bahrianor","Operator","ULD SUNGAI BALI"],["Muhammad Randi","Operator","ULD SUNGAI BALI"],["Gilang Ramadhan","Operator","ULD SUNGAI BALI"],["Muhammad Noviar Rahman","Operator","ULD SUNGAI BALI"],["Muhammad Riansyah","Operator","ULD SUNGAI BALI"],["Masriansyah","Operator","ULD SUNGAI BALI"],
-      ["Arwin","Operator","ULD KERASIAN"],["Darmawi","Operator","ULD KERASIAN"],["Indrayadi","Operator","ULD KERASIAN"],["Padli","Operator","ULD KERASIAN"],["Suaib","Operator","ULD KERASIAN"],["Suhardi","Operator","ULD KERASIAN"],
-      ["Agus","Operator","ULD KERAYAAN"],["Alwir","Operator","ULD KERAYAAN"],["Khabir","Operator","ULD KERAYAAN"],["M Said","Operator","ULD KERAYAAN"],["Masjoni","Operator","ULD KERAYAAN"],["Muhammad Noor","Operator","ULD KERAYAAN"],["Roni Marten","Operator","ULD KERAYAAN"],
-      ["Abd Sapma","Operator","ULD KERUMPUTAN"],["Fahrudin","Operator","ULD KERUMPUTAN"],["Hidayatullah","Operator","ULD KERUMPUTAN"],["Paesal","Operator","ULD KERUMPUTAN"],["Rasdi","Operator","ULD KERUMPUTAN"],["Safriansyah","Operator","ULD KERUMPUTAN"],
-      ["Dedi Yusuf","Operator","ULD MARABATUAN"],["Febrianto","Operator","ULD MARABATUAN"],["Hamsyah","Operator","ULD MARABATUAN"],["Hasdiansyah","Operator","ULD MARABATUAN"],["Pardiansyah","Operator","ULD MARABATUAN"],["Sri Ekonanto","Operator","ULD MARABATUAN"],["Wahyudin","Operator","ULD MARABATUAN"],
-    ]
-    const stmt = db.prepare(`INSERT INTO tad (nama, jabatan, penempatan) VALUES (?, ?, ?)`)
-    const batch = data.map(([nama, jabatan, penempatan]) => stmt.bind(nama, jabatan, penempatan))
-    await db.batch(batch)
-    return c.json({ success: true, inserted: data.length, message: `${data.length} data TAD berhasil dimasukkan.` })
-  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
-})
-
 // ===========================================================
 // API: REKAP LAPORAN (summary per periode & unit)
 // ===========================================================
@@ -2535,9 +2499,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260516c" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260516c" as="script"/>
-  <link href="/static/style.css?v=20260516c" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260516d" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260516d" as="script"/>
+  <link href="/static/style.css?v=20260516d" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2812,10 +2776,7 @@ app.get('/', (c) => {
         <h3 style="font-size:0.9rem;font-weight:700;color:#1e3a5f;margin:0;">TAD</h3>
         <p style="font-size:0.75rem;color:#64748b;margin:4px 0 0;">Tenaga Administrasi</p>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button onclick="tadOpenModal(null)" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:6px 16px;font-weight:700;font-size:0.75rem;cursor:pointer;">+ TAMBAH TAD</button>
-        <button onclick="tadSeedFromOperator()" id="btn-tad-seed" style="background:#0f766e;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-weight:700;font-size:0.75rem;cursor:pointer;" title="Isi database dari daftar operator (hanya jika tabel kosong)">⬇ Import Operator</button>
-      </div>
+      <button onclick="tadOpenModal(null)" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:6px 16px;font-weight:700;font-size:0.75rem;cursor:pointer;">+ TAMBAH TAD</button>
     </div>
     <div style="overflow-x:auto;">
       <table id="tad-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed;">
@@ -3034,7 +2995,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260516c"></script>
+<script src="/static/app.js?v=20260516d"></script>
 </body>
 </html>`
   const resp = c.html(html)
