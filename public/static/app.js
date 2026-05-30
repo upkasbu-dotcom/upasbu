@@ -5772,6 +5772,11 @@ function switchPengView(view) {
     showToast('Login sebagai admin untuk mengakses SLD', 'error')
     return
   }
+  // Guard: TAD hanya bisa diakses setelah login admin PENGATURAN
+  if (view === 'tad' && !_pengIsAdmin) {
+    showToast('Login sebagai admin untuk mengakses TAD', 'error')
+    return
+  }
   // Guard: SALDO BBM hanya bisa diakses setelah login admin PENGATURAN
   if (view === 'budgeting' && !_pengIsAdmin) {
     showToast('Login sebagai admin untuk mengakses Saldo BBM', 'error')
@@ -5782,14 +5787,17 @@ function switchPengView(view) {
 
   // Update tombol sub-tab aktif
   document.getElementById('peng-sub-btn-mesin').classList.toggle('active', view === 'mesin')
+  document.getElementById('peng-sub-btn-tad').classList.toggle('active', view === 'tad')
   document.getElementById('peng-sub-btn-sld').classList.toggle('active', view === 'sld')
   document.getElementById('peng-sub-btn-budgeting').classList.toggle('active', view === 'budgeting')
 
   // Toggle konten sub-view
   var viewMesin      = document.getElementById('peng-view-mesin')
+  var viewTad        = document.getElementById('peng-view-tad')
   var viewSld        = document.getElementById('peng-view-sld')
   var viewBudgeting  = document.getElementById('peng-view-budgeting')
   if (viewMesin)     viewMesin.style.display     = (view === 'mesin')      ? '' : 'none'
+  if (viewTad)       viewTad.style.display       = (view === 'tad')        ? '' : 'none'
   if (viewSld)       viewSld.style.display       = (view === 'sld')        ? '' : 'none'
   if (viewBudgeting) viewBudgeting.style.display = (view === 'budgeting')  ? '' : 'none'
 

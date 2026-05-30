@@ -2446,9 +2446,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260515z" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260515z" as="script"/>
-  <link href="/static/style.css?v=20260515z" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260516a" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260516a" as="script"/>
+  <link href="/static/style.css?v=20260516a" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2573,6 +2573,7 @@ app.get('/', (c) => {
     <div class="toolbar">
       <div id="peng-subtab-row" style="display:flex;gap:4px;">
         <button id="peng-sub-btn-mesin"      class="data-subtab-btn active" onclick="switchPengView('mesin')">MESIN</button>
+        <button id="peng-sub-btn-tad"         class="data-subtab-btn"        onclick="switchPengView('tad')">TAD</button>
         <button id="peng-sub-btn-sld"         class="data-subtab-btn"        onclick="switchPengView('sld')">SLD</button>
         <button id="peng-sub-btn-budgeting"   class="data-subtab-btn"        onclick="switchPengView('budgeting')">SALDO BBM</button>
       </div>
@@ -2715,6 +2716,17 @@ app.get('/', (c) => {
 <!-- ===== TAB: PENGATURAN MESIN + SLD ===== -->
 <div id="tab-pengaturan" class="tab-content" style="padding:0;">
   <!-- Sub-view: MESIN -->
+  <!-- Sub-view: TAD -->
+  <div id="peng-view-tad" style="display:none;padding:10px 12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <h3 style="font-size:0.9rem;font-weight:700;color:#1e3a5f;margin:0;">TAD</h3>
+        <p style="font-size:0.75rem;color:#64748b;margin:4px 0 0;">Tenaga Administrasi</p>
+      </div>
+    </div>
+    <div style="text-align:center;padding:40px;color:#94a3b8;font-size:0.85rem;">Fitur TAD belum tersedia</div>
+  </div>
+
   <div id="peng-view-mesin" style="padding:10px 12px;">
     <div id="peng-state-locked" style="display:none;"></div>
     <div id="peng-state-content" style="display:none;">
@@ -2887,7 +2899,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260515z"></script>
+<script src="/static/app.js?v=20260516a"></script>
 </body>
 </html>`
   const resp = c.html(html)
