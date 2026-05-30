@@ -5950,6 +5950,25 @@ async function tadHapus(id) {
   }
 }
 
+async function tadSeedFromOperator() {
+  var btn = document.getElementById('btn-tad-seed')
+  if (btn) { btn.disabled = true; btn.textContent = 'Mengimport...' }
+  try {
+    var res  = await fetch('/api/tad/seed', { method: 'POST' })
+    var json = await res.json()
+    if (json.success) {
+      showToast(json.message || 'Import berhasil!', 'success')
+      loadTadData()
+    } else {
+      showToast(json.message || json.error || 'Import gagal', 'error')
+    }
+  } catch(e) {
+    showToast('Gagal import: ' + e.message, 'error')
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⬇ Import Operator' }
+  }
+}
+
 // ===== BUDGETING =====
 
 var _budgetingData = []
