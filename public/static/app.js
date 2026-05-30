@@ -4169,8 +4169,8 @@ function initDataTable() {
               'STOCK MATI','STOCK BERSIH','PEMAKAIAN BBM','PEMAKAIAN RATA-RATA',
               'PEMAKAIAN TERTINGGI','DAYA TAMPUNG','BBM SIAP KIRIM','SAFETY STOCK',
               'ESTIMASI BBM HABIS','KONDISI STOCK',
-              'TOTAL PENERIMAAN','TOTAL PEMAKAIAN',
-              'POSISI TERAKHIR','ESTIMASI TIBA']
+              'POSISI TERAKHIR','ESTIMASI TIBA',
+              'TOTAL PENERIMAAN','TOTAL PEMAKAIAN']
   var headHTML = '<tr>'
   for (var i = 0; i < cols.length; i++) {
     var stickyStyle = i === 0 ? 'position:sticky;left:0;z-index:4;' : i === 1 ? 'position:sticky;left:0;z-index:4;' : 'z-index:3;'
@@ -4256,9 +4256,6 @@ async function loadDataTab() {
       }
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;">' + fmtEst + '</td>'
       bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;font-weight:700;color:' + kondisiColor + ';">' + d.kondisi_stock + '</td>'
-      // Kolom TOTAL PENERIMAAN & TOTAL PEMAKAIAN (akumulasi bulan berjalan)
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.total_penerimaan) + '</td>'
-      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.total_pemakaian) + '</td>'
       // Kolom POSISI TERAKHIR & ESTIMASI TIBA — hanya tampil jika HOP (safety_stock) < 8
       var showHopFields = (d.safety_stock !== null && d.safety_stock !== undefined && d.safety_stock < 8)
       if (showHopFields) {
@@ -4278,6 +4275,9 @@ async function loadDataTab() {
         bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;color:#cbd5e1;">—</td>'
         bodyHTML += '<td style="padding:7px 10px;text-align:center;font-size:0.78rem;color:#cbd5e1;">—</td>'
       }
+      // Kolom TOTAL PENERIMAAN & TOTAL PEMAKAIAN (setelah ESTIMASI TIBA)
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.total_penerimaan) + '</td>'
+      bodyHTML += '<td style="padding:7px 10px;text-align:right;font-size:0.78rem;">' + fmtData(d.total_pemakaian) + '</td>'
       bodyHTML += '</tr>'
     }
     document.getElementById('data-table-body').innerHTML = bodyHTML
