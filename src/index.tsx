@@ -2507,9 +2507,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260516f" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260516f" as="script"/>
-  <link href="/static/style.css?v=20260516f" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260516g" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260516g" as="script"/>
+  <link href="/static/style.css?v=20260516g" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2652,6 +2652,10 @@ app.get('/', (c) => {
         <div id="loading-indicator-peng" class="hidden"><span class="spinner"></span></div>
         <span class="toolbar-info" id="info-peng-count"></span>
       </div>
+      <!-- Toolbar TAD -->
+      <div id="peng-toolbar-tad" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;">
+        <button onclick="tadOpenModal(null)" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:6px 16px;font-weight:700;font-size:0.75rem;cursor:pointer;">+ TAMBAH TAD</button>
+      </div>
       <!-- Toolbar Budgeting -->
       <div id="peng-toolbar-budgeting" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;">
 
@@ -2779,12 +2783,6 @@ app.get('/', (c) => {
   <!-- Sub-view: MESIN -->
   <!-- Sub-view: TAD -->
   <div id="peng-view-tad" style="display:none;padding:10px 12px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-      <div>
-        <h3 style="font-size:0.9rem;font-weight:700;color:#1e3a5f;margin:0;">TAD</h3>
-      </div>
-      <button onclick="tadOpenModal(null)" style="background:#1e3a5f;color:#fff;border:none;border-radius:6px;padding:6px 16px;font-weight:700;font-size:0.75rem;cursor:pointer;">+ TAMBAH TAD</button>
-    </div>
     <div style="overflow-x:auto;">
       <table id="tad-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed;">
         <colgroup>
@@ -3002,7 +3000,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260516f"></script>
+<script src="/static/app.js?v=20260516g"></script>
 </body>
 </html>`
   const resp = c.html(html)

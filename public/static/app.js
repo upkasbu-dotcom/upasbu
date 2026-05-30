@@ -5835,9 +5835,11 @@ function switchPengView(view) {
 
   // Toggle toolbar sub-panel
   var tbMesin     = document.getElementById('peng-toolbar-mesin')
+  var tbTad       = document.getElementById('peng-toolbar-tad')
   var tbSld       = document.getElementById('peng-toolbar-sld')
   var tbBudgeting = document.getElementById('peng-toolbar-budgeting')
   if (tbMesin)     tbMesin.style.display     = (view === 'mesin')     ? 'flex' : 'none'
+  if (tbTad)       tbTad.style.display       = (view === 'tad')       ? 'flex' : 'none'
   if (tbSld)       tbSld.style.display       = (view === 'sld')       ? 'flex' : 'none'
   if (tbBudgeting) tbBudgeting.style.display = (view === 'budgeting') ? 'flex' : 'none'
 
