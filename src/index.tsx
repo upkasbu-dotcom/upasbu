@@ -2507,9 +2507,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260516g" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260516g" as="script"/>
-  <link href="/static/style.css?v=20260516g" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260516h" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260516h" as="script"/>
+  <link href="/static/style.css?v=20260516h" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2814,7 +2814,17 @@ app.get('/', (c) => {
         </div>
         <div>
           <label style="font-size:0.75rem;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Jabatan <span style="color:#dc2626;">*</span></label>
-          <input id="tad-field-jabatan" type="text" placeholder="Jabatan..." style="width:100%;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.82rem;box-sizing:border-box;"/>
+          <select id="tad-field-jabatan" style="width:100%;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.82rem;box-sizing:border-box;background:#fff;">
+            <option value="">-- Pilih Jabatan --</option>
+            <option value="ADMINISTRASI">ADMINISTRASI</option>
+            <option value="AHLI K3">AHLI K3</option>
+            <option value="KOORDINATOR">KOORDINATOR</option>
+            <option value="OPHAR DIST">OPHAR DIST</option>
+            <option value="OPHAR KIT">OPHAR KIT</option>
+            <option value="TIM HAR">TIM HAR</option>
+            <option value="SITE LEADER">SITE LEADER</option>
+            <option value="TENAGA AHLI AMC">TENAGA AHLI AMC</option>
+          </select>
         </div>
         <div>
           <label style="font-size:0.75rem;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Penempatan <span style="color:#dc2626;">*</span></label>
@@ -3000,7 +3010,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260516g"></script>
+<script src="/static/app.js?v=20260516h"></script>
 </body>
 </html>`
   const resp = c.html(html)
