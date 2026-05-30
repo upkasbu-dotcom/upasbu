@@ -159,6 +159,31 @@ var lapSelectedKode  = null   // kode_unit (integer)
 var lapSelectedUnit  = null   // { kode_unit, nama_unit } object
 var currentLapForm   = {}
 var lastSavedData    = {}
+
+// Cache daftar operator dari tabel TAD per nama_unit
+// { "ULD BABAI": ["Nama1","Nama2",...], ... }
+var _tadOpCache      = {}
+var _tadOpFetching   = {}  // guard double-fetch per unit
+
+async function prefetchTadOperators(namaUnit) {
+  if (!namaUnit) return
+  if (_tadOpCache[namaUnit] !== undefined) return  // sudah ada di cache
+  if (_tadOpFetching[namaUnit]) return             // sedang fetch
+  _tadOpFetching[namaUnit] = true
+  try {
+    var res  = await fetch('/api/tad?penempatan=' + encodeURIComponent(namaUnit))
+    var json = await res.json()
+    if (json.success && Array.isArray(json.data)) {
+      _tadOpCache[namaUnit] = json.data.map(function(r) { return r.nama })
+    } else {
+      _tadOpCache[namaUnit] = []
+    }
+  } catch(e) {
+    _tadOpCache[namaUnit] = []
+  } finally {
+    _tadOpFetching[namaUnit] = false
+  }
+}
 var currentTeksLaporan = ''
 
 
@@ -1823,6 +1848,9 @@ async function onLapUnitChange(kode) {
   if (currentLapForm.stock_oli_sx      === undefined) currentLapForm.stock_oli_sx      = null
   if (currentLapForm.stock_oli_sx_plus === undefined) currentLapForm.stock_oli_sx_plus = null
 
+  // Prefetch daftar operator dari TAD database untuk unit ini
+  if (lapSelectedUnit) await prefetchTadOperators(lapSelectedUnit.nama_unit)
+
   var tglTerpilih = document.getElementById('lap-tanggal').value
   if (tglTerpilih) {
     // Gunakan onLapTanggalChange untuk fetch + tampilkan review/form sesuai kondisi data
@@ -1904,7 +1932,11 @@ function renderLapForm() {
   html += '<div class="lap-single-body">'
 
   // Nama Operator — input + dropdown pilih operator
-  var opList = (lapSelectedKode && OPERATOR_DATA[lapSelectedKode]) ? OPERATOR_DATA[lapSelectedKode] : []
+  // Prioritas: data TAD dari D1 → fallback OPERATOR_DATA hardcode
+  var _unitNama = lapSelectedUnit ? lapSelectedUnit.nama_unit : ''
+  var opList = (_unitNama && _tadOpCache[_unitNama] && _tadOpCache[_unitNama].length > 0)
+    ? _tadOpCache[_unitNama]
+    : (lapSelectedKode && OPERATOR_DATA[lapSelectedKode]) ? OPERATOR_DATA[lapSelectedKode] : []
   html += '<div class="lap-field-row" style="flex-wrap:wrap;gap:4px;">'
   html += '<label class="lap-field-label">Nama Operator</label>'
   html += '<span class="lap-field-sep">:</span>'

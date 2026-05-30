@@ -1966,9 +1966,17 @@ app.post('/api/hop-info', async (c) => {
 // ===========================================================
 app.get('/api/tad', async (c) => {
   try {
-    const rows = await c.env.DB.prepare(
-      `SELECT id, nama, jabatan, penempatan, created_at, updated_at FROM tad ORDER BY id ASC`
-    ).all<{ id: number, nama: string, jabatan: string, penempatan: string, created_at: string, updated_at: string }>()
+    const penempatan = c.req.query('penempatan') || ''
+    let rows
+    if (penempatan) {
+      rows = await c.env.DB.prepare(
+        `SELECT id, nama, jabatan, penempatan, created_at, updated_at FROM tad WHERE penempatan = ? ORDER BY nama ASC`
+      ).bind(penempatan).all<{ id: number, nama: string, jabatan: string, penempatan: string, created_at: string, updated_at: string }>()
+    } else {
+      rows = await c.env.DB.prepare(
+        `SELECT id, nama, jabatan, penempatan, created_at, updated_at FROM tad ORDER BY penempatan ASC, nama ASC`
+      ).all<{ id: number, nama: string, jabatan: string, penempatan: string, created_at: string, updated_at: string }>()
+    }
     return c.json({ success: true, data: rows.results })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
@@ -2499,9 +2507,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260516d" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260516d" as="script"/>
-  <link href="/static/style.css?v=20260516d" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260516e" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260516e" as="script"/>
+  <link href="/static/style.css?v=20260516e" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -2995,7 +3003,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260516d"></script>
+<script src="/static/app.js?v=20260516e"></script>
 </body>
 </html>`
   const resp = c.html(html)
