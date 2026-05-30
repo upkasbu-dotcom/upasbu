@@ -167,8 +167,8 @@ var _tadOpFetching   = {}  // guard double-fetch per unit
 
 async function prefetchTadOperators(namaUnit) {
   if (!namaUnit) return
-  if (_tadOpCache[namaUnit] !== undefined) return  // sudah ada di cache
-  if (_tadOpFetching[namaUnit]) return             // sedang fetch
+  if (_tadOpFetching[namaUnit]) return             // sedang fetch (guard double-fetch)
+  // Cache dihapus setiap ganti unit agar selalu fresh dari D1
   _tadOpFetching[namaUnit] = true
   try {
     var res  = await fetch('/api/tad?penempatan=' + encodeURIComponent(namaUnit))
@@ -1848,7 +1848,8 @@ async function onLapUnitChange(kode) {
   if (currentLapForm.stock_oli_sx      === undefined) currentLapForm.stock_oli_sx      = null
   if (currentLapForm.stock_oli_sx_plus === undefined) currentLapForm.stock_oli_sx_plus = null
 
-  // Prefetch daftar operator dari TAD database untuk unit ini
+  // Hapus cache unit ini agar selalu fetch terbaru dari D1
+  if (lapSelectedUnit) delete _tadOpCache[lapSelectedUnit.nama_unit]
   if (lapSelectedUnit) await prefetchTadOperators(lapSelectedUnit.nama_unit)
 
   var tglTerpilih = document.getElementById('lap-tanggal').value
