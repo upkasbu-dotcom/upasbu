@@ -3127,8 +3127,10 @@ async function autoKirimNeracaWA(rows, tanggal) {
     _neracaWaSent[tanggalLengkap] = true
     showToast('Semua data neraca terisi — mengirim ke WA Group...', 'info')
 
-    // 1. Kirim screenshot tabel terlebih dahulu (tampil langsung di WA)
-    await captureAndKirimScreenshot(tanggalLengkap)
+    // 1. Kirim screenshot server-side (tanpa html2canvas — pure SVG di server)
+    var ssRes2 = await fetch('/api/neraca-auto-kirim?tanggal=' + tanggalLengkap)
+    var ssJson2 = await ssRes2.json()
+    if (!ssJson2.success) throw new Error('Screenshot gagal: ' + (ssJson2.error || ''))
 
     // 2. Generate Excel → upload → kirim file xlsx
     var result = buildNeracaExcelBuffer(rows, tanggalLengkap)

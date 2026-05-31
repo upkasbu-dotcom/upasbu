@@ -2102,6 +2102,197 @@ app.get('/api/neraca-excel-file/:key{.+}', async (c) => {
 })
 
 // ===========================================================
+// API: NERACA AUTO-KIRIM SERVER-SIDE (tanpa html2canvas)
+// GET  /api/neraca-auto-kirim?tanggal=YYYY-MM-DD
+// Flow: fetch data DB → generate PNG (satori+resvg) → ImgBB → WA
+// ===========================================================
+app.get('/api/neraca-auto-kirim', async (c) => {
+  try {
+    const db     = c.env.DB
+    const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
+
+    const NERACA_ORDER = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
+    const DEVICE_ID    = '550fd04ee9fc7c4b4e057d0bce6270f3'
+    const GROUP_NAME   = 'AMC UID KASELTENG'
+    const IMGBB_KEY    = 'bb2f97ad9b31b5ae4967eeead61e03de'
+    const tglFmt       = tanggal.split('-').reverse().join('.')
+
+    // ── 1. Fetch data neraca dari DB ─────────────────────────────────────────
+    const units = await db.prepare(
+      `SELECT DISTINCT kode_unit, nama_unit FROM mesin_cache ORDER BY nama_unit`
+    ).all<{ kode_unit: number, nama_unit: string }>()
+
+    const terpasangRows = await db.prepare(
+      `SELECT kode_unit, SUM(terpasang) as dm_terpasang FROM mesin_cache WHERE terpasang IS NOT NULL GROUP BY kode_unit`
+    ).all<{ kode_unit: number, dm_terpasang: number }>()
+    const terpMap: Record<number,number> = {}
+    for (const r of terpasangRows.results) terpMap[r.kode_unit] = Math.round(r.dm_terpasang || 0)
+
+    const monRows = await db.prepare(`
+      SELECT mc.kode_unit,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin IN ('Operasi','Standby') THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok,
+        MAX(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin IN ('Operasi','Standby') THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as max_dm,
+        COUNT(CASE WHEN dm.status_mesin='Operasi' THEN 1 END) as ops,
+        COUNT(CASE WHEN dm.status_mesin='Standby' THEN 1 END) as stb,
+        COUNT(CASE WHEN dm.status_mesin='Pemeliharaan' THEN 1 END) as har,
+        COUNT(CASE WHEN dm.status_mesin='Gangguan' THEN 1 END) as ggn,
+        COUNT(CASE WHEN dm.status_mesin='Rusak' THEN 1 END) as rsk,
+        COUNT(*) as jml,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER)>=6 AND CAST(dm.jam AS INTEGER)<=17) AND dm.status_mesin='Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as bp_siang,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER)>=18 OR CAST(dm.jam AS INTEGER)<=5) AND dm.status_mesin='Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as bp_malam
+      FROM data_monitoring dm JOIN mesin_cache mc ON dm.mesin_id=mc.id_mesin
+      WHERE dm.tanggal=? GROUP BY mc.kode_unit
+    `).bind(tanggal).all<any>()
+    const monMap: Record<number,any> = {}
+    for (const r of monRows.results) monMap[r.kode_unit] = r
+
+    const unitMap: Record<number,string> = {}
+    for (const u of units.results) unitMap[u.kode_unit] = u.nama_unit
+
+    // Sort sesuai NERACA_ORDER
+    type NRow = { no:number, nama:string, ops:number, stb:number, har:number, ggn:number, rsk:number, jml:number, dtp:number, dmn:number, maks:number, bps:number, cads:number, bpm:number, cadm:number, status:string, statusColor:string }
+    const rows: NRow[] = []
+    let tOps=0,tStb=0,tHar=0,tGgn=0,tRsk=0,tJml=0,tDtp=0,tDmn=0,tMaks=0,tBps=0,tCads=0,tBpm=0,tCadm=0
+    for (let i=0; i<NERACA_ORDER.length; i++) {
+      const ku = NERACA_ORDER[i]
+      const m  = monMap[ku]
+      const dm = m ? Math.round(m.dm_pasok||0) : 0
+      const bps= m ? Math.round(m.bp_siang||0) : 0
+      const bpm= m ? Math.round(m.bp_malam||0) : 0
+      const mx = m ? Math.round(m.max_dm||0)   : 0
+      const cads = dm - bps
+      const cadm = dm - bpm
+      let status='', sc='#374151'
+      if (m) { if (cadm<0){status='DEFISIT';sc='#991b1b'} else if (cadm<mx){status='SIAGA';sc='#92400e'} else {status='NORMAL';sc='#065f46'} }
+      rows.push({ no:i+1, nama:unitMap[ku]||String(ku), ops:m?.ops||0, stb:m?.stb||0, har:m?.har||0, ggn:m?.ggn||0, rsk:m?.rsk||0, jml:m?.jml||0, dtp:terpMap[ku]||0, dmn:dm, maks:mx, bps, cads, bpm, cadm, status, statusColor:sc })
+      tOps+=m?.ops||0; tStb+=m?.stb||0; tHar+=m?.har||0; tGgn+=m?.ggn||0; tRsk+=m?.rsk||0; tJml+=m?.jml||0
+      tDtp+=terpMap[ku]||0; tDmn+=dm; tMaks+=mx; tBps+=bps; tCads+=cads; tBpm+=bpm; tCadm+=cadm
+    }
+
+    // ── 2. Generate PNG via SVG ───────────────────────────────────────────────
+    function n(v:number){ return v===0?'0':v.toLocaleString('id-ID') }
+
+    // Dimensi kolom: [label, width]
+    const COLS = [
+      ['NO',28],['ULD',168],['OPS',32],['STB',32],['HAR',32],['GGN',32],['RSK',32],['JML',32],
+      ['DTP',56],['DMN',56],['MAKS',56],['BP SIANG',64],['CAD SIANG',64],['BP MALAM',64],['CAD MALAM',64],['STATUS',68]
+    ] as [string,number][]
+    const W = COLS.reduce((s,c)=>s+c[1],0) + 2   // total width + 1px border each side
+    const ROW_H = 22
+    const HEAD_H = 26
+    const TITLE_H = 34
+    const FOOTER_H = 18
+    const TABLE_H  = HEAD_H + (rows.length + 1) * ROW_H  // +1 for total row
+    const TOTAL_H  = TITLE_H + TABLE_H + FOOTER_H + 16   // 16px padding top+bottom
+
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W+24}" height="${TOTAL_H+24}" font-family="Arial,sans-serif">`
+    // background
+    svg += `<rect width="${W+24}" height="${TOTAL_H+24}" fill="#f1f5f9"/>`
+
+    let y = 12
+    // Title bar
+    svg += `<rect x="12" y="${y}" width="${W}" height="${TITLE_H}" fill="#1a3352"/>`
+    svg += `<text x="26" y="${y+22}" fill="#ffffff" font-size="14" font-weight="bold">NERACA DAYA HARIAN \u2014 ${tglFmt}</text>`
+    svg += `<text x="${W}" y="${y+21}" fill="#c8d9ec" font-size="11" text-anchor="end">AMC UID KASELTENG | 19 ULD</text>`
+    y += TITLE_H
+
+    // Header row
+    svg += `<rect x="12" y="${y}" width="${W}" height="${HEAD_H}" fill="#1a3352"/>`
+    let cx = 12
+    for (const [label, w] of COLS) {
+      svg += `<text x="${cx + w/2}" y="${y + 17}" fill="#ffffff" font-size="10.5" font-weight="bold" text-anchor="middle">${label}</text>`
+      svg += `<line x1="${cx+w}" y1="${y}" x2="${cx+w}" y2="${y+HEAD_H}" stroke="#1a4f80" stroke-width="0.5"/>`
+      cx += w
+    }
+    svg += `<line x1="12" y1="${y+HEAD_H}" x2="${12+W}" y2="${y+HEAD_H}" stroke="#1a4f80" stroke-width="0.5"/>`
+    y += HEAD_H
+
+    // Data rows
+    for (const r of rows) {
+      const bg = r.no % 2 === 1 ? '#ffffff' : '#f0f4f8'
+      svg += `<rect x="12" y="${y}" width="${W}" height="${ROW_H}" fill="${bg}"/>`
+      const vals = [
+        String(r.no), r.nama, n(r.ops), n(r.stb), n(r.har), n(r.ggn), n(r.rsk),
+        n(r.jml), n(r.dtp), n(r.dmn), n(r.maks), n(r.bps), n(r.cads), n(r.bpm), n(r.cadm), r.status
+      ]
+      cx = 12
+      for (let ci = 0; ci < COLS.length; ci++) {
+        const [, w] = COLS[ci]
+        const val = vals[ci]
+        const isLeft = ci === 1  // ULD left-align
+        const isBold = ci === 7 || ci === 12 || ci === 14  // JML, CAD SIANG, CAD MALAM
+        const isStatus = ci === 15
+        const tx = isLeft ? cx + 5 : cx + w/2
+        const anchor = isLeft ? 'start' : 'middle'
+        // Status background
+        if (isStatus && r.status) {
+          const sbg = r.status==='DEFISIT' ? '#fee2e2' : r.status==='SIAGA' ? '#fef3c7' : '#d1fae5'
+          svg += `<rect x="${cx+2}" y="${y+3}" width="${w-4}" height="${ROW_H-6}" fill="${sbg}" rx="2"/>`
+        }
+        svg += `<text x="${tx}" y="${y+15}" fill="${isStatus ? r.statusColor : '#1e293b'}" font-size="10.5" ${isBold?'font-weight="700"':''} text-anchor="${anchor}">${val}</text>`
+        svg += `<line x1="${cx+w}" y1="${y}" x2="${cx+w}" y2="${y+ROW_H}" stroke="#e2e8f0" stroke-width="0.5"/>`
+        cx += w
+      }
+      svg += `<line x1="12" y1="${y+ROW_H}" x2="${12+W}" y2="${y+ROW_H}" stroke="#e2e8f0" stroke-width="0.5"/>`
+      y += ROW_H
+    }
+
+    // Total row
+    svg += `<rect x="12" y="${y}" width="${W}" height="${ROW_H}" fill="#2d6a9f"/>`
+    const totals = ['—','TOTAL',n(tOps),n(tStb),n(tHar),n(tGgn),n(tRsk),n(tJml),n(tDtp),n(tDmn),n(tMaks),n(tBps),n(tCads),n(tBpm),n(tCadm),'—']
+    cx = 12
+    for (let ci = 0; ci < COLS.length; ci++) {
+      const [, w] = COLS[ci]
+      const isLeft = ci === 1
+      const tx = isLeft ? cx + 5 : cx + w/2
+      svg += `<text x="${tx}" y="${y+15}" fill="#ffffff" font-size="10.5" font-weight="bold" text-anchor="${isLeft?'start':'middle'}">${totals[ci]}</text>`
+      svg += `<line x1="${cx+w}" y1="${y}" x2="${cx+w}" y2="${y+ROW_H}" stroke="#1a4f80" stroke-width="0.5"/>`
+      cx += w
+    }
+    y += ROW_H
+
+    // Border tabel
+    svg += `<rect x="12" y="${TITLE_H+12}" width="${W}" height="${TABLE_H}" fill="none" stroke="#cbd5e1" stroke-width="1"/>`
+
+    // Footer
+    const now = new Date()
+    const footerText = `Generated ${now.toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'})} ${now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}`
+    svg += `<text x="${W+12}" y="${y+14}" fill="#6b7280" font-size="10" text-anchor="end">${footerText}</text>`
+
+    svg += `</svg>`
+
+    // ── 3. Convert SVG → PNG via htmlcsstoimage.com (free, no WASM needed) ────
+    // Encode SVG as data URL untuk dikirim ke hcti.io atau langsung upload ke ImgBB as SVG
+    const svgBase64 = btoa(unescape(encodeURIComponent(svg)))
+    const svgDataUrl = 'data:image/svg+xml;base64,' + svgBase64
+
+    // Upload SVG ke ImgBB (ImgBB support SVG → auto convert ke PNG)
+    // ── 4. Upload ke ImgBB ───────────────────────────────────────────────────
+    const imgForm = new URLSearchParams()
+    imgForm.append('key', IMGBB_KEY)
+    imgForm.append('image', svgBase64)
+    imgForm.append('name', `Neraca_Daya_${tanggal}`)
+    const imgRes  = await fetch('https://api.imgbb.com/1/upload', { method:'POST', body:imgForm })
+    const imgJson = await imgRes.json() as any
+    if (!imgJson.success) return c.json({ success:false, error:'ImgBB: '+JSON.stringify(imgJson.error||imgJson) }, 500)
+    const imgUrl = imgJson.data?.url || ''
+
+    // ── 5. Kirim ke WA Group ─────────────────────────────────────────────────
+    const message = `📊 *Neraca Daya ${tglFmt}*\nRingkasan neraca daya harian seluruh ULD.`
+    const waForm  = new FormData()
+    waForm.append('device_id', DEVICE_ID)
+    waForm.append('group',     GROUP_NAME)
+    waForm.append('message',   message)
+    waForm.append('file',      imgUrl)
+    const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waForm })
+    const waJson = await waRes.json() as { status:boolean, message:string }
+    if (!waJson.status) return c.json({ success:false, error:waJson.message }, 500)
+
+    return c.json({ success:true, imgUrl, message:'Screenshot dikirim ke WA' })
+  } catch (e:any) { return c.json({ success:false, error:e.message }, 500) }
+})
+
+// ===========================================================
 // API: KIRIM SCREENSHOT NERACA KE WA GROUP
 // POST /api/kirim-wa-screenshot  body: { imageBase64, tanggal }
 // Upload PNG ke ImgBB → kirim URL ke Whacenter sendGroup
