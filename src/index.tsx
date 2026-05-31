@@ -2078,6 +2078,280 @@ app.delete('/api/tad/:id', async (c) => {
 })
 
 // ===========================================================
+// API: DOWNLOAD NERACA EXCEL (server-side generate, no browser cache issue)
+// GET /api/download-neraca-excel?tanggal=YYYY-MM-DD
+// ===========================================================
+
+// ── Minimal XLSX builder (no external lib, pure Workers-compatible) ──────────
+// Menggunakan DecompressionStream CRC32 workaround — generate ZIP store (no compression)
+function u8(s: string): Uint8Array {
+  const b: number[] = []
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    if (c < 0x80) b.push(c)
+    else if (c < 0x800) b.push(0xc0|(c>>6), 0x80|(c&0x3f))
+    else b.push(0xe0|(c>>12), 0x80|((c>>6)&0x3f), 0x80|(c&0x3f))
+  }
+  return new Uint8Array(b)
+}
+function le2(n: number): Uint8Array { return new Uint8Array([n&0xff,(n>>8)&0xff]) }
+function le4(n: number): Uint8Array { return new Uint8Array([n&0xff,(n>>8)&0xff,(n>>16)&0xff,(n>>24)&0xff]) }
+function concat(...arrs: Uint8Array[]): Uint8Array {
+  const total = arrs.reduce((s,a)=>s+a.length,0)
+  const out = new Uint8Array(total)
+  let off = 0
+  for (const a of arrs) { out.set(a, off); off += a.length }
+  return out
+}
+function crc32(data: Uint8Array): number {
+  // Standard CRC32 lookup table
+  const table = new Int32Array(256)
+  for (let i=0;i<256;i++){let c=i;for(let j=0;j<8;j++)c=c&1?(0xEDB88320^(c>>>1)):(c>>>1);table[i]=c}
+  let crc = -1
+  for (let i=0;i<data.length;i++) crc = (crc>>>8)^table[(crc^data[i])&0xff]
+  return (crc^-1)>>>0
+}
+function zipEntry(name: string, data: Uint8Array, offset: number): { local: Uint8Array, central: Uint8Array } {
+  const nameB = u8(name)
+  const crc   = crc32(data)
+  const dosTime = 0x4A21  // dummy time
+  const dosDate = 0x5565  // dummy date
+  // Local file header
+  const local = concat(
+    new Uint8Array([0x50,0x4B,0x03,0x04]), // sig
+    le2(20), le2(0), le2(0),               // version, flags, method=store
+    le2(dosTime), le2(dosDate),
+    le4(crc), le4(data.length), le4(data.length),
+    le2(nameB.length), le2(0),             // name len, extra len
+    nameB, data
+  )
+  // Central dir entry
+  const central = concat(
+    new Uint8Array([0x50,0x4B,0x01,0x02]), // sig
+    le2(20), le2(20), le2(0), le2(0),      // versions, flags
+    le2(dosTime), le2(dosDate),
+    le4(crc), le4(data.length), le4(data.length),
+    le2(nameB.length), le2(0), le2(0),     // name, extra, comment
+    le2(0), le2(0), le4(0),                // disk, int attr, ext attr
+    le4(offset),                           // local header offset
+    nameB
+  )
+  return { local, central }
+}
+function buildZip(files: {name:string, data:Uint8Array}[]): Uint8Array {
+  const locals: Uint8Array[] = []
+  const centrals: Uint8Array[] = []
+  let offset = 0
+  for (const f of files) {
+    const {local, central} = zipEntry(f.name, f.data, offset)
+    locals.push(local)
+    centrals.push(central)
+    offset += local.length
+  }
+  const cdData = concat(...centrals)
+  const eocd = concat(
+    new Uint8Array([0x50,0x4B,0x05,0x06]),
+    le2(0), le2(0),
+    le2(files.length), le2(files.length),
+    le4(cdData.length), le4(offset),
+    le2(0)
+  )
+  return concat(...locals, cdData, eocd)
+}
+
+function xmlEsc(s: string|number|null): string {
+  if (s === null || s === undefined || s === '') return ''
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+}
+
+// Build cell XML: r=ref, v=value, t=type (n=number, s=shared, inlineStr)
+function cellXml(ref: string, v: string|number|null, isStr=false): string {
+  if (v === null || v === undefined) return `<c r="${ref}"/>`
+  if (v === '') return `<c r="${ref}" t="inlineStr"><is><t/></is></c>`
+  if (isStr || typeof v === 'string') return `<c r="${ref}" t="inlineStr"><is><t>${xmlEsc(v)}</t></is></c>`
+  return `<c r="${ref}"><v>${v}</v></c>`
+}
+
+function colLetter(n: number): string {
+  let s = ''
+  while (n >= 0) { s = String.fromCharCode(65+(n%26)) + s; n = Math.floor(n/26)-1 }
+  return s
+}
+
+function buildSheetXml(rows: (string|number|null)[][]): string {
+  const rowsXml = rows.map((row, ri) => {
+    const rn = ri+1
+    const cells = row.map((v, ci) => {
+      const ref = colLetter(ci)+rn
+      return cellXml(ref, v, typeof v === 'string')
+    }).join('')
+    return `<row r="${rn}">${cells}</row>`
+  }).join('')
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowsXml}</sheetData></worksheet>`
+}
+
+function buildNeracaXlsx(rows: any[], tanggal: string): Uint8Array {
+  const NERACA_ORDER = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
+  const UNIT_META: Record<number,{id:number,nama:string}> = {
+    399:{id:560,nama:'PLTD TUMBANG SENAMANG'},390:{id:561,nama:'PLTD TELAGA'},
+    382:{id:562,nama:'PLTD PAGATAN'},391:{id:563,nama:'PLTD TELAGA PULANG'},
+    376:{id:564,nama:'PLTD MENDAWAI'},373:{id:566,nama:'PLTD KENAMBUI'},
+    395:{id:569,nama:'PLTD TUMBANG MANJUL'},375:{id:571,nama:'PLTD KUDANGAN'},
+    366:{id:800,nama:'PLTD BABAI'},910:{id:804,nama:'PLTD MANGKATIP'},
+    911:{id:801,nama:'PLTD TELUK BETUNG'},385:{id:805,nama:'PLTD RANGGA ILUNG'},
+    913:{id:811,nama:'PLTD TUMPUNG LAUNG'},915:{id:322,nama:'PLTD SUNGAI BALI'},
+    920:{id:324,nama:'PLTD MARABATUAN'},917:{id:338,nama:'PLTD KERASIAN'},
+    918:{id:1202,nama:'PLTD KERAYAAN'},919:{id:1203,nama:'PLTD KERUMPUTAN'},
+    372:{id:2760,nama:'PLTD GUNUNG PUREI'}
+  }
+  const rowMap: Record<number,any> = {}
+  rows.forEach(r => rowMap[r.kode_unit]=r)
+  const sorted = NERACA_ORDER.filter(ku=>rowMap[ku]).map(ku=>rowMap[ku])
+  rows.forEach(r=>{ if(!NERACA_ORDER.includes(r.kode_unit)) sorted.push(r) })
+
+  const tglP = tanggal.split('-')
+  const tglLabel = tglP[2]+'.'+tglP[1]+'.'+tglP[0]
+  const toMW = (kw:number|null) => kw==null?null:Math.round(kw)/1000
+
+  // Sheet 1: Neraca Daya
+  const s1: (string|number|null)[][] = [
+    ['No','ID','Jenis','Sistem','Waktu','DMP (MW)','Captive Power (MW)','Beban Puncak (MW)',
+     'Cadangan (MW)','Kirim (MW)','ID Sistem Penerima','Terima (MW)','ID Sistem Pengirim',
+     'Status','Unit Tidak Siap','Keterangan']
+  ]
+  sorted.forEach((r,i) => {
+    const meta = UNIT_META[r.kode_unit]||{id:null,nama:r.nama_unit||''}
+    const dmp = toMW(r.dm_pasok!=null?r.dm_pasok:r.dm_terpasang)
+    const bpS = toMW(r.beban_puncak_siang)
+    const bpM = toMW(r.beban_puncak_malam)
+    s1.push([i+1, meta.id, 'ULD', meta.nama, 'Siang', dmp, null, bpS, null,null,null,null,null,null,null,null])
+    s1.push([null, meta.id, 'ULD', null, 'Malam', dmp, null, bpM, null,null,null,null,null,null,null,null])
+  })
+
+  // Sheet 2: Kesiapan Pembangkit
+  const s2: (string|number|null)[][] = [
+    ['No','ID','Jenis','Sistem','Total Daya Terpasang (MW)','DMN (MW)','Unit Terbesar (MW)']
+  ]
+  sorted.forEach((r,i) => {
+    const meta = UNIT_META[r.kode_unit]||{id:null,nama:r.nama_unit||''}
+    const dtp = toMW(r.dm_terpasang)
+    const dmn = toMW(r.dm_pasok!=null?r.dm_pasok:r.dm_terpasang)
+    s2.push([i+1, meta.id, 'ULD', meta.nama, dtp, dmn, null])
+  })
+
+  const sheet1Xml = buildSheetXml(s1)
+  const sheet2Xml = buildSheetXml(s2)
+
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`
+
+  const relsRoot = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`
+
+  const relsWb = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+</Relationships>`
+
+  const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets>
+<sheet name="Neraca Daya" sheetId="1" r:id="rId1"/>
+<sheet name="Kesiapan Pembangkit" sheetId="2" r:id="rId2"/>
+</sheets>
+</workbook>`
+
+  const files = [
+    { name: '[Content_Types].xml', data: u8(contentTypes) },
+    { name: '_rels/.rels',         data: u8(relsRoot) },
+    { name: 'xl/workbook.xml',     data: u8(workbook) },
+    { name: 'xl/_rels/workbook.xml.rels', data: u8(relsWb) },
+    { name: 'xl/worksheets/sheet1.xml',  data: u8(sheet1Xml) },
+    { name: 'xl/worksheets/sheet2.xml',  data: u8(sheet2Xml) },
+  ]
+
+  return buildZip(files)
+}
+
+app.get('/api/download-neraca-excel', async (c) => {
+  try {
+    const db      = c.env.DB
+    const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
+
+    // Hitung H-1
+    const tglDate = new Date(tanggal); tglDate.setDate(tglDate.getDate()-1)
+    const tanggalH1 = tglDate.toISOString().split('T')[0]
+
+    const units = await db.prepare(`SELECT DISTINCT kode_unit, nama_unit FROM mesin_cache ORDER BY nama_unit`).all<{kode_unit:number,nama_unit:string}>()
+    const terpasangRows = await db.prepare(`SELECT kode_unit, SUM(terpasang) as dm_terpasang FROM mesin_cache WHERE terpasang IS NOT NULL GROUP BY kode_unit`).all<{kode_unit:number,dm_terpasang:number}>()
+    const terpasangMap: Record<number,number> = {}
+    for (const r of terpasangRows.results) terpasangMap[r.kode_unit] = Math.round(r.dm_terpasang||0)
+
+    const monRows = await db.prepare(`
+      SELECT mc.kode_unit,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER)>=18 OR CAST(dm.jam AS INTEGER)<=5) AND dm.status_mesin IN ('Operasi','Standby') THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER)>=6 AND CAST(dm.jam AS INTEGER)<=17) AND dm.status_mesin='Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak_siang,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER)>=18 OR CAST(dm.jam AS INTEGER)<=5) AND dm.status_mesin='Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak_malam,
+        COUNT(CASE WHEN CAST(dm.jam AS INTEGER)>=18 OR CAST(dm.jam AS INTEGER)<=5 THEN 1 END) as cnt_malam
+      FROM data_monitoring dm JOIN mesin_cache mc ON dm.mesin_id=mc.id_mesin
+      WHERE dm.tanggal=? GROUP BY mc.kode_unit
+    `).bind(tanggal).all<{kode_unit:number,dm_pasok:number,beban_puncak_siang:number,beban_puncak_malam:number,cnt_malam:number}>()
+    const monMap: Record<number,any> = {}
+    for (const r of monRows.results) monMap[r.kode_unit] = {
+      dm_pasok: Math.round(r.dm_pasok||0),
+      beban_puncak_siang: Math.round(r.beban_puncak_siang||0),
+      beban_puncak_malam: Math.round(r.beban_puncak_malam||0),
+      has_malam: (r.cnt_malam||0)>0
+    }
+
+    const h1Rows = await db.prepare(`
+      SELECT mc.kode_unit,
+        SUM(CASE WHEN dm.status_mesin IN ('Operasi','Standby') AND (CAST(dm.jam AS INTEGER)>=18 OR CAST(dm.jam AS INTEGER)<=5) THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok_h1
+      FROM data_monitoring dm JOIN mesin_cache mc ON dm.mesin_id=mc.id_mesin
+      WHERE dm.tanggal=? GROUP BY mc.kode_unit
+    `).bind(tanggalH1).all<{kode_unit:number,dm_pasok_h1:number}>()
+    const h1Map: Record<number,number> = {}
+    for (const r of h1Rows.results) h1Map[r.kode_unit] = Math.round(r.dm_pasok_h1||0)
+
+    const rows = units.results.map(u => {
+      const mon = monMap[u.kode_unit]
+      const hasMalam = mon?.has_malam ?? false
+      const dmn = hasMalam ? (mon?.dm_pasok ?? null) : (h1Map[u.kode_unit] ?? null)
+      return {
+        kode_unit: u.kode_unit,
+        nama_unit: u.nama_unit,
+        dm_terpasang: terpasangMap[u.kode_unit] ?? null,
+        dm_pasok: dmn,
+        beban_puncak_siang: mon?.beban_puncak_siang ?? null,
+        beban_puncak_malam: mon?.beban_puncak_malam ?? null,
+      }
+    })
+
+    const xlsxBytes = buildNeracaXlsx(rows, tanggal)
+    const tglP = tanggal.split('-')
+    const fileName = `UID KSKT ${tglP[2]}.${tglP[1]}.${tglP[0]}.xlsx`
+
+    return new Response(xlsxBytes, {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${fileName}"`,
+        'Content-Length': String(xlsxBytes.length),
+        'Cache-Control': 'no-cache'
+      }
+    })
+  } catch(e:any) { return c.json({ error: String(e) }, 500) }
+})
+
+// ===========================================================
 // API: UPLOAD EXCEL KE KV (TTL 1 jam) → return URL publik
 // POST /api/neraca-excel-upload  body: { filename, data (base64) }
 // ===========================================================
@@ -3297,7 +3571,7 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
   <link rel="preload" href="/static/style.css?v=20260516k" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260531b" as="script"/>
+  <link rel="preload" href="/static/app.js?v=20260531c" as="script"/>
   <link href="/static/style.css?v=20260516k" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
@@ -3409,7 +3683,7 @@ app.get('/', (c) => {
           <option value="malam">MALAM</option>
         </select>
       </div>
-      <button id="btn-download-neraca" onclick="downloadNeracaExcel()" style="display:none;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;flex-shrink:0;" title="Download Excel Neraca Daya">
+      <button id="btn-download-neraca" onclick="(function(btn){var tgl=document.getElementById('data-tanggal').value;if(!tgl){alert('Pilih tanggal terlebih dahulu');return;}btn.disabled=true;btn.textContent='⏳...';var a=document.createElement('a');a.href='/api/download-neraca-excel?tanggal='+tgl;a.download='';document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){btn.disabled=false;btn.textContent='EXCEL'},1500);})(this)" style="display:none;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;flex-shrink:0;" title="Download Excel Neraca Daya">
         EXCEL
       </button>
       <button id="btn-resume-data" onclick="onResumeDataClick()" style="display:none;background:#2563eb;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-weight:700;font-size:0.78rem;cursor:pointer;letter-spacing:0.05em;flex-shrink:0;">RESUME</button>
@@ -3800,7 +4074,7 @@ app.get('/', (c) => {
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="/static/app.js?v=20260531b"></script>
+<script src="/static/app.js?v=20260531c"></script>
 </body>
 </html>`
   const resp = c.html(html)
