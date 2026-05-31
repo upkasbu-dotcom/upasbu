@@ -3866,6 +3866,24 @@ const NOTIF_ULD_NAMES: Record<number,string> = {
   372:'ULD GUNUNG PUREI'
 }
 
+// PIC per area — kode_unit → nomor WA PIC (tanpa strip, format internasional)
+// Tag di pesan jika ada ULD-nya yang belum masuk
+const NOTIF_ULD_PIC: Record<number, string> = {
+  399:'+6282390050020', 390:'+6282390050020', 382:'+6282390050020',
+  391:'+6282390050020', 376:'+6282390050020', 373:'+6282390050020',
+  395:'+6282390050020', 375:'+6282390050020',
+  366:'+6282148381159', 910:'+6282148381159', 911:'+6282148381159',
+  385:'+6282148381159', 913:'+6282148381159', 372:'+6282148381159',
+  915:'+6285387141814', 920:'+6285387141814', 917:'+6285387141814',
+  918:'+6285387141814', 919:'+6285387141814'
+}
+
+// Buat string tag PIC unik dari daftar kode_unit yang belum masuk
+function tagPIC(belumList: number[]): string {
+  const picSet = new Set(belumList.map(ku => NOTIF_ULD_PIC[ku]).filter(Boolean))
+  return [...picSet].map(no => `@${no}`).join(' ')
+}
+
 // ── Kirim pesan teks ke WA Group via Whacenter ──────────────────────────────
 async function kirimPesanGrup(message: string): Promise<{ ok: boolean, info: string }> {
   try {
@@ -3922,10 +3940,12 @@ async function notifHopBBM(db: D1Database): Promise<string> {
   }
 
   const listBelum = belum.map((ku, i) => `  ${i+1}. ${NOTIF_ULD_NAMES[ku] ?? ku}`).join('\n')
+  const tag = tagPIC(belum)
   return (
     `⚠️ *[HOP BBM ${fmtTgl(tanggal)}]*\n` +
     `Jam 10:00 WITA — *${belum.length} ULD* belum input data HOP BBM:\n\n` +
     `${listBelum}\n\n` +
+    (tag ? `${tag}\n\n` : '') +
     `_Segera input data hari ini._`
   )
 }
@@ -4018,6 +4038,14 @@ async function notifNeracaDaya(db: D1Database): Promise<string> {
     msg += `\n🟠 *Belum ada data malam (${belumMalam.length}):*\n`
     belumMalam.forEach((nama, i) => { msg += `  ${i+1}. ${nama}\n` })
   }
+
+  // Kumpulkan semua kode_unit yang belum masuk untuk tag PIC
+  const semuaBelumKU = NOTIF_ULD_ORDER.filter(ku => {
+    const nama = NOTIF_ULD_NAMES[ku] ?? String(ku)
+    return belumKeduanya.includes(nama) || belumSiang.includes(nama) || belumMalam.includes(nama)
+  })
+  const tag = tagPIC(semuaBelumKU)
+  if (tag) msg += `\n${tag}\n`
 
   msg += `\n_Segera lengkapi data hari ini._`
 
