@@ -2102,6 +2102,25 @@ app.get('/api/neraca-excel-file/:key{.+}', async (c) => {
 })
 
 // ===========================================================
+// API: SERVE SVG NERACA DARI KV
+// GET  /api/neraca-svg/:key
+// ===========================================================
+app.get('/api/neraca-svg/:key{.+}', async (c) => {
+  try {
+    const key = c.req.param('key')
+    const svg = await c.env.FILES.get(key)
+    if (!svg) return c.json({ error: 'SVG tidak ditemukan atau sudah kedaluwarsa' }, 404)
+    return new Response(svg, {
+      headers: {
+        'Content-Type': 'image/svg+xml',
+        'Cache-Control': 'public, max-age=86400',
+        'Access-Control-Allow-Origin': '*'
+      }
+    })
+  } catch (e: any) { return c.json({ error: e.message }, 500) }
+})
+
+// ===========================================================
 // API: NERACA AUTO-KIRIM SERVER-SIDE (tanpa html2canvas)
 // GET  /api/neraca-auto-kirim?tanggal=YYYY-MM-DD
 // Flow: fetch data DB → generate PNG (satori+resvg) → ImgBB → WA
@@ -2117,56 +2136,127 @@ app.get('/api/neraca-auto-kirim', async (c) => {
     const IMGBB_KEY    = 'bb2f97ad9b31b5ae4967eeead61e03de'
     const tglFmt       = tanggal.split('-').reverse().join('.')
 
-    // ── 1. Fetch data neraca dari DB ─────────────────────────────────────────
-    const units = await db.prepare(
-      `SELECT DISTINCT kode_unit, nama_unit FROM mesin_cache ORDER BY nama_unit`
-    ).all<{ kode_unit: number, nama_unit: string }>()
+    // ── 1. Query data neraca langsung dari DB (sama persis dengan /api/neraca-daya) ─
+    // Catatan: internal fetch tidak bisa di Cloudflare Workers, jadi query inline
 
-    const terpasangRows = await db.prepare(
+    // H-1 untuk fallback DMN/MAKS
+    const tglDate2 = new Date(tanggal)
+    tglDate2.setDate(tglDate2.getDate() - 1)
+    const tanggalH1 = tglDate2.toISOString().split('T')[0]
+
+    // DM terpasang per unit
+    const terpasangRows2 = await db.prepare(
       `SELECT kode_unit, SUM(terpasang) as dm_terpasang FROM mesin_cache WHERE terpasang IS NOT NULL GROUP BY kode_unit`
     ).all<{ kode_unit: number, dm_terpasang: number }>()
-    const terpMap: Record<number,number> = {}
-    for (const r of terpasangRows.results) terpMap[r.kode_unit] = Math.round(r.dm_terpasang || 0)
+    const terpasangMap2: Record<number, number> = {}
+    for (const r of terpasangRows2.results) terpasangMap2[r.kode_unit] = Math.round(r.dm_terpasang || 0)
 
-    const monRows = await db.prepare(`
-      SELECT mc.kode_unit,
+    // Data monitoring tanggal yang diminta
+    const monRows2 = await db.prepare(`
+      SELECT
+        mc.kode_unit,
+        mc.nama_unit,
         SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin IN ('Operasi','Standby') THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok,
         MAX(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin IN ('Operasi','Standby') THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as max_dm,
-        COUNT(CASE WHEN dm.status_mesin='Operasi' THEN 1 END) as ops,
-        COUNT(CASE WHEN dm.status_mesin='Standby' THEN 1 END) as stb,
-        COUNT(CASE WHEN dm.status_mesin='Pemeliharaan' THEN 1 END) as har,
-        COUNT(CASE WHEN dm.status_mesin='Gangguan' THEN 1 END) as ggn,
-        COUNT(CASE WHEN dm.status_mesin='Rusak' THEN 1 END) as rsk,
-        COUNT(*) as jml,
-        SUM(CASE WHEN (CAST(dm.jam AS INTEGER)>=6 AND CAST(dm.jam AS INTEGER)<=17) AND dm.status_mesin='Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as bp_siang,
-        SUM(CASE WHEN (CAST(dm.jam AS INTEGER)>=18 OR CAST(dm.jam AS INTEGER)<=5) AND dm.status_mesin='Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as bp_malam
-      FROM data_monitoring dm JOIN mesin_cache mc ON dm.mesin_id=mc.id_mesin
-      WHERE dm.tanggal=? GROUP BY mc.kode_unit
-    `).bind(tanggal).all<any>()
-    const monMap: Record<number,any> = {}
-    for (const r of monRows.results) monMap[r.kode_unit] = r
+        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Operasi' THEN 1 END) as jumlah_operasi,
+        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Standby' THEN 1 END) as jumlah_standby,
+        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Pemeliharaan' THEN 1 END) as jumlah_pemeliharaan,
+        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Gangguan' THEN 1 END) as jumlah_gangguan,
+        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Rusak' THEN 1 END) as jumlah_rusak,
+        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) THEN 1 END) as jumlah_mesin,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 6 AND CAST(dm.jam AS INTEGER) <= 17) AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak_siang,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak_malam
+      FROM data_monitoring dm
+      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+      WHERE dm.tanggal = ?
+      GROUP BY mc.kode_unit, mc.nama_unit
+    `).bind(tanggal).all<{ kode_unit:number, nama_unit:string, dm_pasok:number, max_dm:number, jumlah_operasi:number, jumlah_standby:number, jumlah_pemeliharaan:number, jumlah_gangguan:number, jumlah_rusak:number, jumlah_mesin:number, beban_puncak_siang:number, beban_puncak_malam:number }>()
+    const monMap2: Record<number, any> = {}
+    for (const r of monRows2.results) {
+      monMap2[r.kode_unit] = {
+        nama_unit:           r.nama_unit,
+        dm_pasok:            Math.round(r.dm_pasok || 0),
+        max_dm:              Math.round(r.max_dm   || 0),
+        jumlah_operasi:      r.jumlah_operasi      || 0,
+        jumlah_standby:      r.jumlah_standby      || 0,
+        jumlah_pemeliharaan: r.jumlah_pemeliharaan || 0,
+        jumlah_gangguan:     r.jumlah_gangguan     || 0,
+        jumlah_rusak:        r.jumlah_rusak        || 0,
+        jumlah_mesin:        r.jumlah_mesin        || 0,
+        beban_puncak_siang:  Math.round(r.beban_puncak_siang  || 0),
+        beban_puncak_malam:  Math.round(r.beban_puncak_malam  || 0),
+        has_malam:           (r.dm_pasok || 0) > 0
+      }
+    }
 
-    const unitMap: Record<number,string> = {}
-    for (const u of units.results) unitMap[u.kode_unit] = u.nama_unit
+    // Data H-1 malam (fallback DMN/MAKS jika data malam hari ini belum ada)
+    const h1Rows2 = await db.prepare(`
+      SELECT
+        mc.kode_unit,
+        SUM(CASE WHEN dm.status_mesin IN ('Operasi','Standby') AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok_h1,
+        MAX(CASE WHEN dm.status_mesin IN ('Operasi','Standby') AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as max_dm_h1
+      FROM data_monitoring dm
+      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+      WHERE dm.tanggal = ?
+      GROUP BY mc.kode_unit
+    `).bind(tanggalH1).all<{ kode_unit:number, dm_pasok_h1:number, max_dm_h1:number }>()
+    const h1Map2: Record<number, { dm_pasok_h1:number, max_dm_h1:number }> = {}
+    for (const r of h1Rows2.results) h1Map2[r.kode_unit] = { dm_pasok_h1: Math.round(r.dm_pasok_h1||0), max_dm_h1: Math.round(r.max_dm_h1||0) }
 
-    // Sort sesuai NERACA_ORDER
+    // Build rawMap dengan logika DMN/MAKS sama seperti /api/neraca-daya
+    const rawMap: Record<number, any> = {}
+    for (const ku of NERACA_ORDER) {
+      const mon = monMap2[ku]
+      const h1  = h1Map2[ku]
+      if (!mon && !h1) continue
+      const hasMalam = mon?.has_malam ?? false
+      const dmn  = hasMalam ? (mon?.dm_pasok ?? null) : (h1?.dm_pasok_h1 ?? null)
+      const maks = hasMalam ? (mon?.max_dm   ?? null) : (h1?.max_dm_h1   ?? null)
+      rawMap[ku] = {
+        kode_unit:           ku,
+        nama_unit:           mon?.nama_unit || String(ku),
+        dm_terpasang:        terpasangMap2[ku] ?? 0,
+        jumlah_operasi:      mon?.jumlah_operasi      ?? 0,
+        jumlah_standby:      mon?.jumlah_standby      ?? 0,
+        jumlah_pemeliharaan: mon?.jumlah_pemeliharaan ?? 0,
+        jumlah_gangguan:     mon?.jumlah_gangguan     ?? 0,
+        jumlah_rusak:        mon?.jumlah_rusak        ?? 0,
+        jumlah_mesin:        mon?.jumlah_mesin        ?? 0,
+        dm_pasok:            dmn  ?? 0,
+        max_dm:              maks ?? 0,
+        beban_puncak_siang:  mon?.beban_puncak_siang  ?? 0,
+        beban_puncak_malam:  mon?.beban_puncak_malam  ?? 0,
+      }
+    }
+
     type NRow = { no:number, nama:string, ops:number, stb:number, har:number, ggn:number, rsk:number, jml:number, dtp:number, dmn:number, maks:number, bps:number, cads:number, bpm:number, cadm:number, status:string, statusColor:string }
     const rows: NRow[] = []
     let tOps=0,tStb=0,tHar=0,tGgn=0,tRsk=0,tJml=0,tDtp=0,tDmn=0,tMaks=0,tBps=0,tCads=0,tBpm=0,tCadm=0
     for (let i=0; i<NERACA_ORDER.length; i++) {
       const ku = NERACA_ORDER[i]
-      const m  = monMap[ku]
-      const dm = m ? Math.round(m.dm_pasok||0) : 0
-      const bps= m ? Math.round(m.bp_siang||0) : 0
-      const bpm= m ? Math.round(m.bp_malam||0) : 0
-      const mx = m ? Math.round(m.max_dm||0)   : 0
+      const r  = rawMap[ku]
+      const dm  = r ? Math.round(r.dm_pasok           || 0) : 0
+      const bps = r ? Math.round(r.beban_puncak_siang  || 0) : 0
+      const bpm = r ? Math.round(r.beban_puncak_malam  || 0) : 0
+      const mx  = r ? Math.round(r.max_dm              || 0) : 0
+      const dtp = r ? Math.round(r.dm_terpasang        || 0) : 0
+      const ops = r ? (r.jumlah_operasi      || 0) : 0
+      const stb = r ? (r.jumlah_standby      || 0) : 0
+      const har = r ? (r.jumlah_pemeliharaan || 0) : 0
+      const ggn = r ? (r.jumlah_gangguan     || 0) : 0
+      const rsk = r ? (r.jumlah_rusak        || 0) : 0
+      const jml = r ? (r.jumlah_mesin        || 0) : 0
       const cads = dm - bps
       const cadm = dm - bpm
-      let status='', sc='#374151'
-      if (m) { if (cadm<0){status='DEFISIT';sc='#991b1b'} else if (cadm<mx){status='SIAGA';sc='#92400e'} else {status='NORMAL';sc='#065f46'} }
-      rows.push({ no:i+1, nama:unitMap[ku]||String(ku), ops:m?.ops||0, stb:m?.stb||0, har:m?.har||0, ggn:m?.ggn||0, rsk:m?.rsk||0, jml:m?.jml||0, dtp:terpMap[ku]||0, dmn:dm, maks:mx, bps, cads, bpm, cadm, status, statusColor:sc })
-      tOps+=m?.ops||0; tStb+=m?.stb||0; tHar+=m?.har||0; tGgn+=m?.ggn||0; tRsk+=m?.rsk||0; tJml+=m?.jml||0
-      tDtp+=terpMap[ku]||0; tDmn+=dm; tMaks+=mx; tBps+=bps; tCads+=cads; tBpm+=bpm; tCadm+=cadm
+      let status = '', sc = '#374151'
+      if (r && dm > 0) {
+        if      (cadm < 0)   { status = 'DEFISIT'; sc = '#991b1b' }
+        else if (cadm < mx)  { status = 'SIAGA';   sc = '#92400e' }
+        else                 { status = 'NORMAL';  sc = '#065f46' }
+      }
+      rows.push({ no:i+1, nama:r?.nama_unit||String(ku), ops, stb, har, ggn, rsk, jml, dtp, dmn:dm, maks:mx, bps, cads, bpm, cadm, status, statusColor:sc })
+      tOps+=ops; tStb+=stb; tHar+=har; tGgn+=ggn; tRsk+=rsk; tJml+=jml
+      tDtp+=dtp; tDmn+=dm; tMaks+=mx; tBps+=bps; tCads+=cads; tBpm+=bpm; tCadm+=cadm
     }
 
     // ── 2. Generate PNG via SVG ───────────────────────────────────────────────
@@ -2261,34 +2351,31 @@ app.get('/api/neraca-auto-kirim', async (c) => {
 
     svg += `</svg>`
 
-    // ── 3. Convert SVG → PNG via htmlcsstoimage.com (free, no WASM needed) ────
-    // Encode SVG as data URL untuk dikirim ke hcti.io atau langsung upload ke ImgBB as SVG
-    const svgBase64 = btoa(unescape(encodeURIComponent(svg)))
-    const svgDataUrl = 'data:image/svg+xml;base64,' + svgBase64
+    // ── 3. Simpan SVG ke KV → expose via endpoint publik ─────────────────────
+    const svgKey = `neraca-svg-${tanggal}`
+    // Simpan SVG string ke KV dengan TTL 24 jam
+    await c.env.FILES.put(svgKey, svg, { expirationTtl: 86400 })
 
-    // Upload SVG ke ImgBB (ImgBB support SVG → auto convert ke PNG)
-    // ── 4. Upload ke ImgBB ───────────────────────────────────────────────────
-    const imgForm = new URLSearchParams()
-    imgForm.append('key', IMGBB_KEY)
-    imgForm.append('image', svgBase64)
-    imgForm.append('name', `Neraca_Daya_${tanggal}`)
-    const imgRes  = await fetch('https://api.imgbb.com/1/upload', { method:'POST', body:imgForm })
-    const imgJson = await imgRes.json() as any
-    if (!imgJson.success) return c.json({ success:false, error:'ImgBB: '+JSON.stringify(imgJson.error||imgJson) }, 500)
-    const imgUrl = imgJson.data?.url || ''
+    // ── 4. Build public URL untuk SVG ────────────────────────────────────────
+    const baseUrl2  = new URL(c.req.url).origin
+    const imgUrl    = `${baseUrl2}/api/neraca-svg/${svgKey}`
 
-    // ── 5. Kirim ke WA Group ─────────────────────────────────────────────────
+    // ── 5. Kirim ke WA (nomor pribadi untuk TEST) ────────────────────────────
     const message = `📊 *Neraca Daya ${tglFmt}*\nRingkasan neraca daya harian seluruh ULD.`
-    const waForm  = new FormData()
-    waForm.append('device_id', DEVICE_ID)
-    waForm.append('group',     GROUP_NAME)
-    waForm.append('message',   message)
-    waForm.append('file',      imgUrl)
-    const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waForm })
+    const waRes  = await fetch('https://app.whacenter.com/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        device_id: DEVICE_ID,
+        number:    '085388709607',   // TEST: kirim ke nomor pribadi dulu
+        message:   message,
+        file_url:  imgUrl            // URL SVG dari KV endpoint kita
+      })
+    })
     const waJson = await waRes.json() as { status:boolean, message:string }
     if (!waJson.status) return c.json({ success:false, error:waJson.message }, 500)
 
-    return c.json({ success:true, imgUrl, message:'Screenshot dikirim ke WA' })
+    return c.json({ success:true, imgUrl, message:'Screenshot dikirim ke WA (TEST nomor pribadi)' })
   } catch (e:any) { return c.json({ success:false, error:e.message }, 500) }
 })
 
