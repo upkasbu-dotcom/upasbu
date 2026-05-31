@@ -2165,10 +2165,13 @@ function xmlEsc(s: string|number|null): string {
 }
 
 // Build cell XML: r=ref, v=value, t=type (n=number, s=shared, inlineStr)
-function cellXml(ref: string, v: string|number|null, isStr=false): string {
-  if (v === null || v === undefined) return `<c r="${ref}"/>`
-  if (v === '') return `<c r="${ref}" t="inlineStr"><is><t/></is></c>`
-  if (isStr || typeof v === 'string') return `<c r="${ref}" t="inlineStr"><is><t>${xmlEsc(v)}</t></is></c>`
+// Sentinel: sel hadir tapi kosong (seperti <c r="F2"/> di template)
+const EMPTY_CELL = Symbol('EMPTY_CELL')
+function cellXml(ref: string, v: string|number|null|symbol, isStr=false): string {
+  if (v === EMPTY_CELL) return `<c r="${ref}"/>`        // <c r="X"/> — sel hadir, no value (F,G,H)
+  if (v === null || v === undefined) return ''           // null = sel tidak ditulis ke XML sama sekali
+  if (v === '') return `<c r="${ref}" t="s"><v>0</v></c>`  // shared string index 0 = '' (pakai sharedStrings)
+  if (isStr || typeof v === 'string') return `<c r="${ref}" t="inlineStr"><is><t>${xmlEsc(String(v))}</t></is></c>`
   return `<c r="${ref}"><v>${v}</v></c>`
 }
 
@@ -2178,12 +2181,12 @@ function colLetter(n: number): string {
   return s
 }
 
-function buildSheetXml(rows: (string|number|null)[][]): string {
+function buildSheetXml(rows: (string|number|null|symbol)[][]): string {
   const rowsXml = rows.map((row, ri) => {
     const rn = ri+1
     const cells = row.map((v, ci) => {
       const ref = colLetter(ci)+rn
-      return cellXml(ref, v, typeof v === 'string')
+      return cellXml(ref, v as any, typeof v === 'string')
     }).join('')
     return `<row r="${rn}">${cells}</row>`
   }).join('')
@@ -2214,6 +2217,9 @@ function buildNeracaXlsx(rows: any[], tanggal: string): Uint8Array {
   const toMW = (kw:number|null) => kw==null?null:Math.round(kw)/1000
 
   // Sheet 1: Neraca Daya
+  // Sesuai template: F(DMP) & H(BP) = kosong (null/tidak ada nilai — diisi manual)
+  // G = null (tidak ada sel), I-P = '' (sel hadir tapi kosong)
+  // Baris malam: A='' dan D='' (sel hadir, string kosong)
   const s1: (string|number|null)[][] = [
     ['No','ID','Jenis','Sistem','Waktu','DMP (MW)','Captive Power (MW)','Beban Puncak (MW)',
      'Cadangan (MW)','Kirim (MW)','ID Sistem Penerima','Terima (MW)','ID Sistem Pengirim',
@@ -2221,26 +2227,33 @@ function buildNeracaXlsx(rows: any[], tanggal: string): Uint8Array {
   ]
   sorted.forEach((r,i) => {
     const meta = UNIT_META[r.kode_unit]||{id:null,nama:r.nama_unit||''}
-    const dmp = toMW(r.dm_pasok!=null?r.dm_pasok:r.dm_terpasang)
-    const bpS = toMW(r.beban_puncak_siang)
-    const bpM = toMW(r.beban_puncak_malam)
-    s1.push([i+1, meta.id, 'ULD', meta.nama, 'Siang', dmp, null, bpS, null,null,null,null,null,null,null,null])
-    s1.push([null, meta.id, 'ULD', null, 'Malam', dmp, null, bpM, null,null,null,null,null,null,null,null])
+    // F,G,H = EMPTY_CELL → <c r="X"/> (sel hadir tanpa value, sesuai template)
+    // I-P   = ''         → shared string '' (sel hadir, isi string kosong)
+    // A,D baris malam    = '' (sel hadir, string kosong)
+    const E = EMPTY_CELL as any
+    s1.push([i+1, meta.id, 'ULD', meta.nama, 'Siang', E, E, E, '','','','','','','',''])
+    s1.push(['',  meta.id, 'ULD', '',         'Malam', E, E, E, '','','','','','','',''])
   })
 
   // Sheet 2: Kesiapan Pembangkit
+  // Sesuai template: hanya kolom A-D yang ada isinya, E/F/G kosong (sel tidak hadir)
   const s2: (string|number|null)[][] = [
     ['No','ID','Jenis','Sistem','Total Daya Terpasang (MW)','DMN (MW)','Unit Terbesar (MW)']
   ]
   sorted.forEach((r,i) => {
     const meta = UNIT_META[r.kode_unit]||{id:null,nama:r.nama_unit||''}
-    const dtp = toMW(r.dm_terpasang)
-    const dmn = toMW(r.dm_pasok!=null?r.dm_pasok:r.dm_terpasang)
-    s2.push([i+1, meta.id, 'ULD', meta.nama, dtp, dmn, null])
+    // E,F,G tidak ada nilai (null = sel tidak hadir) — diisi manual
+    s2.push([i+1, meta.id, 'ULD', meta.nama, null, null, null])
   })
 
   const sheet1Xml = buildSheetXml(s1)
   const sheet2Xml = buildSheetXml(s2)
+
+  // sharedStrings: ss[0]='' (untuk kolom I-P yang kosong)
+  const sharedStrings = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">
+<si><t/></si>
+</sst>`
 
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -2249,6 +2262,7 @@ function buildNeracaXlsx(rows: any[], tanggal: string): Uint8Array {
 <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
 <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
 <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
 </Types>`
 
   const relsRoot = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -2260,6 +2274,7 @@ function buildNeracaXlsx(rows: any[], tanggal: string): Uint8Array {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
 <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
 </Relationships>`
 
   const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -2271,10 +2286,11 @@ function buildNeracaXlsx(rows: any[], tanggal: string): Uint8Array {
 </workbook>`
 
   const files = [
-    { name: '[Content_Types].xml', data: u8(contentTypes) },
-    { name: '_rels/.rels',         data: u8(relsRoot) },
-    { name: 'xl/workbook.xml',     data: u8(workbook) },
-    { name: 'xl/_rels/workbook.xml.rels', data: u8(relsWb) },
+    { name: '[Content_Types].xml',       data: u8(contentTypes) },
+    { name: '_rels/.rels',               data: u8(relsRoot) },
+    { name: 'xl/workbook.xml',           data: u8(workbook) },
+    { name: 'xl/_rels/workbook.xml.rels',data: u8(relsWb) },
+    { name: 'xl/sharedStrings.xml',      data: u8(sharedStrings) },
     { name: 'xl/worksheets/sheet1.xml',  data: u8(sheet1Xml) },
     { name: 'xl/worksheets/sheet2.xml',  data: u8(sheet2Xml) },
   ]
