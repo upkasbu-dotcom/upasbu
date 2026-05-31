@@ -2909,9 +2909,9 @@ function _buildNeracaWorkbook(rows, tanggal) {
       kmId,   // B: ID (kode_mesin)
       'ULD',  // C: Jenis
       kmNm,   // D: Sistem
-      dtpMW,  // E: Total Daya Terpasang (MW) — dm_terpasang
-      dmnMW,  // F: DMN (MW) — dm_pasok / dm_terpasang
-      null    // G: Unit Terbesar — kosong
+      dtpMW,  // E: Total Daya Terpasang (MW)
+      dmnMW,  // F: DMN (MW)
+      null    // G: Unit Terbesar — null (kosong sesuai template)
     ])
   }
 
