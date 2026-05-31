@@ -2545,17 +2545,14 @@ app.get('/api/neraca-auto-kirim', async (c) => {
     const imgUrl    = `${baseUrl2}/api/neraca-png/${pngKey}`
 
     // ── 5. Kirim ke WA (nomor pribadi untuk TEST) ────────────────────────────
+    // Whacenter /api/send: pakai FormData + field "file" (BUKAN JSON + file_url)
     const message = `📊 *Neraca Daya ${tglFmt}*\nRingkasan neraca daya harian seluruh ULD.`
-    const waRes  = await fetch('https://app.whacenter.com/api/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        device_id: DEVICE_ID,
-        number:    '085388709607',   // TEST: kirim ke nomor pribadi dulu
-        message:   message,
-        file_url:  imgUrl            // URL SVG dari KV endpoint kita
-      })
-    })
+    const waForm  = new FormData()
+    waForm.append('device_id', DEVICE_ID)
+    waForm.append('number',    '085388709607')   // TEST: kirim ke nomor pribadi dulu
+    waForm.append('message',   message)
+    waForm.append('file',      imgUrl)            // URL PNG publik dari KV
+    const waRes  = await fetch('https://app.whacenter.com/api/send', { method:'POST', body:waForm })
     const waJson = await waRes.json() as { status:boolean, message:string }
     if (!waJson.status) return c.json({ success:false, error:waJson.message }, 500)
 
