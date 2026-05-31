@@ -2655,7 +2655,37 @@ app.get('/api/neraca-auto-kirim', async (c) => {
       }
     } catch(_) { /* Excel belum diupload atau gagal — tidak blocking */ }
 
-    // ── 7. Update KV neraca-last-sent-date = tanggalKirim ────────────────────
+    // ── 7. Kirim ke grup AMC PRINDAVAN — hanya jika data malam sudah 19/19 ────
+    // Cek COUNT distinct kode_unit yang punya record di jam malam (18–23 / 00–05)
+    let prindavanSent = false
+    try {
+      const malamCheck = await db.prepare(`
+        SELECT COUNT(DISTINCT mc.kode_unit) as cnt
+        FROM data_monitoring dm
+        JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+        WHERE dm.tanggal = ?
+          AND mc.kode_unit IN (${NERACA_ORDER.join(',')})
+          AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+      `).bind(tanggalKirim).first<{ cnt: number }>()
+
+      const malamLengkap = (malamCheck?.cnt ?? 0) >= REQUIRED_COUNT  // 19/19
+
+      if (malamLengkap) {
+        const msgPrindavan =
+          `✅ *Neraca Daya ${tglFmt}*\n` +
+          `Data malam seluruh *19 ULD* sudah lengkap.\n` +
+          `Laporan telah dikirim ke grup AMC UID KALSELTENG.`
+        const waPrindavan = new FormData()
+        waPrindavan.append('device_id', DEVICE_ID)
+        waPrindavan.append('group',     'AMC PRINDAVAN')
+        waPrindavan.append('message',   msgPrindavan)
+        const resPrindavan = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waPrindavan })
+        const jsonPrindavan = await resPrindavan.json() as { status:boolean, message:string }
+        prindavanSent = jsonPrindavan.status
+      }
+    } catch(_) { /* tidak blocking */ }
+
+    // ── 8. Update KV neraca-last-sent-date = tanggalKirim ────────────────────
     await c.env.FILES.put('neraca-last-sent-date', tanggalKirim)
 
     return c.json({
@@ -2665,7 +2695,8 @@ app.get('/api/neraca-auto-kirim', async (c) => {
       last_sent_date_updated: tanggalKirim,
       excel_sent: excelSent,
       excel_url: excelUrl || null,
-      message: `Screenshot${excelSent ? ' + Excel' : ''} dikirim ke grup WA AMC UID KASELTENG (${tglFmt})`
+      prindavan_sent: prindavanSent,
+      message: `Screenshot${excelSent ? ' + Excel' : ''} dikirim ke grup WA AMC UID KASELTENG (${tglFmt})${prindavanSent ? ' + notif ke AMC PRINDAVAN' : ''}`
     })
   } catch (e:any) { return c.json({ success:false, error:e.message }, 500) }
 })
