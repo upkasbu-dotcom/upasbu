@@ -2102,7 +2102,7 @@ app.get('/api/neraca-excel-file/:key{.+}', async (c) => {
 })
 
 // ===========================================================
-// API: SERVE SVG NERACA DARI KV
+// API: SERVE SVG NERACA DARI KV (backward compat)
 // GET  /api/neraca-svg/:key
 // ===========================================================
 app.get('/api/neraca-svg/:key{.+}', async (c) => {
@@ -2113,6 +2113,29 @@ app.get('/api/neraca-svg/:key{.+}', async (c) => {
     return new Response(svg, {
       headers: {
         'Content-Type': 'image/svg+xml',
+        'Cache-Control': 'public, max-age=86400',
+        'Access-Control-Allow-Origin': '*'
+      }
+    })
+  } catch (e: any) { return c.json({ error: e.message }, 500) }
+})
+
+// ===========================================================
+// API: SERVE PNG NERACA DARI KV
+// GET  /api/neraca-png/:key
+// ===========================================================
+app.get('/api/neraca-png/:key{.+}', async (c) => {
+  try {
+    const key = c.req.param('key')
+    const b64 = await c.env.FILES.get(key)
+    if (!b64) return c.json({ error: 'PNG tidak ditemukan atau sudah kedaluwarsa' }, 404)
+    // Decode base64 → binary
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) & 0xff
+    return new Response(bytes, {
+      headers: {
+        'Content-Type': 'image/png',
         'Cache-Control': 'public, max-age=86400',
         'Access-Control-Allow-Origin': '*'
       }
@@ -2259,106 +2282,267 @@ app.get('/api/neraca-auto-kirim', async (c) => {
       tDtp+=dtp; tDmn+=dm; tMaks+=mx; tBps+=bps; tCads+=cads; tBpm+=bpm; tCadm+=cadm
     }
 
-    // ── 2. Generate PNG via SVG ───────────────────────────────────────────────
+    // ── 2. Generate PNG (pure pixel renderer, no external libs) ──────────────
     function n(v:number){ return v===0?'0':v.toLocaleString('id-ID') }
 
-    // Dimensi kolom: [label, width]
+    // Dimensi kolom: [label, width-in-pixels]
     const COLS = [
       ['NO',28],['ULD',168],['OPS',32],['STB',32],['HAR',32],['GGN',32],['RSK',32],['JML',32],
       ['DTP',56],['DMN',56],['MAKS',56],['BP SIANG',64],['CAD SIANG',64],['BP MALAM',64],['CAD MALAM',64],['STATUS',68]
     ] as [string,number][]
-    const W = COLS.reduce((s,c)=>s+c[1],0) + 2   // total width + 1px border each side
+    const W = COLS.reduce((s,c)=>s+c[1],0) + 2
     const ROW_H = 22
     const HEAD_H = 26
     const TITLE_H = 34
-    const FOOTER_H = 18
-    const TABLE_H  = HEAD_H + (rows.length + 1) * ROW_H  // +1 for total row
-    const TOTAL_H  = TITLE_H + TABLE_H + FOOTER_H + 16   // 16px padding top+bottom
+    const FOOTER_H = 20
+    const TABLE_H  = HEAD_H + (rows.length + 1) * ROW_H
+    const TOTAL_H  = TITLE_H + TABLE_H + FOOTER_H + 16
+    const IMG_W    = W + 24
+    const IMG_H    = TOTAL_H + 24
 
-    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W+24}" height="${TOTAL_H+24}" font-family="Arial,sans-serif">`
-    // background
-    svg += `<rect width="${W+24}" height="${TOTAL_H+24}" fill="#f1f5f9"/>`
-
-    let y = 12
-    // Title bar
-    svg += `<rect x="12" y="${y}" width="${W}" height="${TITLE_H}" fill="#1a3352"/>`
-    svg += `<text x="26" y="${y+22}" fill="#ffffff" font-size="14" font-weight="bold">NERACA DAYA HARIAN \u2014 ${tglFmt}</text>`
-    svg += `<text x="${W}" y="${y+21}" fill="#c8d9ec" font-size="11" text-anchor="end">AMC UID KASELTENG | 19 ULD</text>`
-    y += TITLE_H
-
-    // Header row
-    svg += `<rect x="12" y="${y}" width="${W}" height="${HEAD_H}" fill="#1a3352"/>`
-    let cx = 12
-    for (const [label, w] of COLS) {
-      svg += `<text x="${cx + w/2}" y="${y + 17}" fill="#ffffff" font-size="10.5" font-weight="bold" text-anchor="middle">${label}</text>`
-      svg += `<line x1="${cx+w}" y1="${y}" x2="${cx+w}" y2="${y+HEAD_H}" stroke="#1a4f80" stroke-width="0.5"/>`
-      cx += w
+    // ── Bitmap font 5×7 (Workers-compatible, no canvas needed) ───────────────
+    const F: Record<string,[number,number,number,number,number]> = {
+      ' ':[0,0,0,0,0],'!':[0,0,95,0,0],'"':[0,7,0,7,0],'#':[20,127,20,127,20],
+      '$':[36,42,127,42,18],'%':[35,19,8,100,98],'&':[54,73,85,34,80],"'":[0,5,3,0,0],
+      '(':[0,28,34,65,0],')':[0,65,34,28,0],'*':[20,8,62,8,20],'+':[8,8,62,8,8],
+      ',':[0,80,48,0,0],'-':[8,8,8,8,8],'.':[0,96,96,0,0],'/':[32,16,8,4,2],
+      '0':[62,81,73,69,62],'1':[0,66,127,64,0],'2':[66,97,81,73,70],'3':[33,65,69,75,49],
+      '4':[24,20,18,127,16],'5':[39,69,69,69,57],'6':[60,74,73,73,48],'7':[1,113,9,5,3],
+      '8':[54,73,73,73,54],'9':[6,73,73,41,30],':':[0,54,54,0,0],';':[0,86,54,0,0],
+      '<':[8,20,34,65,0],'=':[20,20,20,20,20],'>':[0,65,34,20,8],'?':[2,1,81,9,6],
+      '@':[50,73,121,65,62],'A':[126,17,17,17,126],'B':[127,73,73,73,54],'C':[62,65,65,65,34],
+      'D':[127,65,65,34,28],'E':[127,73,73,73,65],'F':[127,9,9,9,1],'G':[62,65,73,73,122],
+      'H':[127,8,8,8,127],'I':[0,65,127,65,0],'J':[32,64,65,63,1],'K':[127,8,20,34,65],
+      'L':[127,64,64,64,64],'M':[127,2,4,2,127],'N':[127,4,8,16,127],'O':[62,65,65,65,62],
+      'P':[127,9,9,9,6],'Q':[62,65,81,33,94],'R':[127,9,25,41,70],'S':[70,73,73,73,49],
+      'T':[1,1,127,1,1],'U':[63,64,64,64,63],'V':[31,32,64,32,31],'W':[63,64,56,64,63],
+      'X':[99,20,8,20,99],'Y':[7,8,112,8,7],'Z':[97,81,73,69,67],'[':[0,127,65,65,0],
+      '\\':[2,4,8,16,32],']':[0,65,65,127,0],'^':[4,2,1,2,4],'_':[64,64,64,64,64],
+      '`':[0,1,2,4,0],'a':[32,84,84,84,120],'b':[127,72,68,68,56],'c':[56,68,68,68,32],
+      'd':[56,68,68,72,127],'e':[56,84,84,84,24],'f':[8,126,9,1,2],'g':[12,82,82,82,62],
+      'h':[127,8,4,4,120],'i':[0,68,125,64,0],'j':[32,64,68,61,0],'k':[127,16,40,68,0],
+      'l':[0,65,127,64,0],'m':[124,4,24,4,120],'n':[124,8,4,4,120],'o':[56,68,68,68,56],
+      'p':[124,20,20,20,8],'q':[8,20,20,24,124],'r':[124,8,4,4,8],'s':[72,84,84,84,32],
+      't':[4,63,68,64,32],'u':[60,64,64,32,124],'v':[28,32,64,32,28],'w':[60,64,48,64,60],
+      'x':[68,40,16,40,68],'y':[12,80,80,80,60],'z':[68,100,84,76,68],'{':[0,8,54,65,0],
+      '|':[0,0,127,0,0],'}':[0,65,54,8,0],'~':[16,8,8,16,8],
     }
-    svg += `<line x1="12" y1="${y+HEAD_H}" x2="${12+W}" y2="${y+HEAD_H}" stroke="#1a4f80" stroke-width="0.5"/>`
-    y += HEAD_H
+    // Text width helper
+    function tW(s:string){ return s.length*6 }
+    // Draw text onto pixel buffer: scale=1 means 5x7px per char, scale=2 = 10x14px
+    function putText(buf:Uint8Array, s:string, px:number, py:number, scale:number, r:number, g:number, b:number){
+      for(let ci=0;ci<s.length;ci++){
+        const ch=s[ci]
+        const g5=F[ch]||F[' ']
+        for(let col=0;col<5;col++){
+          for(let row=0;row<7;row++){
+            if((g5[col]>>row)&1){
+              for(let sy=0;sy<scale;sy++) for(let sx=0;sx<scale;sx++){
+                const bx=px+ci*(5*scale+scale)+col*scale+sx
+                const by=py+row*scale+sy
+                if(bx>=0&&bx<IMG_W&&by>=0&&by<IMG_H){
+                  const idx=(by*IMG_W+bx)*3
+                  buf[idx]=r; buf[idx+1]=g; buf[idx+2]=b
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    // Fill rect
+    function fillRect(buf:Uint8Array, x:number, y:number, w:number, h:number, r:number, g:number, b:number){
+      for(let ry=y;ry<y+h;ry++) for(let rx=x;rx<x+w;rx++){
+        if(rx>=0&&rx<IMG_W&&ry>=0&&ry<IMG_H){ const i=(ry*IMG_W+rx)*3; buf[i]=r;buf[i+1]=g;buf[i+2]=b }
+      }
+    }
+    // Horizontal line
+    function hLine(buf:Uint8Array, x:number, y:number, w:number, r:number, g:number, b:number){
+      fillRect(buf,x,y,w,1,r,g,b)
+    }
+    // Vertical line
+    function vLine(buf:Uint8Array, x:number, y:number, h:number, r:number, g:number, b:number){
+      fillRect(buf,x,y,1,h,r,g,b)
+    }
+    // Draw text centered in cell
+    function putTextCenter(buf:Uint8Array, s:string, cx:number, cy:number, cellW:number, cellH:number, scale:number, r:number, g:number, b:number){
+      const tw=s.length*(5*scale+scale); const th=7*scale
+      putText(buf,s,cx+Math.floor((cellW-tw)/2),cy+Math.floor((cellH-th)/2),scale,r,g,b)
+    }
+    // Draw text left-aligned in cell
+    function putTextLeft(buf:Uint8Array, s:string, cx:number, cy:number, cellH:number, scale:number, r:number, g:number, b:number){
+      const th=7*scale
+      putText(buf,s,cx+4,cy+Math.floor((cellH-th)/2),scale,r,g,b)
+    }
+
+    // ── Allocate pixel buffer ─────────────────────────────────────────────────
+    const buf = new Uint8Array(IMG_W * IMG_H * 3)
+    // Background #f1f5f9
+    buf.fill(0); for(let i=0;i<IMG_W*IMG_H;i++){buf[i*3]=241;buf[i*3+1]=245;buf[i*3+2]=249}
+
+    let cy2=12
+    // Title bar #1a3352
+    fillRect(buf,12,cy2,W,TITLE_H,26,51,82)
+    putText(buf,`NERACA DAYA HARIAN - ${tglFmt}`,26,cy2+10,2,255,255,255)
+    const sub='AMC UID KASELTENG | 19 ULD'
+    putText(buf,sub,IMG_W-12-sub.length*6,cy2+21,1,200,217,236)
+    cy2+=TITLE_H
+
+    // Header row #1a3352
+    fillRect(buf,12,cy2,W,HEAD_H,26,51,82)
+    let hx=12
+    for(const[label,cw] of COLS){
+      putTextCenter(buf,label,hx,cy2,cw,HEAD_H,1,255,255,255)
+      vLine(buf,hx+cw,cy2,HEAD_H,26,79,128)
+      hx+=cw
+    }
+    hLine(buf,12,cy2+HEAD_H,W,26,79,128)
+    cy2+=HEAD_H
 
     // Data rows
-    for (const r of rows) {
-      const bg = r.no % 2 === 1 ? '#ffffff' : '#f0f4f8'
-      svg += `<rect x="12" y="${y}" width="${W}" height="${ROW_H}" fill="${bg}"/>`
-      const vals = [
-        String(r.no), r.nama, n(r.ops), n(r.stb), n(r.har), n(r.ggn), n(r.rsk),
-        n(r.jml), n(r.dtp), n(r.dmn), n(r.maks), n(r.bps), n(r.cads), n(r.bpm), n(r.cadm), r.status
-      ]
-      cx = 12
-      for (let ci = 0; ci < COLS.length; ci++) {
-        const [, w] = COLS[ci]
-        const val = vals[ci]
-        const isLeft = ci === 1  // ULD left-align
-        const isBold = ci === 7 || ci === 12 || ci === 14  // JML, CAD SIANG, CAD MALAM
-        const isStatus = ci === 15
-        const tx = isLeft ? cx + 5 : cx + w/2
-        const anchor = isLeft ? 'start' : 'middle'
-        // Status background
-        if (isStatus && r.status) {
-          const sbg = r.status==='DEFISIT' ? '#fee2e2' : r.status==='SIAGA' ? '#fef3c7' : '#d1fae5'
-          svg += `<rect x="${cx+2}" y="${y+3}" width="${w-4}" height="${ROW_H-6}" fill="${sbg}" rx="2"/>`
+    for(const r of rows){
+      const even=r.no%2===0
+      fillRect(buf,12,cy2,W,ROW_H,even?240:255,even?244:255,even?248:255)
+      const vals=[String(r.no),r.nama,n(r.ops),n(r.stb),n(r.har),n(r.ggn),n(r.rsk),n(r.jml),n(r.dtp),n(r.dmn),n(r.maks),n(r.bps),n(r.cads),n(r.bpm),n(r.cadm),r.status]
+      let dx=12
+      for(let ci2=0;ci2<COLS.length;ci2++){
+        const [,cw]=COLS[ci2]; const v=vals[ci2]
+        // Status badge background
+        if(ci2===15&&r.status){
+          const [br,bg,bb]=r.status==='DEFISIT'?[254,226,226]:r.status==='SIAGA'?[254,243,199]:[209,250,229]
+          fillRect(buf,dx+2,cy2+3,cw-4,ROW_H-6,br,bg,bb)
         }
-        svg += `<text x="${tx}" y="${y+15}" fill="${isStatus ? r.statusColor : '#1e293b'}" font-size="10.5" ${isBold?'font-weight="700"':''} text-anchor="${anchor}">${val}</text>`
-        svg += `<line x1="${cx+w}" y1="${y}" x2="${cx+w}" y2="${y+ROW_H}" stroke="#e2e8f0" stroke-width="0.5"/>`
-        cx += w
+        const [fr,fg,fb]=ci2===15?(r.status==='DEFISIT'?[153,27,27]:r.status==='SIAGA'?[146,64,14]:[6,95,70]):[30,41,59]
+        if(ci2===1) putTextLeft(buf,v,dx,cy2,ROW_H,1,fr,fg,fb)
+        else        putTextCenter(buf,v,dx,cy2,cw,ROW_H,1,fr,fg,fb)
+        vLine(buf,dx+cw,cy2,ROW_H,226,232,240)
+        dx+=cw
       }
-      svg += `<line x1="12" y1="${y+ROW_H}" x2="${12+W}" y2="${y+ROW_H}" stroke="#e2e8f0" stroke-width="0.5"/>`
-      y += ROW_H
+      hLine(buf,12,cy2+ROW_H,W,226,232,240)
+      cy2+=ROW_H
     }
 
-    // Total row
-    svg += `<rect x="12" y="${y}" width="${W}" height="${ROW_H}" fill="#2d6a9f"/>`
-    const totals = ['—','TOTAL',n(tOps),n(tStb),n(tHar),n(tGgn),n(tRsk),n(tJml),n(tDtp),n(tDmn),n(tMaks),n(tBps),n(tCads),n(tBpm),n(tCadm),'—']
-    cx = 12
-    for (let ci = 0; ci < COLS.length; ci++) {
-      const [, w] = COLS[ci]
-      const isLeft = ci === 1
-      const tx = isLeft ? cx + 5 : cx + w/2
-      svg += `<text x="${tx}" y="${y+15}" fill="#ffffff" font-size="10.5" font-weight="bold" text-anchor="${isLeft?'start':'middle'}">${totals[ci]}</text>`
-      svg += `<line x1="${cx+w}" y1="${y}" x2="${cx+w}" y2="${y+ROW_H}" stroke="#1a4f80" stroke-width="0.5"/>`
-      cx += w
+    // Total row #2d6a9f
+    fillRect(buf,12,cy2,W,ROW_H,45,106,159)
+    const tots=['—','TOTAL',n(tOps),n(tStb),n(tHar),n(tGgn),n(tRsk),n(tJml),n(tDtp),n(tDmn),n(tMaks),n(tBps),n(tCads),n(tBpm),n(tCadm),'—']
+    let dx2=12
+    for(let ci2=0;ci2<COLS.length;ci2++){
+      const [,cw]=COLS[ci2]
+      if(ci2===1) putTextLeft(buf,tots[ci2],dx2,cy2,ROW_H,1,255,255,255)
+      else        putTextCenter(buf,tots[ci2],dx2,cy2,cw,ROW_H,1,255,255,255)
+      vLine(buf,dx2+cw,cy2,ROW_H,26,79,128)
+      dx2+=cw
     }
-    y += ROW_H
+    hLine(buf,12,cy2+ROW_H,W,26,79,128)
+    cy2+=ROW_H
 
-    // Border tabel
-    svg += `<rect x="12" y="${TITLE_H+12}" width="${W}" height="${TABLE_H}" fill="none" stroke="#cbd5e1" stroke-width="1"/>`
+    // Border
+    hLine(buf,12,TITLE_H+12,W,203,213,225); hLine(buf,12,cy2,W,203,213,225)
+    vLine(buf,12,TITLE_H+12,cy2-TITLE_H-12,203,213,225); vLine(buf,12+W,TITLE_H+12,cy2-TITLE_H-12,203,213,225)
 
     // Footer
-    const now = new Date()
-    const footerText = `Generated ${now.toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'})} ${now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}`
-    svg += `<text x="${W+12}" y="${y+14}" fill="#6b7280" font-size="10" text-anchor="end">${footerText}</text>`
+    const now=new Date()
+    const ftxt=`Generated ${now.toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'})} ${now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}`
+    putText(buf,ftxt,IMG_W-12-ftxt.length*6,cy2+6,1,107,114,128)
 
-    svg += `</svg>`
+    // ── Encode PNG (uncompressed STORED deflate — O(n), no async needed) ─────
+    // Uncompressed PNG: deflate level-0 STORED blocks (max 65535 bytes per block)
+    function encodePNG(pxBuf:Uint8Array, w:number, h:number): Uint8Array {
+      // Build raw scanlines (filter byte 0 per row)
+      const rowSize = 1 + w * 3
+      const raw = new Uint8Array(h * rowSize)
+      for(let y=0;y<h;y++){
+        raw[y*rowSize]=0
+        for(let x=0;x<w;x++){
+          const si=y*rowSize+1+x*3; const pi=(y*w+x)*3
+          raw[si]=pxBuf[pi]; raw[si+1]=pxBuf[pi+1]; raw[si+2]=pxBuf[pi+2]
+        }
+      }
 
-    // ── 3. Simpan SVG ke KV → expose via endpoint publik ─────────────────────
-    const svgKey = `neraca-svg-${tanggal}`
-    // Simpan SVG string ke KV dengan TTL 24 jam
-    await c.env.FILES.put(svgKey, svg, { expirationTtl: 86400 })
+      // Adler32 for zlib wrapper
+      function adler32(data:Uint8Array):number{
+        let s1=1,s2=0
+        for(let i=0;i<data.length;i++){s1=(s1+data[i])%65521;s2=(s2+s1)%65521}
+        return((s2<<16)|s1)>>>0
+      }
 
-    // ── 4. Build public URL untuk SVG ────────────────────────────────────────
+      // CRC32
+      const ct=new Uint32Array(256)
+      for(let i=0;i<256;i++){let c=i;for(let j=0;j<8;j++)c=(c&1)?0xEDB88320^(c>>>1):c>>>1;ct[i]=c}
+      function crc32(b:Uint8Array,st=0,len=b.length):number{
+        let c=0xFFFFFFFF
+        for(let i=st;i<st+len;i++)c=ct[(c^b[i])&0xff]^(c>>>8)
+        return(c^0xFFFFFFFF)>>>0
+      }
+
+      // Build DEFLATE STORED blocks (level 0)
+      // zlib header (CMF=0x78, FLG makes it divisible by 31): 0x78 0x01
+      const BLOCK_MAX = 65535
+      const numBlocks = Math.ceil(raw.length / BLOCK_MAX)
+      // Each STORED block: 1 (BFINAL+BTYPE) + 2 (LEN) + 2 (NLEN) + LEN bytes
+      let deflateSize = 2 + 4  // zlib header (2) + adler32 (4)
+      for(let i=0;i<numBlocks;i++){
+        const blen = Math.min(BLOCK_MAX, raw.length - i*BLOCK_MAX)
+        deflateSize += 5 + blen  // 1(hdr)+2(len)+2(nlen)+data
+      }
+      const deflate = new Uint8Array(deflateSize)
+      const dv = new DataView(deflate.buffer)
+      deflate[0]=0x78; deflate[1]=0x01  // zlib header
+      let dp=2
+      for(let i=0;i<numBlocks;i++){
+        const isLast = i===numBlocks-1 ? 1 : 0
+        const bStart = i*BLOCK_MAX
+        const bLen = Math.min(BLOCK_MAX, raw.length - bStart)
+        deflate[dp++] = isLast  // BFINAL | BTYPE(0=STORED)
+        dv.setUint16(dp, bLen, true); dp+=2
+        dv.setUint16(dp, (~bLen)&0xFFFF, true); dp+=2
+        deflate.set(raw.subarray(bStart, bStart+bLen), dp); dp+=bLen
+      }
+      dv.setUint32(dp, adler32(raw))  // adler32 checksum
+
+      // PNG chunk helper
+      function chunk(type:string, data:Uint8Array):Uint8Array{
+        const tb=new TextEncoder().encode(type)
+        const len4=new Uint8Array(4); new DataView(len4.buffer).setUint32(0,data.length)
+        const comb=new Uint8Array(4+data.length); comb.set(tb);comb.set(data,4)
+        const crc4=new Uint8Array(4); new DataView(crc4.buffer).setUint32(0,crc32(comb))
+        const out=new Uint8Array(4+4+data.length+4)
+        out.set(len4,0);out.set(tb,4);out.set(data,8);out.set(crc4,8+data.length)
+        return out
+      }
+      const sig=new Uint8Array([137,80,78,71,13,10,26,10])
+      const ihdr=new Uint8Array(13)
+      const ihdrDv=new DataView(ihdr.buffer)
+      ihdrDv.setUint32(0,w);ihdrDv.setUint32(4,h);ihdr[8]=8;ihdr[9]=2  // 8-bit RGB
+      const ihdrC=chunk('IHDR',ihdr)
+      const idatC=chunk('IDAT',deflate)
+      const iendC=chunk('IEND',new Uint8Array(0))
+      const total=sig.length+ihdrC.length+idatC.length+iendC.length
+      const out=new Uint8Array(total)
+      let o=0
+      out.set(sig,o);o+=sig.length
+      out.set(ihdrC,o);o+=ihdrC.length
+      out.set(idatC,o);o+=idatC.length
+      out.set(iendC,o)
+      return out
+    }
+
+    const pngBytes = encodePNG(buf, IMG_W, IMG_H)
+    // base64 encode
+    let pngBase64 = ''
+    const CHUNK_SIZE = 8192
+    for(let i=0;i<pngBytes.length;i+=CHUNK_SIZE){
+      pngBase64 += String.fromCharCode(...pngBytes.subarray(i,i+CHUNK_SIZE))
+    }
+    pngBase64 = btoa(pngBase64)
+
+    // ── 3. Simpan PNG ke KV → expose via endpoint publik ─────────────────────
+    const pngKey = `neraca-png-${tanggal}`
+    await c.env.FILES.put(pngKey, pngBase64, { expirationTtl: 86400 })
+
+    // ── 4. Build public URL untuk PNG ────────────────────────────────────────
     const baseUrl2  = new URL(c.req.url).origin
-    const imgUrl    = `${baseUrl2}/api/neraca-svg/${svgKey}`
+    const imgUrl    = `${baseUrl2}/api/neraca-png/${pngKey}`
 
     // ── 5. Kirim ke WA (nomor pribadi untuk TEST) ────────────────────────────
     const message = `📊 *Neraca Daya ${tglFmt}*\nRingkasan neraca daya harian seluruh ULD.`
