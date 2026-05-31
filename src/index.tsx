@@ -3850,7 +3850,231 @@ app.post('/api/sld/:kode_unit', async (c) => {
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
+// ============================================================
+// CONSTANTS: konfigurasi notifikasi WA
+// ============================================================
+const NOTIF_DEVICE_ID  = '550fd04ee9fc7c4b4e057d0bce6270f3'
+const NOTIF_GROUP_NAME = 'AMC PRINDAVAN'
+const NOTIF_ULD_ORDER  = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
+const NOTIF_ULD_NAMES: Record<number,string> = {
+  399:'ULD TUMBANG SENAMANG', 390:'ULD TELAGA',         382:'ULD PAGATAN',
+  391:'ULD TELAGA PULANG',    376:'ULD MENDAWAI',        373:'ULD KENAMBUI',
+  395:'ULD TUMBANG MANJUL',   375:'ULD KUDANGAN',        366:'ULD BABAI',
+  910:'ULD MANGKATIP',        911:'ULD TELUK BETUNG',    385:'ULD RANGGA ILUNG',
+  913:'ULD TUMPUNG LAUNG',    915:'ULD SUNGAI BALI',     920:'ULD MARABATUAN',
+  917:'ULD KERASIAN',         918:'ULD KERAYAAN',        919:'ULD KERUMPUTAN',
+  372:'ULD GUNUNG PUREI'
+}
+
+// ── Kirim pesan teks ke WA Group via Whacenter ──────────────────────────────
+async function kirimPesanGrup(message: string): Promise<{ ok: boolean, info: string }> {
+  try {
+    const form = new FormData()
+    form.append('device_id', NOTIF_DEVICE_ID)
+    form.append('group',     NOTIF_GROUP_NAME)
+    form.append('message',   message)
+    const res  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:form })
+    const json = await res.json() as { status:boolean, message:string }
+    return { ok: json.status, info: json.message || '' }
+  } catch(e:any) {
+    return { ok: false, info: e.message }
+  }
+}
+
+// ── Tanggal hari ini dalam timezone WITA (UTC+8) ────────────────────────────
+function tanggalWITA(): string {
+  const now = new Date()
+  // Geser +8 jam dari UTC
+  const wita = new Date(now.getTime() + 8 * 60 * 60 * 1000)
+  return wita.toISOString().split('T')[0]  // "YYYY-MM-DD"
+}
+
+// ── Format tanggal DD/MM/YYYY ───────────────────────────────────────────────
+function fmtTgl(tgl: string): string {
+  return tgl.split('-').reverse().join('/')
+}
+
+// ============================================================
+// NOTIF 1 — Jam 10:00 WITA: HOP BBM belum masuk
+// Cek: lap_operasional hari ini, unit mana yang belum ada record
+// (record = saldo_awal dan saldo_akhir sudah terisi)
+// ============================================================
+async function notifHopBBM(db: D1Database): Promise<string> {
+  const tanggal = tanggalWITA()
+
+  // Ambil unit yang sudah punya data lengkap hari ini
+  const rows = await db.prepare(`
+    SELECT kode_unit FROM lap_operasional
+    WHERE tanggal = ?
+      AND saldo_awal  IS NOT NULL
+      AND saldo_akhir IS NOT NULL
+  `).bind(tanggal).all<{ kode_unit: number }>()
+
+  const sudahSet = new Set(rows.results.map(r => r.kode_unit))
+  const belum = NOTIF_ULD_ORDER.filter(ku => !sudahSet.has(ku))
+
+  if (belum.length === 0) {
+    return `✅ *[HOP BBM ${fmtTgl(tanggal)}]*\nSemua 19 ULD sudah input data HOP BBM hari ini. 👍`
+  }
+
+  const listBelum = belum.map((ku, i) => `  ${i+1}. ${NOTIF_ULD_NAMES[ku] ?? ku}`).join('\n')
+  return (
+    `⚠️ *[HOP BBM ${fmtTgl(tanggal)}]*\n` +
+    `Jam 10:00 WITA — *${belum.length} ULD* belum input data HOP BBM:\n\n` +
+    `${listBelum}\n\n` +
+    `_Segera input data sebelum jam 12:00 WITA._`
+  )
+}
+
+// ============================================================
+// NOTIF 2 — Jam 20:00 WITA: Neraca daya belum masuk
+// Cek: data_monitoring hari ini, unit mana yang:
+//   - belum ada data SIANG (jam 6–17, Operasi)  → beban_puncak_siang = null/0
+//   - belum ada data MALAM (jam 18–23/00–05, Operasi) → beban_puncak_malam = null/0
+// ============================================================
+async function notifNeracaDaya(db: D1Database): Promise<string> {
+  const tanggal = tanggalWITA()
+
+  // Query: per unit, hitung beban siang dan malam
+  const rows = await db.prepare(`
+    SELECT
+      mc.kode_unit,
+      SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 6  AND CAST(dm.jam AS INTEGER) <= 17)
+               AND dm.status_mesin = 'Operasi'
+               THEN COALESCE(dm.beban, 0) ELSE 0 END) as bp_siang,
+      SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR  CAST(dm.jam AS INTEGER) <= 5)
+               AND dm.status_mesin = 'Operasi'
+               THEN COALESCE(dm.beban, 0) ELSE 0 END) as bp_malam,
+      COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 6  AND CAST(dm.jam AS INTEGER) <= 17)
+                 AND dm.status_mesin = 'Operasi' THEN 1 END) as cnt_siang,
+      COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR  CAST(dm.jam AS INTEGER) <= 5)
+                 AND dm.status_mesin = 'Operasi' THEN 1 END) as cnt_malam
+    FROM data_monitoring dm
+    JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+    WHERE dm.tanggal = ?
+      AND mc.kode_unit IN (${NOTIF_ULD_ORDER.join(',')})
+    GROUP BY mc.kode_unit
+  `).bind(tanggal).all<{
+    kode_unit: number, bp_siang: number, bp_malam: number,
+    cnt_siang: number, cnt_malam: number
+  }>()
+
+  // Map: kode_unit → data
+  const dataMap: Record<number,{ bp_siang:number, bp_malam:number, cnt_siang:number, cnt_malam:number }> = {}
+  for (const r of rows.results) dataMap[r.kode_unit] = r
+
+  // Kategorikan tiap ULD
+  const belumSiang:  string[] = []
+  const belumMalam:  string[] = []
+  const belumKeduanya: string[] = []
+
+  for (let i = 0; i < NOTIF_ULD_ORDER.length; i++) {
+    const ku   = NOTIF_ULD_ORDER[i]
+    const nama = NOTIF_ULD_NAMES[ku] ?? String(ku)
+    const d    = dataMap[ku]
+
+    const adaSiang = d && d.cnt_siang > 0
+    const adaMalam = d && d.cnt_malam > 0
+
+    if (!adaSiang && !adaMalam) {
+      belumKeduanya.push(`  ${belumKeduanya.length+1}. ${nama}`)
+    } else if (!adaSiang) {
+      belumSiang.push(`  ${belumSiang.length+1}. ${nama}`)
+    } else if (!adaMalam) {
+      belumMalam.push(`  ${belumMalam.length+1}. ${nama}`)
+    }
+  }
+
+  const totalBelum = belumKeduanya.length + belumSiang.length + belumMalam.length
+
+  if (totalBelum === 0) {
+    return `✅ *[Neraca Daya ${fmtTgl(tanggal)}]*\nSemua 19 ULD sudah input data neraca daya (siang & malam) hari ini. 👍`
+  }
+
+  let msg = `⚠️ *[Neraca Daya ${fmtTgl(tanggal)}]*\nJam 20:00 WITA — *${totalBelum} ULD* belum lengkap:\n`
+
+  if (belumKeduanya.length > 0) {
+    msg += `\n🔴 *Belum ada data siang & malam (${belumKeduanya.length}):*\n${belumKeduanya.join('\n')}`
+  }
+  if (belumSiang.length > 0) {
+    msg += `\n🟡 *Belum ada data siang (${belumSiang.length}):*\n${belumSiang.join('\n')}`
+  }
+  if (belumMalam.length > 0) {
+    msg += `\n🟠 *Belum ada data malam (${belumMalam.length}):*\n${belumMalam.join('\n')}`
+  }
+
+  msg += `\n\n_Segera lengkapi data hari ini._`
+  return msg
+}
+
+// ============================================================
+// API: MANUAL TRIGGER — untuk test tanpa menunggu cron
+// GET /api/cron-test?jenis=hop | neraca | semua
+// ============================================================
+app.get('/api/cron-test', async (c) => {
+  try {
+    const db    = c.env.DB
+    const jenis = c.req.query('jenis') || 'semua'
+    const kirim = c.req.query('kirim') === '1'  // ?kirim=1 → benar-benar kirim ke WA
+
+    const results: Record<string, any> = {}
+
+    if (jenis === 'hop' || jenis === 'semua') {
+      const pesanHop = await notifHopBBM(db)
+      results.hop = { pesan: pesanHop }
+      if (kirim) {
+        const r = await kirimPesanGrup(pesanHop)
+        results.hop.kirim = r
+      }
+    }
+
+    if (jenis === 'neraca' || jenis === 'semua') {
+      const pesanNeraca = await notifNeracaDaya(db)
+      results.neraca = { pesan: pesanNeraca }
+      if (kirim) {
+        const r = await kirimPesanGrup(pesanNeraca)
+        results.neraca.kirim = r
+      }
+    }
+
+    return c.json({ success: true, tanggal_wita: tanggalWITA(), kirim_ke_wa: kirim, results })
+  } catch(e:any) {
+    return c.json({ success: false, error: e.message }, 500)
+  }
+})
+
+// ============================================================
+// SCHEDULED HANDLER — dipanggil oleh Cloudflare Cron Trigger
+// Cron 1: "0 2 * * *"  → 02:00 UTC = 10:00 WITA (notif HOP BBM)
+// Cron 2: "0 12 * * *" → 12:00 UTC = 20:00 WITA (notif neraca daya)
+// ============================================================
+async function handleScheduled(
+  event: ScheduledEvent,
+  env: { DB: D1Database, FILES: KVNamespace },
+  _ctx: ExecutionContext
+): Promise<void> {
+  const db         = env.DB
+  const cronExpr   = event.cron  // e.g. "0 2 * * *"
+  const utcHour    = new Date(event.scheduledTime).getUTCHours()
+
+  try {
+    if (utcHour === 2) {
+      // 10:00 WITA — notif HOP BBM
+      const pesan = await notifHopBBM(db)
+      await kirimPesanGrup(pesan)
+    } else if (utcHour === 12) {
+      // 20:00 WITA — notif neraca daya
+      const pesan = await notifNeracaDaya(db)
+      await kirimPesanGrup(pesan)
+    }
+  } catch(e:any) {
+    // Log error — tidak throw agar cron tidak retry terus
+    console.error(`[cron ${cronExpr}] Error:`, e.message)
+  }
+}
+
 export default {
-  fetch: app.fetch
+  fetch: app.fetch,
+  scheduled: handleScheduled
 }
 

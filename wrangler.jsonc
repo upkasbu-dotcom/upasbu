@@ -1,11 +1,25 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mesin-monitor",
+  "main": "dist/index.js",
   "compatibility_date": "2026-04-13",
-  "pages_build_output_dir": "./dist",
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  // Cron Triggers (UTC — WITA = UTC+8)
+  // 02:00 UTC = 10:00 WITA  → notif HOP BBM belum masuk
+  // 12:00 UTC = 20:00 WITA  → notif neraca daya belum masuk
+  "triggers": {
+    "crons": [
+      "0 2 * * *",
+      "0 12 * * *"
+    ]
+  },
+  // Static assets (js, css, gambar dari public/)
+  "assets": {
+    "directory": "./dist/static",
+    "binding": "ASSETS"
+  },
   "d1_databases": [
     {
       "binding": "DB",
