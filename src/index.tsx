@@ -2188,23 +2188,28 @@ app.get('/api/neraca-auto-kirim', async (c) => {
     const GROUP_NAME     = 'AMC UID KASELTENG'
 
     // ── ANTI-DUPLIKAT: cek last-sent-date di KV ──────────────────────────────
-    // Cari tanggal_lengkap terbaru (19/19) dari DB
+    // Cari tanggal_lengkap terbaru: 19/19 ULD punya record di jam MALAM (18–23 / 00–05)
+    // Beban puncak malam dianggap "terisi" jika ada minimal 1 record malam per ULD
     const candidates = await db.prepare(`
       SELECT DISTINCT dm.tanggal
       FROM data_monitoring dm
       JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
       WHERE mc.kode_unit IN (${NERACA_ORDER.join(',')})
+        AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
       ORDER BY dm.tanggal DESC
       LIMIT 30
     `).all<{ tanggal: string }>()
 
     let tanggalLengkap: string | null = null
     for (const row of candidates.results) {
+      // Hitung distinct ULD yang punya record MALAM di tanggal ini
       const unitCheck = await db.prepare(`
         SELECT COUNT(DISTINCT mc.kode_unit) as cnt
         FROM data_monitoring dm
         JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
-        WHERE dm.tanggal = ? AND mc.kode_unit IN (${NERACA_ORDER.join(',')})
+        WHERE dm.tanggal = ?
+          AND mc.kode_unit IN (${NERACA_ORDER.join(',')})
+          AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
       `).bind(row.tanggal).first<{ cnt: number }>()
       if (unitCheck && unitCheck.cnt >= REQUIRED_COUNT) {
         tanggalLengkap = row.tanggal
@@ -2213,7 +2218,7 @@ app.get('/api/neraca-auto-kirim', async (c) => {
     }
 
     if (!tanggalLengkap) {
-      return c.json({ success: false, skipped: true, reason: 'Belum ada data lengkap 19/19 dalam 30 hari terakhir' })
+      return c.json({ success: false, skipped: true, reason: 'Belum ada data beban puncak malam lengkap 19/19 dalam 30 hari terakhir' })
     }
 
     // Baca last-sent-date dari KV
@@ -2655,34 +2660,21 @@ app.get('/api/neraca-auto-kirim', async (c) => {
       }
     } catch(_) { /* Excel belum diupload atau gagal — tidak blocking */ }
 
-    // ── 7. Kirim ke grup AMC PRINDAVAN — hanya jika data malam sudah 19/19 ────
-    // Cek COUNT distinct kode_unit yang punya record di jam malam (18–23 / 00–05)
+    // ── 7. Kirim ke grup AMC PRINDAVAN ───────────────────────────────────────
+    // Dijamin sampai sini: data malam 19/19 sudah terpenuhi (kondisi di atas)
     let prindavanSent = false
     try {
-      const malamCheck = await db.prepare(`
-        SELECT COUNT(DISTINCT mc.kode_unit) as cnt
-        FROM data_monitoring dm
-        JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
-        WHERE dm.tanggal = ?
-          AND mc.kode_unit IN (${NERACA_ORDER.join(',')})
-          AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
-      `).bind(tanggalKirim).first<{ cnt: number }>()
-
-      const malamLengkap = (malamCheck?.cnt ?? 0) >= REQUIRED_COUNT  // 19/19
-
-      if (malamLengkap) {
-        const msgPrindavan =
-          `✅ *Neraca Daya ${tglFmt}*\n` +
-          `Data malam seluruh *19 ULD* sudah lengkap.\n` +
-          `Laporan telah dikirim ke grup AMC UID KALSELTENG.`
-        const waPrindavan = new FormData()
-        waPrindavan.append('device_id', DEVICE_ID)
-        waPrindavan.append('group',     'AMC PRINDAVAN')
-        waPrindavan.append('message',   msgPrindavan)
-        const resPrindavan = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waPrindavan })
-        const jsonPrindavan = await resPrindavan.json() as { status:boolean, message:string }
-        prindavanSent = jsonPrindavan.status
-      }
+      const msgPrindavan =
+        `✅ *Neraca Daya ${tglFmt}*\n` +
+        `Data malam seluruh *19 ULD* sudah lengkap.\n` +
+        `Laporan telah dikirim ke grup AMC UID KALSELTENG.`
+      const waPrindavan = new FormData()
+      waPrindavan.append('device_id', DEVICE_ID)
+      waPrindavan.append('group',     'AMC PRINDAVAN')
+      waPrindavan.append('message',   msgPrindavan)
+      const resPrindavan = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waPrindavan })
+      const jsonPrindavan = await resPrindavan.json() as { status:boolean, message:string }
+      prindavanSent = jsonPrindavan.status
     } catch(_) { /* tidak blocking */ }
 
     // ── 8. Update KV neraca-last-sent-date = tanggalKirim ────────────────────
