@@ -4000,32 +4000,26 @@ async function notifNeracaDaya(db: D1Database): Promise<string> {
     )
   }
 
-  // Susun tabel: nama ULD | BP siang | BP malam
-  // - ada data  → tampilkan nilai BP (angka, bisa 0)
-  // - tidak ada record → tampilkan "-"
-  const belumSet = new Set([...belumKeduanya, ...belumSiang, ...belumMalam])
-  const tabelRows: string[] = []
-  for (const ku of NOTIF_ULD_ORDER) {
-    const nama = NOTIF_ULD_NAMES[ku] ?? String(ku)
-    if (!belumSet.has(nama)) continue
-    const d     = dataMap[ku]
-    // cnt > 0 = ada record → tampil nilai BP (Math.round, bisa 0)
-    // cnt = 0 / tidak ada row → "-"
-    const siang = (d != null && d.cnt_siang > 0) ? String(Math.round(d.bp_siang ?? 0)) : '-'
-    const malam = (d != null && d.cnt_malam > 0) ? String(Math.round(d.bp_malam ?? 0)) : '-'
-    const label = nama.replace('ULD ', '').padEnd(20)
-    tabelRows.push(`  ${label}  ${siang.padStart(5)}  ${malam.padStart(5)}`)
+  // Format per kategori dengan emoji
+  let msg = `⚠️ *[Neraca Daya ${fmtTgl(tanggal)}]*\n`
+  msg += `Jam 20:00 WITA — *${totalBelum} ULD* belum lengkap:\n`
+
+  if (belumKeduanya.length > 0) {
+    msg += `\n🔴 *Belum ada data siang & malam (${belumKeduanya.length}):*\n`
+    belumKeduanya.forEach((nama, i) => { msg += `  ${i+1}. ${nama}\n` })
   }
 
-  const header = `  ${'NAMA ULD'.padEnd(20)}  ${'SIANG'.padStart(5)}  ${'MALAM'.padStart(5)}`
-  const sep    = `  ${'-'.repeat(20)}  -----  -----`
+  if (belumSiang.length > 0) {
+    msg += `\n🟡 *Belum ada data siang (${belumSiang.length}):*\n`
+    belumSiang.forEach((nama, i) => { msg += `  ${i+1}. ${nama}\n` })
+  }
 
-  const msg =
-    `⚠️ *[Neraca Daya ${fmtTgl(tanggal)}]*\n` +
-    `Jam 20:00 WITA — *${totalBelum} ULD* belum lengkap:\n` +
-    `_(angka = BP MW, - = belum masuk)_\n\n` +
-    `\`\`\`\n${header}\n${sep}\n${tabelRows.join('\n')}\n\`\`\`\n\n` +
-    `_Segera lengkapi data hari ini._`
+  if (belumMalam.length > 0) {
+    msg += `\n🟠 *Belum ada data malam (${belumMalam.length}):*\n`
+    belumMalam.forEach((nama, i) => { msg += `  ${i+1}. ${nama}\n` })
+  }
+
+  msg += `\n_Segera lengkapi data hari ini._`
 
   return msg
 }
