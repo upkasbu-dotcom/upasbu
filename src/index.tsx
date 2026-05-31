@@ -3932,82 +3932,93 @@ async function notifHopBBM(db: D1Database): Promise<string> {
 
 // ============================================================
 // NOTIF 2 — Jam 20:00 WITA: Neraca daya belum masuk
-// Cek: data_monitoring hari ini, unit mana yang:
-//   - belum ada data SIANG (jam 6–17, Operasi)  → beban_puncak_siang = null/0
-//   - belum ada data MALAM (jam 18–23/00–05, Operasi) → beban_puncak_malam = null/0
+// Kriteria "ada data":
+//   - Ada minimal 1 record data_monitoring di jam siang (6–17) → ada data siang
+//   - Ada minimal 1 record data_monitoring di jam malam (18–23 / 00–05) → ada data malam
+//   - beban = 0 tetap dianggap ADA data (bisa standby/padam)
+//   - Tidak ada record sama sekali → BELUM masuk (tampilkan "-")
 // ============================================================
 async function notifNeracaDaya(db: D1Database): Promise<string> {
   const tanggal = tanggalWITA()
 
-  // Query: per unit, hitung beban siang dan malam
+  // Cek keberadaan record — tanpa filter status_mesin
+  // 0 = ada data (bisa beban 0), NULL (tidak ada row) = belum masuk
   const rows = await db.prepare(`
     SELECT
       mc.kode_unit,
-      SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 6  AND CAST(dm.jam AS INTEGER) <= 17)
-               AND dm.status_mesin = 'Operasi'
-               THEN COALESCE(dm.beban, 0) ELSE 0 END) as bp_siang,
-      SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR  CAST(dm.jam AS INTEGER) <= 5)
-               AND dm.status_mesin = 'Operasi'
-               THEN COALESCE(dm.beban, 0) ELSE 0 END) as bp_malam,
-      COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 6  AND CAST(dm.jam AS INTEGER) <= 17)
-                 AND dm.status_mesin = 'Operasi' THEN 1 END) as cnt_siang,
-      COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR  CAST(dm.jam AS INTEGER) <= 5)
-                 AND dm.status_mesin = 'Operasi' THEN 1 END) as cnt_malam
+      COUNT(CASE WHEN CAST(dm.jam AS INTEGER) >= 6
+                  AND CAST(dm.jam AS INTEGER) <= 17
+                 THEN 1 END) as cnt_siang,
+      COUNT(CASE WHEN CAST(dm.jam AS INTEGER) >= 18
+                   OR CAST(dm.jam AS INTEGER) <= 5
+                 THEN 1 END) as cnt_malam
     FROM data_monitoring dm
     JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
     WHERE dm.tanggal = ?
       AND mc.kode_unit IN (${NOTIF_ULD_ORDER.join(',')})
     GROUP BY mc.kode_unit
-  `).bind(tanggal).all<{
-    kode_unit: number, bp_siang: number, bp_malam: number,
-    cnt_siang: number, cnt_malam: number
-  }>()
+  `).bind(tanggal).all<{ kode_unit: number, cnt_siang: number, cnt_malam: number }>()
 
-  // Map: kode_unit → data
-  const dataMap: Record<number,{ bp_siang:number, bp_malam:number, cnt_siang:number, cnt_malam:number }> = {}
+  // Map: kode_unit → { cnt_siang, cnt_malam }
+  const dataMap: Record<number, { cnt_siang: number, cnt_malam: number }> = {}
   for (const r of rows.results) dataMap[r.kode_unit] = r
 
   // Kategorikan tiap ULD
-  const belumSiang:  string[] = []
-  const belumMalam:  string[] = []
+  // adaSiang = ada record di jam siang (cnt_siang > 0), dst
   const belumKeduanya: string[] = []
+  const belumSiang:    string[] = []
+  const belumMalam:    string[] = []
 
-  for (let i = 0; i < NOTIF_ULD_ORDER.length; i++) {
-    const ku   = NOTIF_ULD_ORDER[i]
-    const nama = NOTIF_ULD_NAMES[ku] ?? String(ku)
-    const d    = dataMap[ku]
-
-    const adaSiang = d && d.cnt_siang > 0
+  for (const ku of NOTIF_ULD_ORDER) {
+    const nama     = NOTIF_ULD_NAMES[ku] ?? String(ku)
+    const d        = dataMap[ku]
+    const adaSiang = d && d.cnt_siang > 0   // 0 record = belum masuk
     const adaMalam = d && d.cnt_malam > 0
 
     if (!adaSiang && !adaMalam) {
-      belumKeduanya.push(`  ${belumKeduanya.length+1}. ${nama}`)
+      belumKeduanya.push(nama)
     } else if (!adaSiang) {
-      belumSiang.push(`  ${belumSiang.length+1}. ${nama}`)
+      belumSiang.push(nama)
     } else if (!adaMalam) {
-      belumMalam.push(`  ${belumMalam.length+1}. ${nama}`)
+      belumMalam.push(nama)
     }
   }
 
   const totalBelum = belumKeduanya.length + belumSiang.length + belumMalam.length
 
   if (totalBelum === 0) {
-    return `✅ *[Neraca Daya ${fmtTgl(tanggal)}]*\nSemua 19 ULD sudah input data neraca daya (siang & malam) hari ini. 👍`
+    return (
+      `✅ *[Neraca Daya ${fmtTgl(tanggal)}]*\n` +
+      `Semua 19 ULD sudah input data neraca daya (siang & malam). 👍`
+    )
   }
 
-  let msg = `⚠️ *[Neraca Daya ${fmtTgl(tanggal)}]*\nJam 20:00 WITA — *${totalBelum} ULD* belum lengkap:\n`
+  // Susun tabel ringkas: nama ULD | siang | malam
+  // Semua ULD yang bermasalah ditampilkan dalam satu tabel
+  // Kolom: nama ULD, siang (0=ada, -=belum), malam (0=ada, -=belum)
+  const belumSet = new Set([...belumKeduanya, ...belumSiang, ...belumMalam])
+  const tabelRows: string[] = []
+  for (const ku of NOTIF_ULD_ORDER) {
+    const nama = NOTIF_ULD_NAMES[ku] ?? String(ku)
+    if (!belumSet.has(nama)) continue
+    const d        = dataMap[ku]
+    const siang    = (d && d.cnt_siang > 0) ? '0' : '-'
+    const malam    = (d && d.cnt_malam > 0) ? '0' : '-'
+    // Format: nama (max 22 char) | siang | malam
+    const label = nama.replace('ULD ', '').padEnd(20)
+    tabelRows.push(`  ${label}  ${siang.padStart(5)}  ${malam.padStart(5)}`)
+  }
 
-  if (belumKeduanya.length > 0) {
-    msg += `\n🔴 *Belum ada data siang & malam (${belumKeduanya.length}):*\n${belumKeduanya.join('\n')}`
-  }
-  if (belumSiang.length > 0) {
-    msg += `\n🟡 *Belum ada data siang (${belumSiang.length}):*\n${belumSiang.join('\n')}`
-  }
-  if (belumMalam.length > 0) {
-    msg += `\n🟠 *Belum ada data malam (${belumMalam.length}):*\n${belumMalam.join('\n')}`
-  }
+  const header = `  ${'NAMA ULD'.padEnd(20)}  ${'SIANG'.padStart(5)}  ${'MALAM'.padStart(5)}`
+  const sep    = `  ${'-'.repeat(20)}  -----  -----`
 
-  msg += `\n\n_Segera lengkapi data hari ini._`
+  let msg =
+    `⚠️ *[Neraca Daya ${fmtTgl(tanggal)}]*\n` +
+    `Jam 20:00 WITA — *${totalBelum} ULD* belum lengkap:\n` +
+    `_(0 = ada data, - = belum masuk)_\n\n` +
+    `\`\`\`\n${header}\n${sep}\n${tabelRows.join('\n')}\n\`\`\`\n\n` +
+    `_Segera lengkapi data hari ini._`
+
   return msg
 }
 
