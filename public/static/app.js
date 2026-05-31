@@ -2775,6 +2775,95 @@ function switchDataView(view) {
 }
 
 // ── Download Excel Neraca Daya ────────────────────────────────────────────
+// ── Shared: buat workbook neraca (identik untuk download & WA) ───────────────
+// Kolom = identik dengan tabel di layar: NO, ULD, OPS, STB, HAR, GGN, RSK,
+//   JML, POLA, DTP(kW), DMN(kW), MAKS(kW), BP SIANG(kW), CAD SIANG(kW),
+//   BP MALAM(kW), CAD MALAM(kW), N-1(kW), STATUS
+function _buildNeracaWorkbook(rows, tanggal) {
+  var NERACA_ORDER = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
+  // Sort sesuai NERACA_ORDER
+  var rowMap = {}
+  rows.forEach(function(r) { rowMap[r.kode_unit] = r })
+  var sorted = []
+  NERACA_ORDER.forEach(function(ku) { if (rowMap[ku]) sorted.push(rowMap[ku]) })
+  rows.forEach(function(r) { if (NERACA_ORDER.indexOf(r.kode_unit) === -1) sorted.push(r) })
+
+  var tglParts = tanggal.split('-')
+  var tglLabel = tglParts[2] + '.' + tglParts[1] + '.' + tglParts[0]
+
+  // ── Sheet 1: Neraca Daya — 1 baris per unit ─────────────────────────────
+  var header = ['No','ULD','OPS','STB','HAR','GGN','RSK','JML','POLA',
+    'DTP (kW)','DMN (kW)','MAKS (kW)',
+    'BP SIANG (kW)','CAD SIANG (kW)',
+    'BP MALAM (kW)','CAD MALAM (kW)','N-1 (kW)','STATUS']
+  var wsData = [header]
+
+  for (var i = 0; i < sorted.length; i++) {
+    var r = sorted[i]
+    var cadMalam = (r.dm_pasok != null && r.beban_puncak_malam != null && r.beban_puncak_malam > 0)
+      ? (r.dm_pasok - r.beban_puncak_malam) : null
+    var cadSiang = (r.dm_pasok != null && r.beban_puncak_siang != null)
+      ? (r.dm_pasok - r.beban_puncak_siang) : null
+    var n1 = (cadMalam != null && r.max_dm != null) ? (cadMalam - r.max_dm) : null
+    var status = '-'
+    if (cadMalam !== null) {
+      if      (cadMalam < 0)                           status = 'DEFISIT'
+      else if (cadMalam >= 0 && cadMalam < (r.max_dm||0)) status = 'SIAGA'
+      else                                             status = 'NORMAL'
+    }
+    var pola = POLA_MAP[r.kode_unit] != null ? POLA_MAP[r.kode_unit] : '-'
+    wsData.push([
+      i + 1,
+      r.nama_unit || '-',
+      r.jumlah_operasi      != null ? r.jumlah_operasi      : '-',
+      r.jumlah_standby      != null ? r.jumlah_standby      : '-',
+      r.jumlah_pemeliharaan != null ? r.jumlah_pemeliharaan : '-',
+      r.jumlah_gangguan     != null ? r.jumlah_gangguan     : '-',
+      r.jumlah_rusak        != null ? r.jumlah_rusak        : '-',
+      r.jumlah_mesin        != null ? r.jumlah_mesin        : '-',
+      pola,
+      r.dm_terpasang        != null ? r.dm_terpasang        : '-',
+      r.dm_pasok            != null ? r.dm_pasok            : '-',
+      r.max_dm              != null ? r.max_dm              : '-',
+      r.beban_puncak_siang  != null ? r.beban_puncak_siang  : '-',
+      cadSiang              != null ? cadSiang              : '-',
+      r.beban_puncak_malam  != null ? r.beban_puncak_malam  : '-',
+      cadMalam              != null ? cadMalam              : '-',
+      n1                    != null ? n1                    : '-',
+      status
+    ])
+  }
+
+  var wb = XLSX.utils.book_new()
+  var ws = XLSX.utils.aoa_to_sheet(wsData)
+  ws['!cols'] = [
+    {wch:4},{wch:26},{wch:5},{wch:5},{wch:5},{wch:5},{wch:5},
+    {wch:5},{wch:6},{wch:10},{wch:10},{wch:10},
+    {wch:13},{wch:13},{wch:13},{wch:13},{wch:10},{wch:9}
+  ]
+  XLSX.utils.book_append_sheet(wb, ws, 'Neraca Daya')
+
+  // ── Sheet 2: Kesiapan Pembangkit ─────────────────────────────────────────
+  var ksHeader = ['No','ULD','POLA','DTP (kW)','DMN (kW)','MAKS (kW)']
+  var ksData   = [ksHeader]
+  for (var ki = 0; ki < sorted.length; ki++) {
+    var kr = sorted[ki]
+    ksData.push([
+      ki + 1,
+      kr.nama_unit || '-',
+      POLA_MAP[kr.kode_unit] != null ? POLA_MAP[kr.kode_unit] : '-',
+      kr.dm_terpasang != null ? kr.dm_terpasang : '-',
+      kr.dm_pasok     != null ? kr.dm_pasok     : '-',
+      kr.max_dm       != null ? kr.max_dm       : '-'
+    ])
+  }
+  var wsKs = XLSX.utils.aoa_to_sheet(ksData)
+  wsKs['!cols'] = [{wch:4},{wch:26},{wch:6},{wch:10},{wch:10},{wch:10}]
+  XLSX.utils.book_append_sheet(wb, wsKs, 'Kesiapan Pembangkit')
+
+  return { wb: wb, fileName: 'UID KSKT ' + tglLabel + '.xlsx' }
+}
+
 async function downloadNeracaExcel() {
   var tanggal = document.getElementById('data-tanggal').value
   if (!tanggal) { showToast('Pilih tanggal terlebih dahulu', 'info'); return }
@@ -2787,163 +2876,8 @@ async function downloadNeracaExcel() {
     var json = await res.json()
     if (!json.success) throw new Error(json.error || 'Gagal memuat data')
 
-    var rows = json.data   // array per unit
-
-    // Urutan kode_unit sesuai format template Excel
-    var NERACA_ORDER = [399, 390, 382, 391, 376, 373, 395, 375, 366, 910, 911, 385, 913, 915, 920, 917, 918, 919, 372]
-    // Map ID template (kolom B) sesuai urutan
-    var NERACA_ID_MAP = {
-      399: 560, 390: 561, 382: 562, 391: 563, 376: 564,
-      373: 566, 395: 569, 375: 571, 366: 800, 910: 804,
-      911: 801, 385: 805, 913: 811, 915: 322, 920: 324,
-      917: 338, 918: 1202, 919: 1203, 372: 2760
-    }
-    // Sort rows sesuai NERACA_ORDER, unit tidak dikenal taruh di akhir
-    var rowMap = {}
-    rows.forEach(function(r) { rowMap[r.kode_unit] = r })
-    var sortedRows = []
-    NERACA_ORDER.forEach(function(ku) { if (rowMap[ku]) sortedRows.push(rowMap[ku]) })
-    // Tambah unit yang tidak ada di NERACA_ORDER (jika ada)
-    rows.forEach(function(r) {
-      if (NERACA_ORDER.indexOf(r.kode_unit) === -1) sortedRows.push(r)
-    })
-    rows = sortedRows
-
-    var tglParts = tanggal.split('-')
-    var tglLabel = tglParts[2] + '.' + tglParts[1] + '.' + tglParts[0]  // DD.MM.YYYY
-
-    // ── Nama bulan Indonesia ─────────────────────────────────────────────
-    var BULAN_ID = ['Januari','Februari','Maret','April','Mei','Juni',
-                    'Juli','Agustus','September','Oktober','November','Desember']
-
-    // ── Build data array untuk SheetJS ──────────────────────────────────
-    // Header row
-    var header = [
-      'No','ID','Jenis','Sistem','Waktu',
-      'DMP (MW)','Captive Power (MW)','Beban Puncak (MW)','Cadangan (MW)',
-      'Kirim (MW)','ID Sistem Penerima','Terima (MW)','ID Sistem Pengirim',
-      'Status','Unit Tidak Siap','Keterangan'
-    ]
-
-    var wsData = [header]
-
-    for (var i = 0; i < rows.length; i++) {
-      var r = rows[i]
-      var no     = i + 1
-      var id     = NERACA_ID_MAP[r.kode_unit] || r.kode_unit
-      var jenis  = 'ULD'
-      var sistem = (r.nama_unit || '-').replace(/^ULD /i, 'PLTD ')
-
-      // Hitung cadangan siang & malam (MW — dibagi 1000 karena data dalam kW)
-      var dmp      = r.dm_pasok          != null ? r.dm_pasok / 1000          : null
-      var bpSiang  = r.beban_puncak_siang != null ? r.beban_puncak_siang / 1000 : null
-      var bpMalam  = r.beban_puncak_malam != null ? r.beban_puncak_malam / 1000 : null
-      var cadSiang = (dmp != null && bpSiang != null) ? Math.round((dmp - bpSiang) * 1000) / 1000 : null
-      var cadMalam = (dmp != null && bpMalam != null) ? Math.round((dmp - bpMalam) * 1000) / 1000 : null
-
-      // Status (berdasarkan cadangan malam)
-      var status = '-'
-      if (cadMalam !== null) {
-        var maxDm = r.max_dm != null ? r.max_dm / 1000 : 0
-        if (cadMalam < 0)                          status = 'DEFISIT'
-        else if (cadMalam >= 0 && cadMalam < maxDm) status = 'SIAGA'
-        else                                        status = 'NORMAL'
-      }
-
-      // Baris Siang
-      wsData.push([
-        no, id, jenis, sistem, 'Siang',
-        dmp     != null ? Math.round(dmp     * 1000) / 1000 : '',
-        '',   // Captive Power
-        bpSiang != null ? Math.round(bpSiang * 1000) / 1000 : '',
-        '',   // Cadangan — dikosongkan
-        '', '', '', '',  // Kirim, ID Penerima, Terima, ID Pengirim
-        '',   // Status — dikosongkan
-        '', ''
-      ])
-
-      // Baris Malam
-      wsData.push([
-        '', id, jenis, '', 'Malam',
-        dmp     != null ? Math.round(dmp     * 1000) / 1000 : '',
-        '',
-        bpMalam != null ? Math.round(bpMalam * 1000) / 1000 : '',
-        '',   // Cadangan — dikosongkan
-        '', '', '', '',
-        '',   // Status — dikosongkan
-        '', ''
-      ])
-    }
-
-    // ── Buat workbook SheetJS ────────────────────────────────────────────
-    var wb = XLSX.utils.book_new()
-    var ws = XLSX.utils.aoa_to_sheet(wsData)
-
-    // ── Merge kolom No, ID, Jenis, Sistem untuk tiap unit (2 baris per unit) ──
-    // Baris header = index 0 → data mulai baris 1 (row Excel = 2)
-    // Setiap unit = 2 baris: baris Siang (genap) dan Malam (ganjil)
-    var merges = []
-    for (var mi = 0; mi < rows.length; mi++) {
-      var rSiang = 1 + mi * 2  // index wsData (0-based), baris Siang
-      var rMalam = rSiang + 1  // baris Malam
-      // Hanya kolom D=3(Sistem) yang di-merge
-      merges.push({ s: { r: rSiang, c: 3 }, e: { r: rMalam, c: 3 } })
-    }
-    ws['!merges'] = merges
-
-    // Lebar kolom
-    ws['!cols'] = [
-      { wch: 4  },  // No
-      { wch: 6  },  // ID
-      { wch: 6  },  // Jenis
-      { wch: 24 },  // Sistem
-      { wch: 7  },  // Waktu
-      { wch: 10 },  // DMP
-      { wch: 16 },  // Captive Power
-      { wch: 16 },  // Beban Puncak
-      { wch: 13 },  // Cadangan
-      { wch: 10 },  // Kirim
-      { wch: 18 },  // ID Sistem Penerima
-      { wch: 11 },  // Terima
-      { wch: 18 },  // ID Sistem Pengirim
-      { wch: 10 },  // Status
-      { wch: 18 },  // Unit Tidak Siap
-      { wch: 20 },  // Keterangan
-    ]
-
-    XLSX.utils.book_append_sheet(wb, ws, 'Neraca Daya')
-
-    // ── Sheet Kesiapan Pembangkit ────────────────────────────────────────
-    var ksHeader = [
-      'No', 'ID', 'Jenis', 'Sistem',
-      'Total Daya Terpasang (MW)', 'DMN (MW)', 'Unit Terbesar (MW)'
-    ]
-    var ksData = [ksHeader]
-    for (var ki = 0; ki < rows.length; ki++) {
-      var kr   = rows[ki]
-      var kNo  = ki + 1
-      var kId  = NERACA_ID_MAP[kr.kode_unit] || kr.kode_unit
-      var kSis = (kr.nama_unit || '-').replace(/^ULD /i, 'PLTD ')
-      var kDtp = kr.dm_terpasang != null ? Math.round(kr.dm_terpasang / 1000 * 1000) / 1000 : ''
-      var kDmn = kr.dm_pasok    != null ? Math.round(kr.dm_pasok    / 1000 * 1000) / 1000 : ''
-      var kMax = kr.max_dm      != null ? Math.round(kr.max_dm      / 1000 * 1000) / 1000 : ''
-      ksData.push([kNo, kId, 'ULD', kSis, kDtp, kDmn, kMax])
-    }
-    var wsKs = XLSX.utils.aoa_to_sheet(ksData)
-    wsKs['!cols'] = [
-      { wch: 4  },  // No
-      { wch: 6  },  // ID
-      { wch: 6  },  // Jenis
-      { wch: 24 },  // Sistem
-      { wch: 24 },  // Total Daya Terpasang
-      { wch: 12 },  // DMN
-      { wch: 18 },  // Unit Terbesar
-    ]
-    XLSX.utils.book_append_sheet(wb, wsKs, 'Kesiapan Pembangkit')
-
-    // Nama file: "Neraca Daya DD.MM.YYYY.xlsx"
-    var fileName = 'UID KSKT ' + tglLabel + '.xlsx'
-    XLSX.writeFile(wb, fileName)
+    var result = _buildNeracaWorkbook(json.data, tanggal)
+    XLSX.writeFile(result.wb, result.fileName)
     showToast('File Excel berhasil diunduh!', 'success')
 
   } catch(e) {
@@ -2969,110 +2903,159 @@ function isNeracaAllFilled(rows) {
   return true
 }
 
-// ── Generate Excel identik dengan tombol download, output base64 ──────────────
-// Reuse semua logika downloadNeracaExcel — hasilnya BYTE-FOR-BYTE sama dengan
-// file yang terdownload saat user klik tombol Excel
+// ── Generate Excel base64 untuk kirim WA (reuse _buildNeracaWorkbook) ─────────
 function buildNeracaExcelBuffer(rows, tanggal) {
-  var NERACA_ORDER = [399, 390, 382, 391, 376, 373, 395, 375, 366, 910, 911, 385, 913, 915, 920, 917, 918, 919, 372]
-  var NERACA_ID_MAP = {
-    399: 560, 390: 561, 382: 562, 391: 563, 376: 564,
-    373: 566, 395: 569, 375: 571, 366: 800, 910: 804,
-    911: 801, 385: 805, 913: 811, 915: 322, 920: 324,
-    917: 338, 918: 1202, 919: 1203, 372: 2760
-  }
-
-  // Sort rows — identik dengan downloadNeracaExcel
-  var rowMap = {}
-  rows.forEach(function(r) { rowMap[r.kode_unit] = r })
-  var sortedRows = []
-  NERACA_ORDER.forEach(function(ku) { if (rowMap[ku]) sortedRows.push(rowMap[ku]) })
-  rows.forEach(function(r) { if (NERACA_ORDER.indexOf(r.kode_unit) === -1) sortedRows.push(r) })
-
-  var tglParts = tanggal.split('-')
-  var tglLabel = tglParts[2] + '.' + tglParts[1] + '.' + tglParts[0]  // DD.MM.YYYY
-
-  // ── Sheet Neraca Daya — identik dengan downloadNeracaExcel ──────────────
-  var header = [
-    'No','ID','Jenis','Sistem','Waktu',
-    'DMP (MW)','Captive Power (MW)','Beban Puncak (MW)','Cadangan (MW)',
-    'Kirim (MW)','ID Sistem Penerima','Terima (MW)','ID Sistem Pengirim',
-    'Status','Unit Tidak Siap','Keterangan'
-  ]
-  var wsData = [header]
-  for (var i = 0; i < sortedRows.length; i++) {
-    var r      = sortedRows[i]
-    var no     = i + 1
-    var id     = NERACA_ID_MAP[r.kode_unit] || r.kode_unit
-    var sistem = (r.nama_unit || '-').replace(/^ULD /i, 'PLTD ')
-    var dmp    = r.dm_pasok           != null ? Math.round(r.dm_pasok / 1000 * 1000) / 1000 : null
-    var bpSiang= r.beban_puncak_siang != null ? Math.round(r.beban_puncak_siang / 1000 * 1000) / 1000 : null
-    var bpMalam= r.beban_puncak_malam != null ? Math.round(r.beban_puncak_malam / 1000 * 1000) / 1000 : null
-    // Baris Siang
-    wsData.push([
-      no, id, 'ULD', sistem, 'Siang',
-      dmp     != null ? Math.round(dmp     * 1000) / 1000 : '',
-      '',
-      bpSiang != null ? Math.round(bpSiang * 1000) / 1000 : '',
-      '', '', '', '', '', '', '', ''
-    ])
-    // Baris Malam
-    wsData.push([
-      '', id, 'ULD', '', 'Malam',
-      dmp     != null ? Math.round(dmp     * 1000) / 1000 : '',
-      '',
-      bpMalam != null ? Math.round(bpMalam * 1000) / 1000 : '',
-      '', '', '', '', '', '', '', ''
-    ])
-  }
-  var wb = XLSX.utils.book_new()
-  var ws = XLSX.utils.aoa_to_sheet(wsData)
-  var merges = []
-  for (var mi = 0; mi < sortedRows.length; mi++) {
-    var rSiang = 1 + mi * 2
-    var rMalam = rSiang + 1
-    merges.push({ s: { r: rSiang, c: 3 }, e: { r: rMalam, c: 3 } })
-  }
-  ws['!merges'] = merges
-  ws['!cols'] = [
-    { wch: 4  }, { wch: 6  }, { wch: 6  }, { wch: 24 }, { wch: 7  },
-    { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 13 }, { wch: 10 },
-    { wch: 18 }, { wch: 11 }, { wch: 18 }, { wch: 10 }, { wch: 18 }, { wch: 20 }
-  ]
-  XLSX.utils.book_append_sheet(wb, ws, 'Neraca Daya')
-
-  // ── Sheet Kesiapan Pembangkit — identik dengan downloadNeracaExcel ───────
-  var ksHeader = ['No','ID','Jenis','Sistem','Total Daya Terpasang (MW)','DMN (MW)','Unit Terbesar (MW)']
-  var ksData   = [ksHeader]
-  for (var ki = 0; ki < sortedRows.length; ki++) {
-    var kr   = sortedRows[ki]
-    var kNo  = ki + 1
-    var kId  = NERACA_ID_MAP[kr.kode_unit] || kr.kode_unit
-    var kSis = (kr.nama_unit || '-').replace(/^ULD /i, 'PLTD ')
-    var kDtp = kr.dm_terpasang != null ? Math.round(kr.dm_terpasang / 1000 * 1000) / 1000 : ''
-    var kDmn = kr.dm_pasok     != null ? Math.round(kr.dm_pasok     / 1000 * 1000) / 1000 : ''
-    var kMax = kr.max_dm       != null ? Math.round(kr.max_dm       / 1000 * 1000) / 1000 : ''
-    ksData.push([kNo, kId, 'ULD', kSis, kDtp, kDmn, kMax])
-  }
-  var wsKs = XLSX.utils.aoa_to_sheet(ksData)
-  wsKs['!cols'] = [
-    { wch: 4  }, { wch: 6  }, { wch: 6  }, { wch: 24 },
-    { wch: 24 }, { wch: 12 }, { wch: 18 }
-  ]
-  XLSX.utils.book_append_sheet(wb, wsKs, 'Kesiapan Pembangkit')
-
-  // ── Output sebagai Uint8Array lalu convert ke base64 ────────────────────
-  // Gunakan type:'array' (Uint8Array) → btoa manual per byte
-  // Ini identik dengan binary yang di-writeFile oleh tombol download
-  var uint8 = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  var result = _buildNeracaWorkbook(rows, tanggal)
+  var uint8  = XLSX.write(result.wb, { bookType: 'xlsx', type: 'array' })
   var binary = ''
   for (var b = 0; b < uint8.length; b++) binary += String.fromCharCode(uint8[b])
-  var base64 = btoa(binary)
-
-  var fileName = 'UID KSKT ' + tglLabel + '.xlsx'
-  return { buffer: base64, fileName: fileName }
+  return { buffer: btoa(binary), fileName: result.fileName }
 }
 
-// ── Auto kirim Excel Neraca ke WA Group saat semua data terisi ───────────────
+// ── Capture tabel neraca sebagai gambar PNG → kirim WA ───────────────────────
+async function captureAndKirimScreenshot(tanggal) {
+  // Render tabel ringkas dari data neraca ke div tersembunyi lalu screenshot
+  var NERACA_ORDER = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
+
+  // Ambil data fresh dari API
+  var res  = await fetch('/api/neraca-daya?tanggal=' + tanggal)
+  var json = await res.json()
+  if (!json.success) throw new Error('Gagal fetch neraca: ' + (json.error||''))
+  var rows = json.data
+
+  // Sort sesuai NERACA_ORDER
+  var rowMap = {}
+  rows.forEach(function(r) { rowMap[r.kode_unit] = r })
+  var sorted = []
+  NERACA_ORDER.forEach(function(ku) { if (rowMap[ku]) sorted.push(rowMap[ku]) })
+
+  var tglParts = tanggal.split('-')
+  var tglLabel = tglParts[2] + '.' + tglParts[1] + '.' + tglParts[0]
+
+  // Build HTML tabel ringkas untuk screenshot
+  var html = '<div style="font-family:Arial,sans-serif;background:#fff;padding:16px;width:900px;">'
+  html += '<div style="background:#1a3352;color:#fff;padding:10px 16px;border-radius:6px 6px 0 0;margin-bottom:0;">'
+  html += '<b style="font-size:15px;">NERACA DAYA HARIAN — ' + tglLabel + '</b>'
+  html += '<span style="float:right;font-size:12px;opacity:0.8;">AMC UID KASELTENG</span></div>'
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+  // Header
+  html += '<thead><tr style="background:#2d6a9f;color:#fff;">'
+  var cols = ['No','ULD','OPS','STB','HAR','GGN','RSK','JML','DTP','DMN','MAKS','BP SIANG','CAD SIANG','BP MALAM','CAD MALAM','STATUS']
+  cols.forEach(function(c, ci) {
+    var w = ci === 1 ? 'width:180px;text-align:left;' : 'text-align:center;'
+    html += '<th style="padding:6px 8px;border:1px solid #1a4f80;' + w + '">' + c + '</th>'
+  })
+  html += '</tr></thead><tbody>'
+
+  function fn(v) { return v != null && v !== '-' ? v.toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.') : '-' }
+
+  var totalOps=0,totalStb=0,totalHar=0,totalGgn=0,totalRsk=0,totalJml=0
+  var totalDtp=0,totalDmn=0,totalMaks=0,totalBpS=0,totalCadS=0,totalBpM=0,totalCadM=0
+
+  for (var i = 0; i < sorted.length; i++) {
+    var r = sorted[i]
+    var cadM = (r.dm_pasok != null && r.beban_puncak_malam != null && r.beban_puncak_malam > 0)
+               ? (r.dm_pasok - r.beban_puncak_malam) : null
+    var cadS = (r.dm_pasok != null && r.beban_puncak_siang != null)
+               ? (r.dm_pasok - r.beban_puncak_siang) : null
+    var status = '-', statusBg = '#f1f5f9', statusFg = '#64748b'
+    if (cadM !== null) {
+      if      (cadM < 0)                              { status='DEFISIT'; statusBg='#fee2e2'; statusFg='#991b1b' }
+      else if (cadM >= 0 && cadM < (r.max_dm||0))    { status='SIAGA';   statusBg='#fef3c7'; statusFg='#92400e' }
+      else                                             { status='NORMAL';  statusBg='#d1fae5'; statusFg='#065f46' }
+    }
+    var bg = i % 2 === 0 ? '#fff' : '#f8fafc'
+    var td = 'style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;background:' + bg + ';"'
+    var tdL = 'style="padding:5px 8px;border:1px solid #e2e8f0;text-align:left;background:' + bg + ';white-space:nowrap;"'
+    html += '<tr>'
+    html += '<td ' + td + '>' + (i+1) + '</td>'
+    html += '<td ' + tdL + '>' + (r.nama_unit||'-') + '</td>'
+    html += '<td ' + td + '>' + fn(r.jumlah_operasi) + '</td>'
+    html += '<td ' + td + '>' + fn(r.jumlah_standby) + '</td>'
+    html += '<td ' + td + '>' + fn(r.jumlah_pemeliharaan) + '</td>'
+    html += '<td ' + td + '>' + fn(r.jumlah_gangguan) + '</td>'
+    html += '<td ' + td + '>' + fn(r.jumlah_rusak) + '</td>'
+    html += '<td ' + td + '><b>' + fn(r.jumlah_mesin) + '</b></td>'
+    html += '<td ' + td + '>' + fn(r.dm_terpasang) + '</td>'
+    html += '<td ' + td + '>' + fn(r.dm_pasok) + '</td>'
+    html += '<td ' + td + '>' + fn(r.max_dm) + '</td>'
+    html += '<td ' + td + '>' + fn(r.beban_puncak_siang) + '</td>'
+    html += '<td ' + td + '><b>' + fn(cadS) + '</b></td>'
+    html += '<td ' + td + '>' + fn(r.beban_puncak_malam) + '</td>'
+    html += '<td ' + td + '><b>' + fn(cadM) + '</b></td>'
+    html += '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;background:' + statusBg + ';color:' + statusFg + ';font-weight:bold;">' + status + '</td>'
+    html += '</tr>'
+
+    totalOps  += r.jumlah_operasi      || 0
+    totalStb  += r.jumlah_standby      || 0
+    totalHar  += r.jumlah_pemeliharaan || 0
+    totalGgn  += r.jumlah_gangguan     || 0
+    totalRsk  += r.jumlah_rusak        || 0
+    totalJml  += r.jumlah_mesin        || 0
+    totalDtp  += r.dm_terpasang        || 0
+    totalDmn  += r.dm_pasok            || 0
+    totalMaks += r.max_dm              || 0
+    totalBpS  += r.beban_puncak_siang  || 0
+    if (cadS != null) totalCadS += cadS
+    totalBpM  += r.beban_puncak_malam  || 0
+    if (cadM != null) totalCadM += cadM
+  }
+
+  // Baris total
+  var ttd = 'style="padding:5px 8px;border:1px solid #1a4f80;text-align:center;background:#1a3352;color:#fff;font-weight:bold;"'
+  html += '<tr>'
+  html += '<td ' + ttd + '></td>'
+  html += '<td style="padding:5px 8px;border:1px solid #1a4f80;background:#1a3352;color:#fff;font-weight:bold;">TOTAL</td>'
+  html += '<td ' + ttd + '>' + totalOps  + '</td>'
+  html += '<td ' + ttd + '>' + totalStb  + '</td>'
+  html += '<td ' + ttd + '>' + totalHar  + '</td>'
+  html += '<td ' + ttd + '>' + totalGgn  + '</td>'
+  html += '<td ' + ttd + '>' + totalRsk  + '</td>'
+  html += '<td ' + ttd + '>' + totalJml  + '</td>'
+  html += '<td ' + ttd + '>' + fn(totalDtp)  + '</td>'
+  html += '<td ' + ttd + '>' + fn(totalDmn)  + '</td>'
+  html += '<td ' + ttd + '>' + fn(totalMaks) + '</td>'
+  html += '<td ' + ttd + '>' + fn(totalBpS)  + '</td>'
+  html += '<td ' + ttd + '>' + fn(Math.round(totalCadS)) + '</td>'
+  html += '<td ' + ttd + '>' + fn(totalBpM)  + '</td>'
+  html += '<td ' + ttd + '>' + fn(Math.round(totalCadM)) + '</td>'
+  html += '<td ' + ttd + '></td>'
+  html += '</tr>'
+
+  html += '</tbody></table>'
+  html += '<div style="text-align:right;font-size:10px;color:#94a3b8;margin-top:6px;">Generated ' + new Date().toLocaleString('id-ID') + '</div>'
+  html += '</div>'
+
+  // Render ke div tersembunyi → html2canvas
+  var wrapper = document.createElement('div')
+  wrapper.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;'
+  wrapper.innerHTML = html
+  document.body.appendChild(wrapper)
+
+  try {
+    var canvas = await html2canvas(wrapper.firstElementChild, {
+      scale: 2,           // 2x resolusi agar teks tajam
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false
+    })
+    var pngBase64 = canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '')
+
+    // Kirim ke server → ImgBB → WA
+    var ssRes  = await fetch('/api/kirim-wa-screenshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: pngBase64, tanggal: tanggal })
+    })
+    var ssJson = await ssRes.json()
+    if (!ssJson.success) throw new Error(ssJson.error || 'Gagal kirim screenshot')
+    return ssJson
+  } finally {
+    document.body.removeChild(wrapper)
+  }
+}
+
+// ── Auto kirim Screenshot + Excel Neraca ke WA Group saat semua data terisi ──
 var _neracaWaSent = {}  // { 'YYYY-MM-DD': true } agar tidak kirim dua kali per tanggal
 
 async function autoKirimNeracaWA(rows, tanggal) {
@@ -3080,24 +3063,22 @@ async function autoKirimNeracaWA(rows, tanggal) {
   if (!isNeracaAllFilled(rows)) return
 
   try {
-    // Tandai dulu agar tidak double-kirim
     _neracaWaSent[tanggal] = true
-
     showToast('Semua data neraca terisi — mengirim ke WA Group...', 'info')
 
-    // 1. Generate Excel → base64
-    var result = buildNeracaExcelBuffer(rows, tanggal)
+    // 1. Kirim screenshot tabel terlebih dahulu (tampil langsung di WA)
+    await captureAndKirimScreenshot(tanggal)
 
-    // 2. Upload ke server → dapat URL publik
+    // 2. Generate Excel → upload → kirim file xlsx
+    var result = buildNeracaExcelBuffer(rows, tanggal)
     var upRes  = await fetch('/api/neraca-excel-upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filename: result.fileName, data: result.buffer })
     })
     var upJson = await upRes.json()
-    if (!upJson.success) throw new Error('Upload gagal: ' + upJson.error)
+    if (!upJson.success) throw new Error('Upload Excel gagal: ' + upJson.error)
 
-    // 3. Kirim ke WA Group via Whacenter
     var waRes  = await fetch('/api/kirim-wa-neraca', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3106,7 +3087,7 @@ async function autoKirimNeracaWA(rows, tanggal) {
     var waJson = await waRes.json()
     if (!waJson.success) throw new Error(waJson.error)
 
-    showToast('✅ Neraca daya berhasil dikirim ke group WA!', 'success')
+    showToast('✅ Screenshot + Excel neraca dikirim ke group WA!', 'success')
   } catch(e) {
     _neracaWaSent[tanggal] = false  // reset agar bisa retry
     showToast('Gagal kirim WA: ' + e.message, 'error')

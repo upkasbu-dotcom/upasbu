@@ -2053,6 +2053,49 @@ app.get('/api/neraca-excel-file/:key{.+}', async (c) => {
 })
 
 // ===========================================================
+// API: KIRIM SCREENSHOT NERACA KE WA GROUP
+// POST /api/kirim-wa-screenshot  body: { imageBase64, tanggal }
+// Upload PNG ke ImgBB → kirim URL ke Whacenter sendGroup
+// ===========================================================
+app.post('/api/kirim-wa-screenshot', async (c) => {
+  try {
+    const { imageBase64, tanggal } = await c.req.json<{ imageBase64: string, tanggal: string }>()
+    if (!imageBase64) return c.json({ success: false, error: 'imageBase64 wajib' }, 400)
+
+    // 1. Upload ke ImgBB → dapat URL publik gambar
+    const form = new URLSearchParams()
+    form.append('key', 'bb2f97ad9b31b5ae4967eeead61e03de')
+    // Hapus prefix data:image/png;base64, jika ada
+    form.append('image', imageBase64.replace(/^data:image\/\w+;base64,/, ''))
+    form.append('name', 'Neraca_Daya_' + tanggal)
+
+    const imgRes  = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: form })
+    const imgJson = await imgRes.json() as any
+    if (!imgJson.success) return c.json({ success: false, error: 'ImgBB: ' + JSON.stringify(imgJson.error || imgJson) }, 500)
+
+    const imgUrl = imgJson.data?.url || ''
+
+    // 2. Kirim ke WA Group via Whacenter
+    const DEVICE_ID  = '550fd04ee9fc7c4b4e057d0bce6270f3'
+    const GROUP_NAME = 'AMC UID KASELTENG'
+    const tglFmt    = tanggal.split('-').reverse().join('.')  // DD.MM.YYYY
+    const message   = `📊 *Neraca Daya ${tglFmt}*\nRingkasan neraca daya harian seluruh ULD.`
+
+    const waForm = new FormData()
+    waForm.append('device_id', DEVICE_ID)
+    waForm.append('group',     GROUP_NAME)
+    waForm.append('message',   message)
+    waForm.append('file',      imgUrl)
+
+    const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method: 'POST', body: waForm })
+    const waJson = await waRes.json() as { status: boolean, message: string }
+    if (!waJson.status) return c.json({ success: false, error: waJson.message }, 500)
+
+    return c.json({ success: true, imgUrl, message: 'Screenshot berhasil dikirim ke group WA' })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ===========================================================
 // API: KIRIM NERACA DAYA EXCEL KE WA GROUP VIA WHACENTER
 // POST /api/kirim-wa-neraca  body: { fileUrl, filename, tanggal }
 // ===========================================================
@@ -3073,7 +3116,8 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260516k"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="/static/app.js?v=20260531a"></script>
 </body>
 </html>`
   const resp = c.html(html)
