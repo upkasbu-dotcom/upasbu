@@ -2380,9 +2380,59 @@ app.get('/api/download-neraca-excel', async (c) => {
   } catch(e:any) { return c.json({ error: String(e) }, 500) }
 })
 
-// Alias endpoint — URL pendek baru, bebas dari cache lama browser
+// Endpoint /api/xlsx — serve langsung (tanpa redirect) agar browser langsung download
 app.get('/api/xlsx', async (c) => {
-  return c.redirect('/api/download-neraca-excel?' + new URL(c.req.url).searchParams.toString(), 302)
+  try {
+    const db      = c.env.DB
+    const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
+    const tglDate = new Date(tanggal); tglDate.setDate(tglDate.getDate()-1)
+    const tanggalH1 = tglDate.toISOString().split('T')[0]
+    const units = await db.prepare(`SELECT DISTINCT kode_unit, nama_unit FROM mesin_cache ORDER BY nama_unit`).all<{kode_unit:number,nama_unit:string}>()
+    const terpasangRows = await db.prepare(`SELECT kode_unit, SUM(terpasang) as dm_terpasang FROM mesin_cache WHERE terpasang IS NOT NULL GROUP BY kode_unit`).all<{kode_unit:number,dm_terpasang:number}>()
+    const terpasangMap: Record<number,number> = {}
+    for (const r of terpasangRows.results) terpasangMap[r.kode_unit] = Math.round(r.dm_terpasang||0)
+    const monRows = await db.prepare(`
+      SELECT mc.kode_unit,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER)>=18 OR CAST(dm.jam AS INTEGER)<=5) AND dm.status_mesin IN ('Operasi','Standby') THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER)>=6 AND CAST(dm.jam AS INTEGER)<=17) AND dm.status_mesin='Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak_siang,
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER)>=18 OR CAST(dm.jam AS INTEGER)<=5) AND dm.status_mesin='Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak_malam,
+        COUNT(CASE WHEN CAST(dm.jam AS INTEGER)>=18 OR CAST(dm.jam AS INTEGER)<=5 THEN 1 END) as cnt_malam
+      FROM data_monitoring dm JOIN mesin_cache mc ON dm.mesin_id=mc.id_mesin
+      WHERE dm.tanggal=? GROUP BY mc.kode_unit
+    `).bind(tanggal).all<{kode_unit:number,dm_pasok:number,beban_puncak_siang:number,beban_puncak_malam:number,cnt_malam:number}>()
+    const monMap: Record<number,any> = {}
+    for (const r of monRows.results) monMap[r.kode_unit] = {
+      dm_pasok: Math.round(r.dm_pasok||0),
+      beban_puncak_siang: Math.round(r.beban_puncak_siang||0),
+      beban_puncak_malam: Math.round(r.beban_puncak_malam||0),
+      has_malam: (r.cnt_malam||0)>0
+    }
+    const h1Rows = await db.prepare(`
+      SELECT mc.kode_unit,
+        SUM(CASE WHEN dm.status_mesin IN ('Operasi','Standby') AND (CAST(dm.jam AS INTEGER)>=18 OR CAST(dm.jam AS INTEGER)<=5) THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok_h1
+      FROM data_monitoring dm JOIN mesin_cache mc ON dm.mesin_id=mc.id_mesin
+      WHERE dm.tanggal=? GROUP BY mc.kode_unit
+    `).bind(tanggalH1).all<{kode_unit:number,dm_pasok_h1:number}>()
+    const h1Map: Record<number,number> = {}
+    for (const r of h1Rows.results) h1Map[r.kode_unit] = Math.round(r.dm_pasok_h1||0)
+    const rows = units.results.map(u => {
+      const mon = monMap[u.kode_unit]
+      const hasMalam = mon?.has_malam ?? false
+      const dmn = hasMalam ? (mon?.dm_pasok ?? null) : (h1Map[u.kode_unit] ?? null)
+      return { kode_unit: u.kode_unit, nama_unit: u.nama_unit, dm_terpasang: terpasangMap[u.kode_unit] ?? null, dm_pasok: dmn, beban_puncak_siang: mon?.beban_puncak_siang ?? null, beban_puncak_malam: mon?.beban_puncak_malam ?? null }
+    })
+    const xlsxBytes = buildNeracaXlsx(rows, tanggal)
+    const tglP = tanggal.split('-')
+    const fileName = `UID KSKT ${tglP[2]}.${tglP[1]}.${tglP[0]}.xlsx`
+    return new Response(xlsxBytes, {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${fileName}"`,
+        'Content-Length': String(xlsxBytes.length),
+        'Cache-Control': 'no-store'
+      }
+    })
+  } catch(e:any) { return c.json({ error: String(e) }, 500) }
 })
 
 // ===========================================================
@@ -3717,7 +3767,7 @@ app.get('/', (c) => {
           <option value="malam">MALAM</option>
         </select>
       </div>
-      <button id="btn-download-neraca" onclick="(function(btn){var tgl=document.getElementById('data-tanggal').value;if(!tgl){alert('Pilih tanggal terlebih dahulu');return;}btn.disabled=true;btn.textContent='⏳...';window.location.href='/api/xlsx?tanggal='+tgl;setTimeout(function(){btn.disabled=false;btn.textContent='EXCEL'},2000);})(this)" style="display:none;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;flex-shrink:0;" title="Download Excel Neraca Daya">
+      <button id="btn-download-neraca" onclick="(function(btn){var tgl=document.getElementById('data-tanggal').value;if(!tgl){alert('Pilih tanggal terlebih dahulu');return;}btn.disabled=true;btn.textContent='⏳...';window.open('/api/xlsx?tanggal='+tgl,'_blank');setTimeout(function(){btn.disabled=false;btn.textContent='EXCEL'},2000);})(this)" style="display:none;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;flex-shrink:0;" title="Download Excel Neraca Daya">
         EXCEL
       </button>
       <button id="btn-resume-data" onclick="onResumeDataClick()" style="display:none;background:#2563eb;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-weight:700;font-size:0.78rem;cursor:pointer;letter-spacing:0.05em;flex-shrink:0;">RESUME</button>
