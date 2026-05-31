@@ -2101,23 +2101,61 @@ app.post('/api/kirim-wa-screenshot', async (c) => {
 // ===========================================================
 // API: KIRIM NERACA DAYA EXCEL KE WA GROUP VIA WHACENTER
 // POST /api/kirim-wa-neraca  body: { fileUrl, filename, tanggal }
+// Flow: ambil file dari KV → upload binary ke uguu.se → kirim URL + file_name ke Whacenter
+// Ini memastikan WA mendownload file sebagai .xlsx (bukan ZIP)
 // ===========================================================
 app.post('/api/kirim-wa-neraca', async (c) => {
   try {
     const { fileUrl, filename, tanggal } = await c.req.json<{ fileUrl: string, filename: string, tanggal: string }>()
     if (!fileUrl) return c.json({ success: false, error: 'fileUrl wajib diisi' }, 400)
+
     const DEVICE_ID  = '550fd04ee9fc7c4b4e057d0bce6270f3'
     const GROUP_NAME = 'AMC UID KASELTENG'
-    const message    = `📊 *Neraca Daya ${tanggal}*\nData neraca daya harian telah lengkap.\nFile: ${filename}`
+    const fname      = filename || `UID KSKT ${tanggal}.xlsx`
+
+    // 1. Ambil file binary dari URL kita (KV endpoint)
+    const fileRes = await fetch(fileUrl)
+    if (!fileRes.ok) throw new Error('Gagal ambil file dari KV: ' + fileRes.status)
+    const fileBytes = await fileRes.arrayBuffer()
+
+    // 2. Upload binary ke litterbox.catbox.moe → dapat direct URL berekstensi .xlsx
+    //    Contoh result: https://litter.catbox.moe/abc123.xlsx (TTL 24 jam, cukup untuk WA)
+    const boundary = '----WACatbox' + Math.random().toString(36).slice(2)
+    const enc = new TextEncoder()
+    const head = enc.encode(
+      `--${boundary}\r\nContent-Disposition: form-data; name="reqtype"\r\n\r\nfileupload\r\n` +
+      `--${boundary}\r\nContent-Disposition: form-data; name="time"\r\n\r\n24h\r\n` +
+      `--${boundary}\r\nContent-Disposition: form-data; name="fileToUpload"; filename="${fname}"\r\n` +
+      `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n`
+    )
+    const tail = enc.encode(`\r\n--${boundary}--\r\n`)
+    const bodyArr = new Uint8Array(head.byteLength + fileBytes.byteLength + tail.byteLength)
+    bodyArr.set(head, 0)
+    bodyArr.set(new Uint8Array(fileBytes), head.byteLength)
+    bodyArr.set(tail, head.byteLength + fileBytes.byteLength)
+
+    const cbRes = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+      body: bodyArr
+    })
+    const directUrl = (await cbRes.text()).trim()  // returns plain URL e.g. https://litter.catbox.moe/xxx.xlsx
+    if (!directUrl.startsWith('http')) throw new Error('Catbox upload gagal: ' + directUrl)
+
+    // 3. Kirim ke WA Group via Whacenter dengan file_name = nama asli
+    const message = `📊 *Neraca Daya ${tanggal}*\nData neraca daya harian telah lengkap.\nFile: ${fname}`
     const form = new FormData()
     form.append('device_id', DEVICE_ID)
     form.append('group',     GROUP_NAME)
     form.append('message',   message)
-    form.append('file',      fileUrl)
+    form.append('file',      directUrl)
+    form.append('file_name', fname)         // override nama file di WA
+
     const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method: 'POST', body: form })
     const waJson = await waRes.json() as { status: boolean, message: string }
     if (!waJson.status) return c.json({ success: false, error: waJson.message }, 500)
-    return c.json({ success: true, message: 'Berhasil dikirim ke group WA' })
+
+    return c.json({ success: true, message: 'Berhasil dikirim ke group WA', directUrl, fname })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
