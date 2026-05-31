@@ -2188,37 +2188,44 @@ app.get('/api/neraca-auto-kirim', async (c) => {
     const GROUP_NAME     = 'AMC UID KASELTENG'
 
     // ── ANTI-DUPLIKAT: cek last-sent-date di KV ──────────────────────────────
-    // Cari tanggal_lengkap terbaru: 19/19 ULD punya record di jam MALAM (18–23 / 00–05)
-    // Beban puncak malam dianggap "terisi" jika ada minimal 1 record malam per ULD
+    // Cari tanggal_lengkap terbaru: 19/19 ULD punya record SIANG (6–17) DAN MALAM (18–23/00–05)
     const candidates = await db.prepare(`
       SELECT DISTINCT dm.tanggal
       FROM data_monitoring dm
       JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
       WHERE mc.kode_unit IN (${NERACA_ORDER.join(',')})
-        AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
       ORDER BY dm.tanggal DESC
       LIMIT 30
     `).all<{ tanggal: string }>()
 
     let tanggalLengkap: string | null = null
     for (const row of candidates.results) {
-      // Hitung distinct ULD yang punya record MALAM di tanggal ini
-      const unitCheck = await db.prepare(`
-        SELECT COUNT(DISTINCT mc.kode_unit) as cnt
+      // Satu query: hitung distinct ULD yang punya record SIANG dan MALAM sekaligus
+      const check = await db.prepare(`
+        SELECT
+          COUNT(DISTINCT CASE
+            WHEN CAST(dm.jam AS INTEGER) >= 6 AND CAST(dm.jam AS INTEGER) <= 17
+            THEN mc.kode_unit END) as cnt_siang,
+          COUNT(DISTINCT CASE
+            WHEN CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5
+            THEN mc.kode_unit END) as cnt_malam
         FROM data_monitoring dm
         JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
         WHERE dm.tanggal = ?
           AND mc.kode_unit IN (${NERACA_ORDER.join(',')})
-          AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
-      `).bind(row.tanggal).first<{ cnt: number }>()
-      if (unitCheck && unitCheck.cnt >= REQUIRED_COUNT) {
+      `).bind(row.tanggal).first<{ cnt_siang: number, cnt_malam: number }>()
+
+      const siangLengkap = (check?.cnt_siang ?? 0) >= REQUIRED_COUNT  // 19/19 siang
+      const malamLengkap = (check?.cnt_malam ?? 0) >= REQUIRED_COUNT  // 19/19 malam
+
+      if (siangLengkap && malamLengkap) {
         tanggalLengkap = row.tanggal
         break
       }
     }
 
     if (!tanggalLengkap) {
-      return c.json({ success: false, skipped: true, reason: 'Belum ada data beban puncak malam lengkap 19/19 dalam 30 hari terakhir' })
+      return c.json({ success: false, skipped: true, reason: 'Belum ada data beban puncak siang & malam lengkap 19/19 dalam 30 hari terakhir' })
     }
 
     // Baca last-sent-date dari KV
