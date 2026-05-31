@@ -2114,7 +2114,12 @@ app.post('/api/kirim-wa-neraca', async (c) => {
 
     const DEVICE_ID  = '550fd04ee9fc7c4b4e057d0bce6270f3'
     const GROUP_NAME = 'AMC UID KASELTENG'
-    const fname      = filename || `UID KSKT ${tanggal}.xlsx`
+
+    // Konversi tanggal YYYY-MM-DD → DD.MM.YYYY untuk nama file & pesan WA
+    const tglFmt = tanggal.includes('-')
+      ? tanggal.split('-').reverse().join('.')   // "2026-05-31" → "31.05.2026"
+      : tanggal                                   // sudah DD.MM.YYYY, pakai langsung
+    const fname = `UID KSKT ${tglFmt}.xlsx`
 
     // 1. Ambil file binary dari KV endpoint kita
     const fileRes = await fetch(fileUrl)
@@ -2146,7 +2151,7 @@ app.post('/api/kirim-wa-neraca', async (c) => {
 
     // 3. Kirim sebagai PESAN TEKS berisi URL ke WA Group
     //    → user tap URL → browser download file .xlsx langsung (bukan attachment WA)
-    const message = `📊 *Neraca Daya ${tanggal}*\nData neraca daya harian seluruh ULD telah lengkap (19/19).\n\n📥 *Download Excel:*\n${directUrl}\n\n📝 Nama file: ${fname}`
+    const message = `📊 *Neraca Daya ${tglFmt}*\nData neraca daya harian seluruh ULD telah lengkap (19/19).\n\n📥 *Download Excel:*\n${directUrl}\n\n📝 Nama file: ${fname}`
 
     const form = new FormData()
     form.append('device_id', DEVICE_ID)
