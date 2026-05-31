@@ -3900,9 +3900,13 @@ function fmtTgl(tgl: string): string {
 // (record = saldo_awal dan saldo_akhir sudah terisi)
 // ============================================================
 async function notifHopBBM(db: D1Database): Promise<string> {
-  const tanggal = tanggalWITA()
+  // HOP BBM = data H-1 (kemarin). Dicek jam 10:00 WITA hari ini.
+  const hari_ini = tanggalWITA()
+  const d = new Date(hari_ini)
+  d.setDate(d.getDate() - 1)
+  const tanggal = d.toISOString().split('T')[0]  // H-1
 
-  // Ambil unit yang sudah punya data lengkap hari ini
+  // Ambil unit yang sudah punya data lengkap untuk H-1
   const rows = await db.prepare(`
     SELECT kode_unit FROM lap_operasional
     WHERE tanggal = ?
@@ -3914,7 +3918,7 @@ async function notifHopBBM(db: D1Database): Promise<string> {
   const belum = NOTIF_ULD_ORDER.filter(ku => !sudahSet.has(ku))
 
   if (belum.length === 0) {
-    return `✅ *[HOP BBM ${fmtTgl(tanggal)}]*\nSemua 19 ULD sudah input data HOP BBM hari ini. 👍`
+    return `✅ *[HOP BBM ${fmtTgl(tanggal)}]*\nSemua 19 ULD sudah input data HOP BBM. 👍`
   }
 
   const listBelum = belum.map((ku, i) => `  ${i+1}. ${NOTIF_ULD_NAMES[ku] ?? ku}`).join('\n')
@@ -3922,7 +3926,7 @@ async function notifHopBBM(db: D1Database): Promise<string> {
     `⚠️ *[HOP BBM ${fmtTgl(tanggal)}]*\n` +
     `Jam 10:00 WITA — *${belum.length} ULD* belum input data HOP BBM:\n\n` +
     `${listBelum}\n\n` +
-    `_Segera input data sebelum jam 12:00 WITA._`
+    `_Segera input data hari ini._`
   )
 }
 
