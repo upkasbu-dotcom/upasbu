@@ -2021,16 +2021,16 @@ app.post('/api/neraca-excel-upload', async (c) => {
   try {
     const { filename, data } = await c.req.json<{ filename: string, data: string }>()
     if (!filename || !data) return c.json({ success: false, error: 'filename dan data wajib' }, 400)
-    // Key = nama file tanpa spasi (ganti spasi → underscore) + random suffix
-    // Contoh: "UID_KSKT_30.05.2026_a1b2c3.xlsx" → URL bersih tanpa %20
-    // metadata.filename tetap nama asli (dengan spasi) untuk Content-Disposition download
-    const urlSafeName = filename.replace(/\.xlsx$/i, '').replace(/\s+/g, '_')
-    const key = urlSafeName + '_' + Math.random().toString(36).slice(2, 8) + '.xlsx'
-    // Simpan base64 ke KV dengan TTL 1 jam, metadata filename = nama asli (dengan spasi)
-    await c.env.FILES.put(key, data, { expirationTtl: 3600, metadata: { filename } })
+    // Key = nama file asli ("UID KSKT DD.MM.YYYY.xlsx") — tidak pakai random suffix
+    // agar URL yang dikirim ke WA mengandung nama file yang benar
+    // URL encode spasi → %20 saat disusun, tapi key di KV tetap pakai spasi
+    const key = filename  // e.g. "UID KSKT 31.05.2026.xlsx"
+    // Simpan base64 ke KV dengan TTL 24 jam
+    await c.env.FILES.put(key, data, { expirationTtl: 86400, metadata: { filename } })
     const baseUrl = new URL(c.req.url).origin
-    // Key sudah aman (tidak ada spasi) → tidak perlu encodeURIComponent
-    return c.json({ success: true, url: baseUrl + '/api/neraca-excel-file/' + key, key })
+    // Encode spasi di URL → %20 agar URL valid
+    const encodedKey = encodeURIComponent(key)
+    return c.json({ success: true, url: baseUrl + '/api/neraca-excel-file/' + encodedKey, key })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
@@ -2102,10 +2102,10 @@ app.post('/api/kirim-wa-screenshot', async (c) => {
 // API: KIRIM NERACA DAYA EXCEL KE WA GROUP VIA WHACENTER
 // POST /api/kirim-wa-neraca  body: { fileUrl, filename, tanggal }
 // Flow:
-//   1. Ambil binary dari KV
-//   2. Upload ke litterbox.catbox.moe → dapat direct URL .xlsx
-//   3. Kirim pesan teks + URL ke WA Group (bukan attachment)
-//      → user klik URL → langsung download .xlsx yang valid
+//   1. Konversi tanggal → DD.MM.YYYY, bentuk fname = "UID KSKT DD.MM.YYYY.xlsx"
+//   2. Kirim pesan teks berisi fileUrl (URL KV kita) ke WA Group
+//      URL sudah mengandung nama file: .../UID%20KSKT%20DD.MM.YYYY.xlsx
+//      → user tap URL → download langsung file .xlsx yang valid
 // ===========================================================
 app.post('/api/kirim-wa-neraca', async (c) => {
   try {
@@ -2115,43 +2115,15 @@ app.post('/api/kirim-wa-neraca', async (c) => {
     const DEVICE_ID  = '550fd04ee9fc7c4b4e057d0bce6270f3'
     const GROUP_NAME = 'AMC UID KASELTENG'
 
-    // Konversi tanggal YYYY-MM-DD → DD.MM.YYYY untuk nama file & pesan WA
+    // Konversi tanggal YYYY-MM-DD → DD.MM.YYYY
     const tglFmt = tanggal.includes('-')
-      ? tanggal.split('-').reverse().join('.')   // "2026-05-31" → "31.05.2026"
-      : tanggal                                   // sudah DD.MM.YYYY, pakai langsung
+      ? tanggal.split('-').reverse().join('.')
+      : tanggal
     const fname = `UID KSKT ${tglFmt}.xlsx`
 
-    // 1. Ambil file binary dari KV endpoint kita
-    const fileRes = await fetch(fileUrl)
-    if (!fileRes.ok) throw new Error('Gagal ambil file dari KV: ' + fileRes.status)
-    const fileBytes = await fileRes.arrayBuffer()
-
-    // 2. Upload binary ke litterbox.catbox.moe → dapat direct URL .xlsx (TTL 24 jam)
-    const boundary = '----WACatbox' + Math.random().toString(36).slice(2)
-    const enc = new TextEncoder()
-    const head = enc.encode(
-      `--${boundary}\r\nContent-Disposition: form-data; name="reqtype"\r\n\r\nfileupload\r\n` +
-      `--${boundary}\r\nContent-Disposition: form-data; name="time"\r\n\r\n24h\r\n` +
-      `--${boundary}\r\nContent-Disposition: form-data; name="fileToUpload"; filename="${fname}"\r\n` +
-      `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n`
-    )
-    const tail = enc.encode(`\r\n--${boundary}--\r\n`)
-    const bodyArr = new Uint8Array(head.byteLength + fileBytes.byteLength + tail.byteLength)
-    bodyArr.set(head, 0)
-    bodyArr.set(new Uint8Array(fileBytes), head.byteLength)
-    bodyArr.set(tail, head.byteLength + fileBytes.byteLength)
-
-    const cbRes = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
-      method: 'POST',
-      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
-      body: bodyArr
-    })
-    const directUrl = (await cbRes.text()).trim()
-    if (!directUrl.startsWith('http')) throw new Error('Catbox upload gagal: ' + directUrl)
-
-    // 3. Kirim sebagai PESAN TEKS berisi URL ke WA Group
-    //    → user tap URL → browser download file .xlsx langsung (bukan attachment WA)
-    const message = `📊 *Neraca Daya ${tglFmt}*\nData neraca daya harian seluruh ULD telah lengkap (19/19).\n\n📥 *Download Excel:*\n${directUrl}\n\n📝 Nama file: ${fname}`
+    // Kirim pesan teks + URL langsung ke WA Group
+    // fileUrl sudah mengandung nama file: .../UID%20KSKT%20DD.MM.YYYY.xlsx
+    const message = `📊 *Neraca Daya ${tglFmt}*\nData neraca daya harian seluruh ULD telah lengkap (19/19).\n\n📥 *Download Excel:*\n${fileUrl}`
 
     const form = new FormData()
     form.append('device_id', DEVICE_ID)
@@ -2162,7 +2134,7 @@ app.post('/api/kirim-wa-neraca', async (c) => {
     const waJson = await waRes.json() as { status: boolean, message: string }
     if (!waJson.status) return c.json({ success: false, error: waJson.message }, 500)
 
-    return c.json({ success: true, message: 'Berhasil dikirim ke group WA', directUrl, fname })
+    return c.json({ success: true, message: 'Berhasil dikirim ke group WA', directUrl: fileUrl, fname })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
