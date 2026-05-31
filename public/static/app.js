@@ -2897,8 +2897,9 @@ function isNeracaAllFilled(rows) {
   for (var i = 0; i < NERACA_ORDER.length; i++) {
     var r = rowMap[NERACA_ORDER[i]]
     if (!r) return false
-    // Wajib terisi: dm_pasok, beban_puncak_siang, beban_puncak_malam
-    if (r.dm_pasok == null || r.beban_puncak_siang == null || r.beban_puncak_malam == null) return false
+    // Wajib ada record siang DAN malam (has_siang & has_malam dari cnt record, bukan nilai beban)
+    // beban=0 tetap dianggap ada data, yang penting ada record di jam tsb
+    if (!r.has_siang || !r.has_malam) return false
   }
   return true
 }

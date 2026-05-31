@@ -1408,13 +1408,16 @@ app.get('/api/neraca-daya', async (c) => {
         -- BP Siang: hanya dari data SIANG (jam 6-17)
         SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 6 AND CAST(dm.jam AS INTEGER) <= 17) AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak_siang,
         -- BP Malam: hanya dari data MALAM (jam >= 18 atau jam <= 5)
-        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak_malam
+        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak_malam,
+        -- cnt_siang/cnt_malam: jumlah record (tanpa filter status) — untuk deteksi keberadaan data
+        COUNT(CASE WHEN CAST(dm.jam AS INTEGER) >= 6  AND CAST(dm.jam AS INTEGER) <= 17 THEN 1 END) as cnt_siang,
+        COUNT(CASE WHEN CAST(dm.jam AS INTEGER) >= 18 OR  CAST(dm.jam AS INTEGER) <= 5  THEN 1 END) as cnt_malam
       FROM data_monitoring dm
       JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
       WHERE dm.tanggal = ?
       GROUP BY mc.kode_unit
-    `).bind(tanggal).all<{ kode_unit: number, dm_pasok: number, beban_puncak: number, max_dm: number, jumlah_operasi: number, jumlah_standby: number, jumlah_pemeliharaan: number, jumlah_gangguan: number, jumlah_rusak: number, jumlah_mesin: number, jam_operasi: number, beban_puncak_siang: number, beban_puncak_malam: number }>()
-    const monMap: Record<number, { dm_pasok: number, beban_puncak: number, max_dm: number, jumlah_operasi: number, jumlah_standby: number, jumlah_pemeliharaan: number, jumlah_gangguan: number, jumlah_rusak: number, jumlah_mesin: number, jam_operasi: number, beban_puncak_siang: number, beban_puncak_malam: number, has_malam: boolean }> = {}
+    `).bind(tanggal).all<{ kode_unit: number, dm_pasok: number, beban_puncak: number, max_dm: number, jumlah_operasi: number, jumlah_standby: number, jumlah_pemeliharaan: number, jumlah_gangguan: number, jumlah_rusak: number, jumlah_mesin: number, jam_operasi: number, beban_puncak_siang: number, beban_puncak_malam: number, cnt_siang: number, cnt_malam: number }>()
+    const monMap: Record<number, { dm_pasok: number, beban_puncak: number, max_dm: number, jumlah_operasi: number, jumlah_standby: number, jumlah_pemeliharaan: number, jumlah_gangguan: number, jumlah_rusak: number, jumlah_mesin: number, jam_operasi: number, beban_puncak_siang: number, beban_puncak_malam: number, has_siang: boolean, has_malam: boolean }> = {}
     for (const r of monRows.results) {
       monMap[r.kode_unit] = {
         dm_pasok:            Math.round(r.dm_pasok      || 0),
@@ -1429,8 +1432,9 @@ app.get('/api/neraca-daya', async (c) => {
         jam_operasi:         Math.round((r.jam_operasi || 0) * 100) / 100,
         beban_puncak_siang:  Math.round(r.beban_puncak_siang  || 0),
         beban_puncak_malam:  Math.round(r.beban_puncak_malam  || 0),
-        // has_malam: ada data malam jika dm_pasok > 0 (artinya ada mesin Operasi/Standby di jam malam)
-        has_malam:           (r.dm_pasok || 0) > 0
+        // has_siang/has_malam: ada record di jam tsb (tanpa filter status)
+        has_siang:           (r.cnt_siang || 0) > 0,
+        has_malam:           (r.cnt_malam || 0) > 0
       }
     }
 
@@ -1477,7 +1481,9 @@ app.get('/api/neraca-daya', async (c) => {
         beban_puncak:        mon ? mon.beban_puncak        : null,
         max_dm:              maks,
         beban_puncak_siang:  mon ? mon.beban_puncak_siang  : null,
-        beban_puncak_malam:  mon ? mon.beban_puncak_malam  : null
+        beban_puncak_malam:  mon ? mon.beban_puncak_malam  : null,
+        has_siang:           mon ? mon.has_siang : false,
+        has_malam:           mon ? mon.has_malam : false
       }
     })
 
