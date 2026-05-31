@@ -2861,12 +2861,12 @@ function _buildNeracaWorkbook(rows, tanggal) {
       '','','','','','','',''  // I-P: kolom lain — kosong (hadir di XML)
     ]
 
-    // Baris malam — 16 kolom A-P, D kosong sesuai template
+    // Baris malam — 16 kolom A-P, A dan D pakai '' (string kosong) sesuai template
     var row2 = [
-      '',         // A: kosong (nomor hanya di baris siang)
+      '',         // A: '' (string kosong, bukan null — sesuai template)
       km,         // B: ID (kode_mesin)
       'ULD',      // C: Jenis
-      '',         // D: Sistem kosong di baris malam
+      '',         // D: '' (string kosong — sesuai template baris malam)
       'Malam',    // E: Waktu
       dmpMW,      // F: DMP (MW) — nilai data
       '',         // G: Captive Power — kosong
