@@ -2923,25 +2923,26 @@ function _buildNeracaWorkbook(rows, tanggal) {
 }
 
 async function downloadNeracaExcel() {
+  // Dialihkan ke server-side endpoint (format baru 2-sheet sesuai template UID KSKT)
   var tanggal = document.getElementById('data-tanggal').value
   if (!tanggal) { showToast('Pilih tanggal terlebih dahulu', 'info'); return }
 
   var btn = document.getElementById('btn-download-neraca')
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Memuat...' }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳...' }
 
   try {
-    var res  = await fetch('/api/neraca-daya?tanggal=' + tanggal)
-    var json = await res.json()
-    if (!json.success) throw new Error(json.error || 'Gagal memuat data')
-
-    var result = _buildNeracaWorkbook(json.data, tanggal)
-    XLSX.writeFile(result.wb, result.fileName)
-    showToast('File Excel berhasil diunduh!', 'success')
-
+    var a = document.createElement('a')
+    a.href = '/api/download-neraca-excel?tanggal=' + tanggal
+    a.download = ''
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
   } catch(e) {
     showToast('Gagal download: ' + e.message, 'error')
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'EXCEL' }
+    setTimeout(function() {
+      if (btn) { btn.disabled = false; btn.textContent = 'EXCEL' }
+    }, 1500)
   }
 }
 
