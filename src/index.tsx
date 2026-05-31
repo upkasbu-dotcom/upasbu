@@ -1390,6 +1390,13 @@ app.get('/api/neraca-daya', async (c) => {
     const terpasangMap: Record<number, number> = {}
     for (const r of terpasangRows.results) terpasangMap[r.kode_unit] = Math.round(r.dm_terpasang || 0)
 
+    // kode_mesin representatif per unit (MIN kode_mesin yang tidak null)
+    const kodeMesinRows = await db.prepare(
+      `SELECT kode_unit, MIN(CAST(kode_mesin AS INTEGER)) as kode_mesin_int FROM mesin_cache WHERE kode_mesin IS NOT NULL AND kode_mesin != '' GROUP BY kode_unit`
+    ).all<{ kode_unit: number, kode_mesin_int: number }>()
+    const kodeMesinMap: Record<number, number | null> = {}
+    for (const r of kodeMesinRows.results) kodeMesinMap[r.kode_unit] = r.kode_mesin_int || null
+
     // Data monitoring pada tanggal tersebut: dm_pasok = SUM daya_mampu (Operasi+Standby), beban = SUM beban (Operasi), max_dm = MAX daya_mampu
     const monRows = await db.prepare(`
       SELECT
@@ -1468,6 +1475,7 @@ app.get('/api/neraca-daya', async (c) => {
 
       return {
         kode_unit:      u.kode_unit,
+        kode_mesin:     kodeMesinMap[u.kode_unit] ?? null,
         nama_unit:      u.nama_unit,
         dm_terpasang:   terpasangMap[u.kode_unit] ?? null,
         jumlah_operasi:      mon ? mon.jumlah_operasi      : null,

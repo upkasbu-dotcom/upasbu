@@ -2776,12 +2776,13 @@ function switchDataView(view) {
 
 // ── Download Excel Neraca Daya ────────────────────────────────────────────
 // ── Shared: buat workbook neraca (identik untuk download & WA) ───────────────
-// Kolom = identik dengan tabel di layar: NO, ULD, OPS, STB, HAR, GGN, RSK,
-//   JML, POLA, DTP(kW), DMN(kW), MAKS(kW), BP SIANG(kW), CAD SIANG(kW),
-//   BP MALAM(kW), CAD MALAM(kW), N-1(kW), STATUS
+// Format sesuai template UID KSKT: 2 sheet, satuan MW
+// Sheet 1: 2 baris/ULD (siang+malam), Col A=No, B=kode_mesin, F=DTP(MW), H=BP(MW)
+// Sheet 2: 1 baris/ULD, Col A=No, B=kode_mesin, E=DMP(MW), F=BPS(MW), G=BPM(MW)
 function _buildNeracaWorkbook(rows, tanggal) {
   var NERACA_ORDER = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
-  // Sort sesuai NERACA_ORDER
+
+  // Sort sesuai NERACA_ORDER, unit di luar order ditaruh di belakang
   var rowMap = {}
   rows.forEach(function(r) { rowMap[r.kode_unit] = r })
   var sorted = []
@@ -2791,74 +2792,87 @@ function _buildNeracaWorkbook(rows, tanggal) {
   var tglParts = tanggal.split('-')
   var tglLabel = tglParts[2] + '.' + tglParts[1] + '.' + tglParts[0]
 
-  // ── Sheet 1: Neraca Daya — 1 baris per unit ─────────────────────────────
-  var header = ['No','ULD','OPS','STB','HAR','GGN','RSK','JML','POLA',
-    'DTP (kW)','DMN (kW)','MAKS (kW)',
-    'BP SIANG (kW)','CAD SIANG (kW)',
-    'BP MALAM (kW)','CAD MALAM (kW)','N-1 (kW)','STATUS']
-  var wsData = [header]
+  // Helper: konversi kW ke MW (3 desimal), null jika tidak ada data
+  function toMW(kw) {
+    if (kw == null) return null
+    return Math.round(kw) / 1000
+  }
+
+  // ── Sheet 1: Neraca Daya — 2 baris per ULD (siang & malam) ──────────────
+  // Row 1: header kosong (kolom A-P)
+  // Baris data: baris ganjil=siang (A=nomor), baris genap=malam (A=kosong)
+  // Col A: nomor urut (hanya baris siang)
+  // Col B: kode_mesin
+  // Col C,D,E: kosong
+  // Col F: dm_terpasang (MW)
+  // Col G: kosong
+  // Col H: beban_puncak (siang di baris 1, malam di baris 2)
+  // Col I-P: kosong
+  var wsData = [['','','','','','','','','','','','','','','','']]
 
   for (var i = 0; i < sorted.length; i++) {
     var r = sorted[i]
-    var cadMalam = (r.dm_pasok != null && r.beban_puncak_malam != null && r.beban_puncak_malam > 0)
-      ? (r.dm_pasok - r.beban_puncak_malam) : null
-    var cadSiang = (r.dm_pasok != null && r.beban_puncak_siang != null)
-      ? (r.dm_pasok - r.beban_puncak_siang) : null
-    var n1 = (cadMalam != null && r.max_dm != null) ? (cadMalam - r.max_dm) : null
-    var status = '-'
-    if (cadMalam !== null) {
-      if      (cadMalam < 0)                           status = 'DEFISIT'
-      else if (cadMalam >= 0 && cadMalam < (r.max_dm||0)) status = 'SIAGA'
-      else                                             status = 'NORMAL'
-    }
-    var pola = POLA_MAP[r.kode_unit] != null ? POLA_MAP[r.kode_unit] : '-'
-    wsData.push([
-      i + 1,
-      r.nama_unit || '-',
-      r.jumlah_operasi      != null ? r.jumlah_operasi      : '-',
-      r.jumlah_standby      != null ? r.jumlah_standby      : '-',
-      r.jumlah_pemeliharaan != null ? r.jumlah_pemeliharaan : '-',
-      r.jumlah_gangguan     != null ? r.jumlah_gangguan     : '-',
-      r.jumlah_rusak        != null ? r.jumlah_rusak        : '-',
-      r.jumlah_mesin        != null ? r.jumlah_mesin        : '-',
-      pola,
-      r.dm_terpasang        != null ? r.dm_terpasang        : '-',
-      r.dm_pasok            != null ? r.dm_pasok            : '-',
-      r.max_dm              != null ? r.max_dm              : '-',
-      r.beban_puncak_siang  != null ? r.beban_puncak_siang  : '-',
-      cadSiang              != null ? cadSiang              : '-',
-      r.beban_puncak_malam  != null ? r.beban_puncak_malam  : '-',
-      cadMalam              != null ? cadMalam              : '-',
-      n1                    != null ? n1                    : '-',
-      status
-    ])
+    var kmRaw = r.kode_mesin != null ? Number(r.kode_mesin) : null
+    var km    = (kmRaw && !isNaN(kmRaw)) ? kmRaw : null
+    var dtpMW      = toMW(r.dm_terpasang)
+    var bpSiangMW  = toMW(r.beban_puncak_siang)
+    var bpMalamMW  = toMW(r.beban_puncak_malam)
+
+    // Baris siang: A=nomor, B=kode_mesin, F=dm_terpasang(MW), H=BP siang(MW)
+    var row1 = [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+    row1[0] = i + 1
+    row1[1] = km
+    row1[5] = dtpMW
+    row1[7] = bpSiangMW
+
+    // Baris malam: A=kosong, B=kode_mesin, F=dm_terpasang(MW), H=BP malam(MW)
+    var row2 = [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+    row2[1] = km
+    row2[5] = dtpMW
+    row2[7] = bpMalamMW
+
+    wsData.push(row1)
+    wsData.push(row2)
   }
 
   var wb = XLSX.utils.book_new()
   var ws = XLSX.utils.aoa_to_sheet(wsData)
   ws['!cols'] = [
-    {wch:4},{wch:26},{wch:5},{wch:5},{wch:5},{wch:5},{wch:5},
-    {wch:5},{wch:6},{wch:10},{wch:10},{wch:10},
-    {wch:13},{wch:13},{wch:13},{wch:13},{wch:10},{wch:9}
+    {wch:5},{wch:8},{wch:6},{wch:6},{wch:6},
+    {wch:10},{wch:6},{wch:10},
+    {wch:6},{wch:6},{wch:6},{wch:6},
+    {wch:6},{wch:6},{wch:6},{wch:6}
   ]
   XLSX.utils.book_append_sheet(wb, ws, 'Neraca Daya')
 
-  // ── Sheet 2: Kesiapan Pembangkit ─────────────────────────────────────────
-  var ksHeader = ['No','ULD','POLA','DTP (kW)','DMN (kW)','MAKS (kW)']
-  var ksData   = [ksHeader]
+  // ── Sheet 2: Kesiapan Pembangkit — 1 baris per ULD ────────────────────────
+  // Row 1: header kosong (kolom A-G)
+  // Col A: nomor urut
+  // Col B: kode_mesin
+  // Col C,D: kosong
+  // Col E: dm_pasok (MW) — total daya mampu ULD
+  // Col F: BP Siang (MW)
+  // Col G: BP Malam (MW)
+  var ksData = [['','','','','','','']]
   for (var ki = 0; ki < sorted.length; ki++) {
-    var kr = sorted[ki]
+    var kr   = sorted[ki]
+    var kmr  = kr.kode_mesin != null ? Number(kr.kode_mesin) : null
+    var kmOk = (kmr && !isNaN(kmr)) ? kmr : null
+    var dpMW  = toMW(kr.dm_pasok != null ? kr.dm_pasok : kr.dm_terpasang)
+    var bpsMW = toMW(kr.beban_puncak_siang)
+    var bpmMW = toMW(kr.beban_puncak_malam)
     ksData.push([
-      ki + 1,
-      kr.nama_unit || '-',
-      POLA_MAP[kr.kode_unit] != null ? POLA_MAP[kr.kode_unit] : '-',
-      kr.dm_terpasang != null ? kr.dm_terpasang : '-',
-      kr.dm_pasok     != null ? kr.dm_pasok     : '-',
-      kr.max_dm       != null ? kr.max_dm       : '-'
+      ki + 1,   // A: nomor
+      kmOk,     // B: kode_mesin
+      null,     // C: kosong
+      null,     // D: kosong
+      dpMW,     // E: dm_pasok (MW)
+      bpsMW,    // F: BP Siang (MW)
+      bpmMW     // G: BP Malam (MW)
     ])
   }
   var wsKs = XLSX.utils.aoa_to_sheet(ksData)
-  wsKs['!cols'] = [{wch:4},{wch:26},{wch:6},{wch:10},{wch:10},{wch:10}]
+  wsKs['!cols'] = [{wch:5},{wch:8},{wch:6},{wch:6},{wch:10},{wch:10},{wch:10}]
   XLSX.utils.book_append_sheet(wb, wsKs, 'Kesiapan Pembangkit')
 
   return { wb: wb, fileName: 'UID KSKT ' + tglLabel + '.xlsx' }
