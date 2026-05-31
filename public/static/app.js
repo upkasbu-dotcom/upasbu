@@ -3048,39 +3048,44 @@ async function captureAndKirimScreenshot(tanggal) {
   totalRow += '<td style="' + tt + '">—</td>'
   totalRow += '</tr>'
 
-  // ── Rakit HTML ───────────────────────────────────────────────────────────────
-  var html = ''
-  html += '<div style="font-family:Arial,sans-serif;background:#f8fafc;padding:14px 16px 16px;display:inline-block;">'
+  // ── Rakit HTML — pure table layout (tanpa flexbox/opacity agar html2canvas akurat) ──
+  // Title row pakai <table> juga agar sizing konsisten
+  var titleTable = '<table style="border-collapse:collapse;width:' + totalW + 'px;background:#1a3352;">'
+  titleTable += '<tr>'
+  titleTable += '<td style="padding:10px 14px;color:#fff;font-family:Arial,sans-serif;font-size:14px;font-weight:700;">NERACA DAYA HARIAN &mdash; ' + tglLabel + '</td>'
+  titleTable += '<td style="padding:10px 14px;color:#c8d9ec;font-family:Arial,sans-serif;font-size:11px;text-align:right;white-space:nowrap;">AMC UID KASELTENG | 19 ULD</td>'
+  titleTable += '</tr></table>'
 
-  // Title bar
-  html += '<div style="background:#1a3352;color:#fff;padding:10px 16px;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;align-items:center;">'
-  html += '<span style="font-size:14px;font-weight:700;letter-spacing:.3px;">📊 NERACA DAYA HARIAN &mdash; ' + tglLabel + '</span>'
-  html += '<span style="font-size:11px;opacity:.75;">AMC UID KASELTENG &nbsp;|&nbsp; 19 ULD</span>'
-  html += '</div>'
+  var dataTable = '<table style="border-collapse:collapse;width:' + totalW + 'px;background:#fff;">'
+  dataTable += '<thead>' + headerRow + '</thead>'
+  dataTable += '<tbody>' + dataRows + totalRow + '</tbody>'
+  dataTable += '</table>'
 
-  // Tabel
-  html += '<table style="border-collapse:collapse;width:' + totalW + 'px;background:#fff;">'
-  html += '<thead>' + headerRow + '</thead>'
-  html += '<tbody>' + dataRows + totalRow + '</tbody>'
-  html += '</table>'
+  var footerDiv = '<div style="font-family:Arial,sans-serif;font-size:10px;color:#6b7280;text-align:right;padding:4px 2px 2px;">'
+  footerDiv += 'Generated ' + new Date().toLocaleString('id-ID',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})
+  footerDiv += '</div>'
 
-  // Footer
-  html += '<div style="text-align:right;font-size:10px;color:#6b7280;margin-top:6px;padding-right:2px;">'
-  html += 'Generated ' + new Date().toLocaleString('id-ID',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})
+  var html = '<div style="font-family:Arial,sans-serif;background:#f1f5f9;padding:12px;">'
+  html += '<div style="display:inline-block;background:#f1f5f9;">'  // wrapper fixed width
+  html += titleTable + dataTable + footerDiv
   html += '</div></div>'
 
   // Render ke div tersembunyi → html2canvas
   var wrapper = document.createElement('div')
-  wrapper.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;'
+  wrapper.style.cssText = 'position:fixed;left:-9999px;top:-9999px;'
   wrapper.innerHTML = html
   document.body.appendChild(wrapper)
 
   try {
-    var canvas = await html2canvas(wrapper.firstElementChild, {
+    // Target elemen dalam (div kedua) agar sizing presisi
+    var target = wrapper.querySelector('div > div')
+    var canvas = await html2canvas(target, {
       scale: 2,
       useCORS: true,
-      backgroundColor: '#f8fafc',
-      logging: false
+      allowTaint: true,
+      backgroundColor: '#f1f5f9',
+      logging: false,
+      removeContainer: false
     })
     var pngBase64 = canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '')
 
