@@ -4,6 +4,7 @@ import { serveStatic } from 'hono/cloudflare-workers'
 
 type Bindings = {
   DB: D1Database
+  FILES: KVNamespace
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -2013,6 +2014,64 @@ app.delete('/api/tad/:id', async (c) => {
 })
 
 // ===========================================================
+// API: UPLOAD EXCEL KE KV (TTL 1 jam) → return URL publik
+// POST /api/neraca-excel-upload  body: { filename, data (base64) }
+// ===========================================================
+app.post('/api/neraca-excel-upload', async (c) => {
+  try {
+    const { filename, data } = await c.req.json<{ filename: string, data: string }>()
+    if (!filename || !data) return c.json({ success: false, error: 'filename dan data wajib' }, 400)
+    // Key unik per file
+    const key = 'excel_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+    // Simpan base64 ke KV dengan TTL 1 jam
+    await c.env.FILES.put(key, data, { expirationTtl: 3600, metadata: { filename } })
+    const baseUrl = new URL(c.req.url).origin
+    return c.json({ success: true, url: baseUrl + '/api/neraca-excel-file/' + key, key })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// GET /api/neraca-excel-file/:key → serve file Excel dari KV
+app.get('/api/neraca-excel-file/:key', async (c) => {
+  try {
+    const key = c.req.param('key')
+    const { value, metadata } = await c.env.FILES.getWithMetadata<{ filename: string }>(key)
+    if (!value) return c.json({ error: 'File tidak ditemukan atau sudah kedaluwarsa' }, 404)
+    const filename = metadata?.filename || 'neraca.xlsx'
+    const buf = Uint8Array.from(atob(value), ch => ch.charCodeAt(0))
+    return new Response(buf, {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'no-store'
+      }
+    })
+  } catch (e: any) { return c.json({ error: e.message }, 500) }
+})
+
+// ===========================================================
+// API: KIRIM NERACA DAYA EXCEL KE WA GROUP VIA WHACENTER
+// POST /api/kirim-wa-neraca  body: { fileUrl, filename, tanggal }
+// ===========================================================
+app.post('/api/kirim-wa-neraca', async (c) => {
+  try {
+    const { fileUrl, filename, tanggal } = await c.req.json<{ fileUrl: string, filename: string, tanggal: string }>()
+    if (!fileUrl) return c.json({ success: false, error: 'fileUrl wajib diisi' }, 400)
+    const DEVICE_ID  = '550fd04ee9fc7c4b4e057d0bce6270f3'
+    const GROUP_NAME = 'AMC UID KASELTENG'
+    const message    = `📊 *Neraca Daya ${tanggal}*\nData neraca daya harian telah lengkap.\nFile: ${filename}`
+    const form = new FormData()
+    form.append('device_id', DEVICE_ID)
+    form.append('group',     GROUP_NAME)
+    form.append('message',   message)
+    form.append('file',      fileUrl)
+    const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method: 'POST', body: form })
+    const waJson = await waRes.json() as { status: boolean, message: string }
+    if (!waJson.status) return c.json({ success: false, error: waJson.message }, 500)
+    return c.json({ success: true, message: 'Berhasil dikirim ke group WA' })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ===========================================================
 // API: REKAP LAPORAN (summary per periode & unit)
 // ===========================================================
 app.get('/api/laporan', async (c) => {
@@ -2507,9 +2566,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260516i" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260516i" as="script"/>
-  <link href="/static/style.css?v=20260516i" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260516j" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260516j" as="script"/>
+  <link href="/static/style.css?v=20260516j" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -3010,7 +3069,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260516i"></script>
+<script src="/static/app.js?v=20260516j"></script>
 </body>
 </html>`
   const resp = c.html(html)

@@ -2953,6 +2953,122 @@ async function downloadNeracaExcel() {
   }
 }
 
+// ── Deteksi semua unit neraca daya sudah terisi ──────────────────────────────
+// rows = array dari /api/neraca-daya, NERACA_ORDER = 19 unit
+function isNeracaAllFilled(rows) {
+  var NERACA_ORDER = [399, 390, 382, 391, 376, 373, 395, 375, 366, 910, 911, 385, 913, 915, 920, 917, 918, 919, 372]
+  if (!rows || rows.length < NERACA_ORDER.length) return false
+  var rowMap = {}
+  rows.forEach(function(r) { rowMap[r.kode_unit] = r })
+  for (var i = 0; i < NERACA_ORDER.length; i++) {
+    var r = rowMap[NERACA_ORDER[i]]
+    if (!r) return false
+    // Wajib terisi: dm_pasok, beban_puncak_siang, beban_puncak_malam
+    if (r.dm_pasok == null || r.beban_puncak_siang == null || r.beban_puncak_malam == null) return false
+  }
+  return true
+}
+
+// ── Generate Excel ArrayBuffer (reuse logika downloadNeracaExcel) ────────────
+function buildNeracaExcelBuffer(rows, tanggal) {
+  var NERACA_ORDER = [399, 390, 382, 391, 376, 373, 395, 375, 366, 910, 911, 385, 913, 915, 920, 917, 918, 919, 372]
+  var NERACA_ID_MAP = {
+    399: 560, 390: 561, 382: 562, 391: 563, 376: 564,
+    373: 566, 395: 569, 375: 571, 366: 800, 910: 804,
+    911: 801, 385: 805, 913: 811, 915: 322, 920: 324,
+    917: 338, 918: 1202, 919: 1203, 372: 2760
+  }
+  var rowMap = {}
+  rows.forEach(function(r) { rowMap[r.kode_unit] = r })
+  var sortedRows = []
+  NERACA_ORDER.forEach(function(ku) { if (rowMap[ku]) sortedRows.push(rowMap[ku]) })
+  rows.forEach(function(r) { if (NERACA_ORDER.indexOf(r.kode_unit) === -1) sortedRows.push(r) })
+
+  var tglParts = tanggal.split('-')
+  var tglLabel = tglParts[2] + '.' + tglParts[1] + '.' + tglParts[0]
+
+  var header = ['No','ID','Jenis','Sistem','Waktu','DMP (MW)','Captive Power (MW)','Beban Puncak (MW)','Cadangan (MW)','Kirim (MW)','ID Sistem Penerima','Terima (MW)','ID Sistem Pengirim','Status','Unit Tidak Siap','Keterangan']
+  var wsData = [header]
+  for (var i = 0; i < sortedRows.length; i++) {
+    var r = sortedRows[i]
+    var id    = NERACA_ID_MAP[r.kode_unit] || r.kode_unit
+    var sis   = (r.nama_unit || '-').replace(/^ULD /i, 'PLTD ')
+    var dmp   = r.dm_pasok          != null ? Math.round(r.dm_pasok / 1000 * 1000) / 1000 : null
+    var bpS   = r.beban_puncak_siang != null ? Math.round(r.beban_puncak_siang / 1000 * 1000) / 1000 : null
+    var bpM   = r.beban_puncak_malam != null ? Math.round(r.beban_puncak_malam / 1000 * 1000) / 1000 : null
+    wsData.push([i+1, id, 'ULD', sis, 'Siang', dmp||'', '', bpS||'', '', '', '', '', '', '', '', ''])
+    wsData.push(['',  id, 'ULD', '',  'Malam', dmp||'', '', bpM||'', '', '', '', '', '', '', '', ''])
+  }
+  var wb = XLSX.utils.book_new()
+  var ws = XLSX.utils.aoa_to_sheet(wsData)
+  var merges = []
+  for (var mi = 0; mi < sortedRows.length; mi++) {
+    merges.push({ s: { r: 1 + mi*2, c: 3 }, e: { r: 2 + mi*2, c: 3 } })
+  }
+  ws['!merges'] = merges
+  ws['!cols'] = [{wch:4},{wch:6},{wch:6},{wch:24},{wch:7},{wch:10},{wch:16},{wch:16},{wch:13},{wch:10},{wch:18},{wch:11},{wch:18},{wch:10},{wch:18},{wch:20}]
+  XLSX.utils.book_append_sheet(wb, ws, 'Neraca Daya')
+
+  // Sheet Kesiapan Pembangkit
+  var ksHeader = ['No','ID','Jenis','Sistem','Total Daya Terpasang (MW)','DMN (MW)','Unit Terbesar (MW)']
+  var ksData   = [ksHeader]
+  for (var ki = 0; ki < sortedRows.length; ki++) {
+    var kr = sortedRows[ki]
+    ksData.push([ki+1, NERACA_ID_MAP[kr.kode_unit]||kr.kode_unit, 'ULD',
+      (kr.nama_unit||'-').replace(/^ULD /i,'PLTD '),
+      kr.dm_terpasang != null ? Math.round(kr.dm_terpasang/1000*1000)/1000 : '',
+      kr.dm_pasok     != null ? Math.round(kr.dm_pasok/1000*1000)/1000     : '',
+      kr.max_dm       != null ? Math.round(kr.max_dm/1000*1000)/1000       : ''
+    ])
+  }
+  var wsKs = XLSX.utils.aoa_to_sheet(ksData)
+  wsKs['!cols'] = [{wch:4},{wch:6},{wch:6},{wch:24},{wch:24},{wch:12},{wch:18}]
+  XLSX.utils.book_append_sheet(wb, wsKs, 'Kesiapan Pembangkit')
+
+  return { buffer: XLSX.write(wb, { bookType: 'xlsx', type: 'base64' }), fileName: 'UID KSKT ' + tglLabel + '.xlsx' }
+}
+
+// ── Auto kirim Excel Neraca ke WA Group saat semua data terisi ───────────────
+var _neracaWaSent = {}  // { 'YYYY-MM-DD': true } agar tidak kirim dua kali per tanggal
+
+async function autoKirimNeracaWA(rows, tanggal) {
+  if (_neracaWaSent[tanggal]) return  // sudah dikirim hari ini
+  if (!isNeracaAllFilled(rows)) return
+
+  try {
+    // Tandai dulu agar tidak double-kirim
+    _neracaWaSent[tanggal] = true
+
+    showToast('Semua data neraca terisi — mengirim ke WA Group...', 'info')
+
+    // 1. Generate Excel → base64
+    var result = buildNeracaExcelBuffer(rows, tanggal)
+
+    // 2. Upload ke server → dapat URL publik
+    var upRes  = await fetch('/api/neraca-excel-upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: result.fileName, data: result.buffer })
+    })
+    var upJson = await upRes.json()
+    if (!upJson.success) throw new Error('Upload gagal: ' + upJson.error)
+
+    // 3. Kirim ke WA Group via Whacenter
+    var waRes  = await fetch('/api/kirim-wa-neraca', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileUrl: upJson.url, filename: result.fileName, tanggal: tanggal })
+    })
+    var waJson = await waRes.json()
+    if (!waJson.success) throw new Error(waJson.error)
+
+    showToast('✅ Neraca daya berhasil dikirim ke group WA!', 'success')
+  } catch(e) {
+    _neracaWaSent[tanggal] = false  // reset agar bisa retry
+    showToast('Gagal kirim WA: ' + e.message, 'error')
+  }
+}
+
 function onDataTanggalChange() {
   if (currentDataView === 'neraca-daya') {
     loadNeracaDayaTab()
@@ -3161,6 +3277,10 @@ async function loadNeracaDayaTab() {
 
     document.getElementById('neraca-table-body').innerHTML = tbody
     document.getElementById('info-data-record').textContent = rows.length + ' unit · ' + bulan + ' (' + daysInMonth + ' hari)'
+
+    // Auto kirim Excel ke WA Group jika semua data terisi
+    autoKirimNeracaWA(rows, tanggalDetail)
+
     // Adjust left kolom ULD ikut lebar sebenar kolom NO
     requestAnimationFrame(function() {
       var tbl = document.getElementById('neraca-table')

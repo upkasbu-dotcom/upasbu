@@ -13,5 +13,10 @@
       "database_id": "cb755a53-9a4c-4b5d-8976-88608d54c81c"
     }
   ],
-
+  "kv_namespaces": [
+    {
+      "binding": "FILES",
+      "id": "eeb599303e7b44f7abd9428f9bc61b2c"
+    }
+  ]
 }
