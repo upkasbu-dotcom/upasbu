@@ -3297,7 +3297,7 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
   <link rel="preload" href="/static/style.css?v=20260516k" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260516k" as="script"/>
+  <link rel="preload" href="/static/app.js?v=20260531b" as="script"/>
   <link href="/static/style.css?v=20260516k" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
