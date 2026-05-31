@@ -4162,7 +4162,10 @@ app.get('/', (c) => {
 </body>
 </html>`
   const resp = c.html(html)
-  resp.headers.set('Cache-Control', 'no-cache, must-revalidate')
+  resp.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0')
+  resp.headers.set('Pragma', 'no-cache')
+  resp.headers.set('Expires', '0')
+  resp.headers.set('Surrogate-Control', 'no-store')
   return resp
 })
 
