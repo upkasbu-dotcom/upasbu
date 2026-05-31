@@ -2544,19 +2544,18 @@ app.get('/api/neraca-auto-kirim', async (c) => {
     const baseUrl2  = new URL(c.req.url).origin
     const imgUrl    = `${baseUrl2}/api/neraca-png/${pngKey}`
 
-    // ── 5. Kirim ke WA (nomor pribadi untuk TEST) ────────────────────────────
-    // Whacenter /api/send: pakai FormData + field "file" (BUKAN JSON + file_url)
+    // ── 5. Kirim screenshot PNG ke WA Grup ───────────────────────────────────
     const message = `📊 *Neraca Daya ${tglFmt}*\nRingkasan neraca daya harian seluruh ULD.`
     const waForm  = new FormData()
     waForm.append('device_id', DEVICE_ID)
-    waForm.append('number',    '085388709607')   // TEST: kirim ke nomor pribadi dulu
+    waForm.append('group',     GROUP_NAME)        // Kirim ke grup AMC UID KASELTENG
     waForm.append('message',   message)
     waForm.append('file',      imgUrl)            // URL PNG publik dari KV
-    const waRes  = await fetch('https://app.whacenter.com/api/send', { method:'POST', body:waForm })
+    const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waForm })
     const waJson = await waRes.json() as { status:boolean, message:string }
     if (!waJson.status) return c.json({ success:false, error:waJson.message }, 500)
 
-    return c.json({ success:true, imgUrl, message:'Screenshot dikirim ke WA (TEST nomor pribadi)' })
+    return c.json({ success:true, imgUrl, message:'Screenshot dikirim ke grup WA AMC UID KASELTENG' })
   } catch (e:any) { return c.json({ success:false, error:e.message }, 500) }
 })
 
