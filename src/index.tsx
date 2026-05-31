@@ -2021,19 +2021,22 @@ app.post('/api/neraca-excel-upload', async (c) => {
   try {
     const { filename, data } = await c.req.json<{ filename: string, data: string }>()
     if (!filename || !data) return c.json({ success: false, error: 'filename dan data wajib' }, 400)
-    // Key unik per file
-    const key = 'excel_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+    // Key = nama file asli + random suffix agar URL berakhiran .xlsx
+    // Contoh: "UID KSKT 30.05.2026_a1b2c3.xlsx"
+    const safeName = filename.replace(/\.xlsx$/i, '')
+    const key = safeName + '_' + Math.random().toString(36).slice(2, 8) + '.xlsx'
     // Simpan base64 ke KV dengan TTL 1 jam
     await c.env.FILES.put(key, data, { expirationTtl: 3600, metadata: { filename } })
     const baseUrl = new URL(c.req.url).origin
-    return c.json({ success: true, url: baseUrl + '/api/neraca-excel-file/' + key, key })
+    const encodedKey = encodeURIComponent(key)
+    return c.json({ success: true, url: baseUrl + '/api/neraca-excel-file/' + encodedKey, key })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
 // GET /api/neraca-excel-file/:key → serve file Excel dari KV
-app.get('/api/neraca-excel-file/:key', async (c) => {
+app.get('/api/neraca-excel-file/:key{.+}', async (c) => {
   try {
-    const key = c.req.param('key')
+    const key = decodeURIComponent(c.req.param('key'))
     const { value, metadata } = await c.env.FILES.getWithMetadata<{ filename: string }>(key)
     if (!value) return c.json({ error: 'File tidak ditemukan atau sudah kedaluwarsa' }, 404)
     const filename = metadata?.filename || 'neraca.xlsx'
@@ -2566,9 +2569,9 @@ app.get('/', (c) => {
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260516j" as="style"/>
-  <link rel="preload" href="/static/app.js?v=20260516j" as="script"/>
-  <link href="/static/style.css?v=20260516j" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260516k" as="style"/>
+  <link rel="preload" href="/static/app.js?v=20260516k" as="script"/>
+  <link href="/static/style.css?v=20260516k" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -3069,7 +3072,7 @@ app.get('/', (c) => {
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="/static/app.js?v=20260516j"></script>
+<script src="/static/app.js?v=20260516k"></script>
 </body>
 </html>`
   const resp = c.html(html)
