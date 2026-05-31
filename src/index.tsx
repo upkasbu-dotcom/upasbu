@@ -2021,15 +2021,16 @@ app.post('/api/neraca-excel-upload', async (c) => {
   try {
     const { filename, data } = await c.req.json<{ filename: string, data: string }>()
     if (!filename || !data) return c.json({ success: false, error: 'filename dan data wajib' }, 400)
-    // Key = nama file asli + random suffix agar URL berakhiran .xlsx
-    // Contoh: "UID KSKT 30.05.2026_a1b2c3.xlsx"
-    const safeName = filename.replace(/\.xlsx$/i, '')
-    const key = safeName + '_' + Math.random().toString(36).slice(2, 8) + '.xlsx'
-    // Simpan base64 ke KV dengan TTL 1 jam
+    // Key = nama file tanpa spasi (ganti spasi → underscore) + random suffix
+    // Contoh: "UID_KSKT_30.05.2026_a1b2c3.xlsx" → URL bersih tanpa %20
+    // metadata.filename tetap nama asli (dengan spasi) untuk Content-Disposition download
+    const urlSafeName = filename.replace(/\.xlsx$/i, '').replace(/\s+/g, '_')
+    const key = urlSafeName + '_' + Math.random().toString(36).slice(2, 8) + '.xlsx'
+    // Simpan base64 ke KV dengan TTL 1 jam, metadata filename = nama asli (dengan spasi)
     await c.env.FILES.put(key, data, { expirationTtl: 3600, metadata: { filename } })
     const baseUrl = new URL(c.req.url).origin
-    const encodedKey = encodeURIComponent(key)
-    return c.json({ success: true, url: baseUrl + '/api/neraca-excel-file/' + encodedKey, key })
+    // Key sudah aman (tidak ada spasi) → tidak perlu encodeURIComponent
+    return c.json({ success: true, url: baseUrl + '/api/neraca-excel-file/' + key, key })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
