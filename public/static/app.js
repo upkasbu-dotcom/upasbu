@@ -3104,35 +3104,29 @@ async function captureAndKirimScreenshot(tanggal) {
 }
 
 // ── Auto kirim Screenshot + Excel Neraca ke WA Group saat semua data terisi ──
-var _neracaWaSent = {}  // { 'YYYY-MM-DD': true } agar tidak kirim dua kali per tanggal
+// Anti-duplikat: server (KV neraca-last-sent-date) + client (_neracaWaSentLocal)
+var _neracaWaSentLocal = {}  // guard in-memory agar tidak trigger 2x dalam satu sesi
 
 async function autoKirimNeracaWA(rows, tanggal) {
   if (!isNeracaAllFilled(rows)) return
 
-  // ── Ambil tanggal terakhir yang benar-benar lengkap 19/19 dari DB ──────────
-  var tanggalLengkap = tanggal  // fallback ke picker jika API gagal
+  // ── Upload Excel dulu ke KV (agar tersedia saat server kirim WA) ──────────
+  // Ambil tanggal lengkap dari DB untuk nama file yang benar
+  var tanggalLengkap = tanggal
   try {
     var lcRes  = await fetch('/api/neraca-last-complete-date')
     var lcJson = await lcRes.json()
-    if (lcJson.success && lcJson.tanggal) {
-      tanggalLengkap = lcJson.tanggal  // format YYYY-MM-DD dari DB
-    }
-  } catch(e) {
-    // Tetap pakai tanggal picker jika endpoint gagal
-  }
+    if (lcJson.success && lcJson.tanggal) tanggalLengkap = lcJson.tanggal
+  } catch(e) { /* pakai tanggal picker */ }
 
-  if (_neracaWaSent[tanggalLengkap]) return  // sudah dikirim untuk tanggal ini
+  // Guard in-memory: jangan trigger dua kali untuk tanggal yang sama dalam satu sesi
+  if (_neracaWaSentLocal[tanggalLengkap]) return
+  _neracaWaSentLocal[tanggalLengkap] = true
 
   try {
-    _neracaWaSent[tanggalLengkap] = true
-    showToast('Semua data neraca terisi — mengirim ke WA Group...', 'info')
+    showToast('Semua data neraca terisi — memproses pengiriman WA...', 'info')
 
-    // 1. Kirim screenshot server-side (tanpa html2canvas — pure SVG di server)
-    var ssRes2 = await fetch('/api/neraca-auto-kirim?tanggal=' + tanggalLengkap)
-    var ssJson2 = await ssRes2.json()
-    if (!ssJson2.success) throw new Error('Screenshot gagal: ' + (ssJson2.error || ''))
-
-    // 2. Generate Excel → upload → kirim file xlsx
+    // 1. Upload Excel ke KV (agar server bisa sertakan URL Excel saat kirim WA)
     var result = buildNeracaExcelBuffer(rows, tanggalLengkap)
     var upRes  = await fetch('/api/neraca-excel-upload', {
       method: 'POST',
@@ -3140,19 +3134,32 @@ async function autoKirimNeracaWA(rows, tanggal) {
       body: JSON.stringify({ filename: result.fileName, data: result.buffer })
     })
     var upJson = await upRes.json()
-    if (!upJson.success) throw new Error('Upload Excel gagal: ' + upJson.error)
+    if (!upJson.success) {
+      // Excel upload gagal — lanjut kirim screenshot saja (non-fatal)
+      console.warn('Upload Excel gagal:', upJson.error)
+    }
 
-    var waRes  = await fetch('/api/kirim-wa-neraca', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileUrl: upJson.url, filename: result.fileName, tanggal: tanggalLengkap })
-    })
-    var waJson = await waRes.json()
-    if (!waJson.success) throw new Error(waJson.error)
+    // 2. Panggil satu endpoint → server cek anti-duplikat KV, generate PNG,
+    //    kirim screenshot + URL Excel ke grup WA, update last-sent-date di KV
+    var autoRes  = await fetch('/api/neraca-auto-kirim')
+    var autoJson = await autoRes.json()
 
-    showToast('✅ Screenshot + Excel neraca dikirim ke group WA! (' + tanggalLengkap + ')', 'success')
+    if (autoJson.skipped) {
+      // Server sudah punya data lebih baru atau sudah kirim → tidak ada yang perlu dilakukan
+      // Reset guard lokal agar trigger berikutnya bisa jalan
+      _neracaWaSentLocal[tanggalLengkap] = false
+      return
+    }
+    if (!autoJson.success) throw new Error(autoJson.error || 'Auto-kirim gagal')
+
+    var tglFmt = tanggalLengkap.split('-').reverse().join('.')
+    var msg = '✅ Neraca ' + tglFmt + ' dikirim ke grup WA'
+    if (autoJson.excel_sent) msg += ' (Screenshot + Excel)'
+    else msg += ' (Screenshot)'
+    showToast(msg, 'success')
+
   } catch(e) {
-    _neracaWaSent[tanggalLengkap] = false  // reset agar bisa retry
+    _neracaWaSentLocal[tanggalLengkap] = false  // reset agar bisa retry jika error
     showToast('Gagal kirim WA: ' + e.message, 'error')
   }
 }

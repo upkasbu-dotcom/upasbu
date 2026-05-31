@@ -2144,26 +2144,106 @@ app.get('/api/neraca-png/:key{.+}', async (c) => {
 })
 
 // ===========================================================
+// API: ADMIN — baca / set neraca-last-sent-date di KV
+// GET  /api/neraca-last-sent-date          → baca tanggal terakhir kirim
+// POST /api/neraca-last-sent-date          body: { tanggal: "YYYY-MM-DD" }  → set manual
+// ===========================================================
+app.get('/api/neraca-last-sent-date', async (c) => {
+  try {
+    const val = await c.env.FILES.get('neraca-last-sent-date')
+    return c.json({ success: true, tanggal: val || null })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+app.post('/api/neraca-last-sent-date', async (c) => {
+  try {
+    const { tanggal } = await c.req.json<{ tanggal: string }>()
+    if (!tanggal || !/^\d{4}-\d{2}-\d{2}$/.test(tanggal))
+      return c.json({ success: false, error: 'tanggal wajib format YYYY-MM-DD' }, 400)
+    await c.env.FILES.put('neraca-last-sent-date', tanggal)
+    return c.json({ success: true, tanggal, message: `neraca-last-sent-date di-set ke ${tanggal}` })
+  } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+// ===========================================================
 // API: NERACA AUTO-KIRIM SERVER-SIDE (tanpa html2canvas)
 // GET  /api/neraca-auto-kirim?tanggal=YYYY-MM-DD
-// Flow: fetch data DB → generate PNG (satori+resvg) → ImgBB → WA
+// Flow:
+//   1. Cek neraca-last-sent-date di KV
+//   2. Cari tanggal_lengkap terbaru (19/19) dari DB
+//   3. Jika tanggal_lengkap <= last_sent_date → skip (sudah pernah kirim)
+//   4. Generate PNG server-side → simpan di KV → kirim screenshot ke grup WA
+//   5. Ambil Excel dari KV (jika sudah diupload frontend) atau skip jika belum ada
+//      Jika ada → kirim URL Excel ke grup WA juga
+//   6. Update neraca-last-sent-date = tanggal_lengkap di KV
 // ===========================================================
 app.get('/api/neraca-auto-kirim', async (c) => {
   try {
     const db     = c.env.DB
     const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
 
-    const NERACA_ORDER = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
-    const DEVICE_ID    = '550fd04ee9fc7c4b4e057d0bce6270f3'
-    const GROUP_NAME   = 'AMC UID KASELTENG'
-    const IMGBB_KEY    = 'bb2f97ad9b31b5ae4967eeead61e03de'
-    const tglFmt       = tanggal.split('-').reverse().join('.')
+    const NERACA_ORDER   = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
+    const REQUIRED_COUNT = NERACA_ORDER.length  // 19
+    const DEVICE_ID      = '550fd04ee9fc7c4b4e057d0bce6270f3'
+    const GROUP_NAME     = 'AMC UID KASELTENG'
+
+    // ── ANTI-DUPLIKAT: cek last-sent-date di KV ──────────────────────────────
+    // Cari tanggal_lengkap terbaru (19/19) dari DB
+    const candidates = await db.prepare(`
+      SELECT DISTINCT dm.tanggal
+      FROM data_monitoring dm
+      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+      WHERE mc.kode_unit IN (${NERACA_ORDER.join(',')})
+      ORDER BY dm.tanggal DESC
+      LIMIT 30
+    `).all<{ tanggal: string }>()
+
+    let tanggalLengkap: string | null = null
+    for (const row of candidates.results) {
+      const unitCheck = await db.prepare(`
+        SELECT COUNT(DISTINCT mc.kode_unit) as cnt
+        FROM data_monitoring dm
+        JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+        WHERE dm.tanggal = ? AND mc.kode_unit IN (${NERACA_ORDER.join(',')})
+      `).bind(row.tanggal).first<{ cnt: number }>()
+      if (unitCheck && unitCheck.cnt >= REQUIRED_COUNT) {
+        tanggalLengkap = row.tanggal
+        break
+      }
+    }
+
+    if (!tanggalLengkap) {
+      return c.json({ success: false, skipped: true, reason: 'Belum ada data lengkap 19/19 dalam 30 hari terakhir' })
+    }
+
+    // Baca last-sent-date dari KV
+    const lastSentDate = await c.env.FILES.get('neraca-last-sent-date')
+
+    // Jika tanggal_lengkap <= last_sent_date → skip (sudah dikirim)
+    if (lastSentDate && tanggalLengkap <= lastSentDate) {
+      return c.json({
+        success: true,
+        skipped: true,
+        reason: `Sudah dikirim untuk tanggal ${tanggalLengkap} (last_sent: ${lastSentDate})`,
+        tanggal_lengkap: tanggalLengkap,
+        last_sent_date: lastSentDate
+      })
+    }
+
+    // Gunakan tanggalLengkap dari DB (bukan dari query param)
+    // query param ?tanggal= tetap sebagai override jika perlu manual
+    const forceParam = c.req.query('tanggal')
+    const tanggalKirim = (forceParam && forceParam !== new Date().toISOString().split('T')[0])
+      ? forceParam   // manual override
+      : tanggalLengkap
+
+    const tglFmt = tanggalKirim.split('-').reverse().join('.')
 
     // ── 1. Query data neraca langsung dari DB (sama persis dengan /api/neraca-daya) ─
     // Catatan: internal fetch tidak bisa di Cloudflare Workers, jadi query inline
 
     // H-1 untuk fallback DMN/MAKS
-    const tglDate2 = new Date(tanggal)
+    const tglDate2 = new Date(tanggalKirim)
     tglDate2.setDate(tglDate2.getDate() - 1)
     const tanggalH1 = tglDate2.toISOString().split('T')[0]
 
@@ -2174,7 +2254,7 @@ app.get('/api/neraca-auto-kirim', async (c) => {
     const terpasangMap2: Record<number, number> = {}
     for (const r of terpasangRows2.results) terpasangMap2[r.kode_unit] = Math.round(r.dm_terpasang || 0)
 
-    // Data monitoring tanggal yang diminta
+    // Data monitoring tanggal yang diminta (gunakan tanggalKirim)
     const monRows2 = await db.prepare(`
       SELECT
         mc.kode_unit,
@@ -2193,7 +2273,7 @@ app.get('/api/neraca-auto-kirim', async (c) => {
       JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
       WHERE dm.tanggal = ?
       GROUP BY mc.kode_unit, mc.nama_unit
-    `).bind(tanggal).all<{ kode_unit:number, nama_unit:string, dm_pasok:number, max_dm:number, jumlah_operasi:number, jumlah_standby:number, jumlah_pemeliharaan:number, jumlah_gangguan:number, jumlah_rusak:number, jumlah_mesin:number, beban_puncak_siang:number, beban_puncak_malam:number }>()
+    `).bind(tanggalKirim).all<{ kode_unit:number, nama_unit:string, dm_pasok:number, max_dm:number, jumlah_operasi:number, jumlah_standby:number, jumlah_pemeliharaan:number, jumlah_gangguan:number, jumlah_rusak:number, jumlah_mesin:number, beban_puncak_siang:number, beban_puncak_malam:number }>()
     const monMap2: Record<number, any> = {}
     for (const r of monRows2.results) {
       monMap2[r.kode_unit] = {
@@ -2537,7 +2617,7 @@ app.get('/api/neraca-auto-kirim', async (c) => {
     pngBase64 = btoa(pngBase64)
 
     // ── 3. Simpan PNG ke KV → expose via endpoint publik ─────────────────────
-    const pngKey = `neraca-png-${tanggal}`
+    const pngKey = `neraca-png-${tanggalKirim}`
     await c.env.FILES.put(pngKey, pngBase64, { expirationTtl: 86400 })
 
     // ── 4. Build public URL untuk PNG ────────────────────────────────────────
@@ -2548,14 +2628,45 @@ app.get('/api/neraca-auto-kirim', async (c) => {
     const message = `📊 *Neraca Daya ${tglFmt}*\nRingkasan neraca daya harian seluruh ULD.`
     const waForm  = new FormData()
     waForm.append('device_id', DEVICE_ID)
-    waForm.append('group',     GROUP_NAME)        // Kirim ke grup AMC UID KASELTENG
+    waForm.append('group',     GROUP_NAME)
     waForm.append('message',   message)
-    waForm.append('file',      imgUrl)            // URL PNG publik dari KV
+    waForm.append('file',      imgUrl)
     const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waForm })
     const waJson = await waRes.json() as { status:boolean, message:string }
-    if (!waJson.status) return c.json({ success:false, error:waJson.message }, 500)
+    if (!waJson.status) return c.json({ success:false, error:`Screenshot WA gagal: ${waJson.message}` }, 500)
 
-    return c.json({ success:true, imgUrl, message:'Screenshot dikirim ke grup WA AMC UID KASELTENG' })
+    // ── 6. Kirim URL Excel ke WA Grup (jika Excel sudah diupload ke KV) ──────
+    // Key Excel = "UID KSKT DD.MM.YYYY.xlsx" (disimpan frontend via /api/neraca-excel-upload)
+    let excelSent = false
+    let excelUrl  = ''
+    try {
+      const excelFilename = `UID KSKT ${tglFmt}.xlsx`
+      const excelB64 = await c.env.FILES.get(excelFilename)
+      if (excelB64) {
+        excelUrl = `${baseUrl2}/api/neraca-excel-file/${encodeURIComponent(excelFilename)}`
+        const excelMsg = `📊 *Neraca Daya ${tglFmt}*\nData neraca daya harian seluruh ULD telah lengkap (19/19).\n\n📥 *Download Excel:*\n${excelUrl}`
+        const waExcelForm = new FormData()
+        waExcelForm.append('device_id', DEVICE_ID)
+        waExcelForm.append('group',     GROUP_NAME)
+        waExcelForm.append('message',   excelMsg)
+        const waExcelRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waExcelForm })
+        const waExcelJson = await waExcelRes.json() as { status:boolean, message:string }
+        excelSent = waExcelJson.status
+      }
+    } catch(_) { /* Excel belum diupload atau gagal — tidak blocking */ }
+
+    // ── 7. Update KV neraca-last-sent-date = tanggalKirim ────────────────────
+    await c.env.FILES.put('neraca-last-sent-date', tanggalKirim)
+
+    return c.json({
+      success: true,
+      imgUrl,
+      tanggal_kirim: tanggalKirim,
+      last_sent_date_updated: tanggalKirim,
+      excel_sent: excelSent,
+      excel_url: excelUrl || null,
+      message: `Screenshot${excelSent ? ' + Excel' : ''} dikirim ke grup WA AMC UID KASELTENG (${tglFmt})`
+    })
   } catch (e:any) { return c.json({ success:false, error:e.message }, 500) }
 })
 
