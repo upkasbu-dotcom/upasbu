@@ -3878,19 +3878,27 @@ const NOTIF_ULD_PIC: Record<number, string> = {
   918:'6285387141814', 919:'6285387141814'
 }
 
-// Buat string tag PIC unik dari daftar kode_unit yang belum masuk
-function tagPIC(belumList: number[]): string {
+// Ambil daftar nomor PIC unik dari daftar kode_unit yang belum masuk
+function getPICNumbers(belumList: number[]): string[] {
   const picSet = new Set(belumList.map(ku => NOTIF_ULD_PIC[ku]).filter(Boolean))
-  return [...picSet].map(no => `@${no}`).join(' ')
+  return [...picSet]
+}
+
+// Buat string tag untuk ditempel di pesan
+function tagPIC(belumList: number[]): string {
+  return getPICNumbers(belumList).map(no => `@${no}`).join(' ')
 }
 
 // ── Kirim pesan teks ke WA Group via Whacenter ──────────────────────────────
-async function kirimPesanGrup(message: string): Promise<{ ok: boolean, info: string }> {
+// mentions: array nomor internasional tanpa + (misal ['6282390050020']) untuk tag kontak
+async function kirimPesanGrup(message: string, mentions: string[] = []): Promise<{ ok: boolean, info: string }> {
   try {
     const form = new FormData()
     form.append('device_id', NOTIF_DEVICE_ID)
     form.append('group',     NOTIF_GROUP_NAME)
     form.append('message',   message)
+    // Field 'mention' diisi nomor-nomor yang mau di-tag (satu per append)
+    for (const no of mentions) form.append('mention', no)
     const res  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:form })
     const json = await res.json() as { status:boolean, message:string }
     return { ok: json.status, info: json.message || '' }
@@ -3917,7 +3925,7 @@ function fmtTgl(tgl: string): string {
 // Cek: lap_operasional hari ini, unit mana yang belum ada record
 // (record = saldo_awal dan saldo_akhir sudah terisi)
 // ============================================================
-async function notifHopBBM(db: D1Database): Promise<string> {
+async function notifHopBBM(db: D1Database): Promise<{ pesan: string, mentions: string[] }> {
   // HOP BBM = data H-1 (kemarin). Dicek jam 10:00 WITA hari ini.
   const hari_ini = tanggalWITA()
   const d = new Date(hari_ini)
@@ -3936,18 +3944,20 @@ async function notifHopBBM(db: D1Database): Promise<string> {
   const belum = NOTIF_ULD_ORDER.filter(ku => !sudahSet.has(ku))
 
   if (belum.length === 0) {
-    return `✅ *[HOP BBM ${fmtTgl(tanggal)}]*\nSemua 19 ULD sudah input data HOP BBM. 👍`
+    return { pesan: `✅ *[HOP BBM ${fmtTgl(tanggal)}]*\nSemua 19 ULD sudah input data HOP BBM. 👍`, mentions: [] }
   }
 
+  const mentions = getPICNumbers(belum)
+  const tag      = mentions.map(no => `@${no}`).join(' ')
   const listBelum = belum.map((ku, i) => `  ${i+1}. ${NOTIF_ULD_NAMES[ku] ?? ku}`).join('\n')
-  const tag = tagPIC(belum)
-  return (
+  const pesan = (
     `⚠️ *[HOP BBM ${fmtTgl(tanggal)}]*\n` +
     `Jam 10:00 WITA — *${belum.length} ULD* belum input data HOP BBM:\n\n` +
     `${listBelum}\n\n` +
     (tag ? `${tag}\n\n` : '') +
     `_Segera input data hari ini._`
   )
+  return { pesan, mentions }
 }
 
 // ============================================================
@@ -3958,7 +3968,7 @@ async function notifHopBBM(db: D1Database): Promise<string> {
 //   - beban = 0 tetap dianggap ADA data (bisa standby/padam)
 //   - Tidak ada record sama sekali → BELUM masuk (tampilkan "-")
 // ============================================================
-async function notifNeracaDaya(db: D1Database): Promise<string> {
+async function notifNeracaDaya(db: D1Database): Promise<{ pesan: string, mentions: string[] }> {
   const tanggal = tanggalWITA()
 
   // Query: SUM beban per sesi (siang/malam) + COUNT record untuk cek keberadaan data
@@ -4014,10 +4024,10 @@ async function notifNeracaDaya(db: D1Database): Promise<string> {
   const totalBelum = belumKeduanya.length + belumSiang.length + belumMalam.length
 
   if (totalBelum === 0) {
-    return (
-      `✅ *[Neraca Daya ${fmtTgl(tanggal)}]*\n` +
-      `Semua 19 ULD sudah input data neraca daya (siang & malam). 👍`
-    )
+    return {
+      pesan: `✅ *[Neraca Daya ${fmtTgl(tanggal)}]*\nSemua 19 ULD sudah input data neraca daya (siang & malam). 👍`,
+      mentions: []
+    }
   }
 
   // Format per kategori dengan emoji
@@ -4044,12 +4054,13 @@ async function notifNeracaDaya(db: D1Database): Promise<string> {
     const nama = NOTIF_ULD_NAMES[ku] ?? String(ku)
     return belumKeduanya.includes(nama) || belumSiang.includes(nama) || belumMalam.includes(nama)
   })
-  const tag = tagPIC(semuaBelumKU)
+  const mentions = getPICNumbers(semuaBelumKU)
+  const tag      = mentions.map(no => `@${no}`).join(' ')
   if (tag) msg += `\n${tag}\n`
 
   msg += `\n_Segera lengkapi data hari ini._`
 
-  return msg
+  return { pesan: msg, mentions }
 }
 
 // ============================================================
@@ -4065,19 +4076,19 @@ app.get('/api/cron-test', async (c) => {
     const results: Record<string, any> = {}
 
     if (jenis === 'hop' || jenis === 'semua') {
-      const pesanHop = await notifHopBBM(db)
-      results.hop = { pesan: pesanHop }
+      const { pesan, mentions } = await notifHopBBM(db)
+      results.hop = { pesan, mentions }
       if (kirim) {
-        const r = await kirimPesanGrup(pesanHop)
+        const r = await kirimPesanGrup(pesan, mentions)
         results.hop.kirim = r
       }
     }
 
     if (jenis === 'neraca' || jenis === 'semua') {
-      const pesanNeraca = await notifNeracaDaya(db)
-      results.neraca = { pesan: pesanNeraca }
+      const { pesan, mentions } = await notifNeracaDaya(db)
+      results.neraca = { pesan, mentions }
       if (kirim) {
-        const r = await kirimPesanGrup(pesanNeraca)
+        const r = await kirimPesanGrup(pesan, mentions)
         results.neraca.kirim = r
       }
     }
@@ -4105,12 +4116,12 @@ async function handleScheduled(
   try {
     if (utcHour === 2) {
       // 10:00 WITA — notif HOP BBM
-      const pesan = await notifHopBBM(db)
-      await kirimPesanGrup(pesan)
+      const { pesan, mentions } = await notifHopBBM(db)
+      await kirimPesanGrup(pesan, mentions)
     } else if (utcHour === 12) {
       // 20:00 WITA — notif neraca daya
-      const pesan = await notifNeracaDaya(db)
-      await kirimPesanGrup(pesan)
+      const { pesan, mentions } = await notifNeracaDaya(db)
+      await kirimPesanGrup(pesan, mentions)
     }
   } catch(e:any) {
     // Log error — tidak throw agar cron tidak retry terus
