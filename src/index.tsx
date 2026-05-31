@@ -2380,6 +2380,11 @@ app.get('/api/download-neraca-excel', async (c) => {
   } catch(e:any) { return c.json({ error: String(e) }, 500) }
 })
 
+// Alias endpoint — URL pendek baru, bebas dari cache lama browser
+app.get('/api/xlsx', async (c) => {
+  return c.redirect('/api/download-neraca-excel?' + new URL(c.req.url).searchParams.toString(), 302)
+})
+
 // ===========================================================
 // API: UPLOAD EXCEL KE KV (TTL 1 jam) → return URL publik
 // POST /api/neraca-excel-upload  body: { filename, data (base64) }
@@ -3712,7 +3717,7 @@ app.get('/', (c) => {
           <option value="malam">MALAM</option>
         </select>
       </div>
-      <button id="btn-download-neraca" onclick="(function(btn){var tgl=document.getElementById('data-tanggal').value;if(!tgl){alert('Pilih tanggal terlebih dahulu');return;}btn.disabled=true;btn.textContent='⏳...';var a=document.createElement('a');a.href='/api/download-neraca-excel?tanggal='+tgl;a.download='';document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){btn.disabled=false;btn.textContent='EXCEL'},1500);})(this)" style="display:none;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;flex-shrink:0;" title="Download Excel Neraca Daya">
+      <button id="btn-download-neraca" onclick="(function(btn){var tgl=document.getElementById('data-tanggal').value;if(!tgl){alert('Pilih tanggal terlebih dahulu');return;}btn.disabled=true;btn.textContent='⏳...';window.location.href='/api/xlsx?tanggal='+tgl;setTimeout(function(){btn.disabled=false;btn.textContent='EXCEL'},2000);})(this)" style="display:none;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;flex-shrink:0;" title="Download Excel Neraca Daya">
         EXCEL
       </button>
       <button id="btn-resume-data" onclick="onResumeDataClick()" style="display:none;background:#2563eb;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-weight:700;font-size:0.78rem;cursor:pointer;letter-spacing:0.05em;flex-shrink:0;">RESUME</button>
