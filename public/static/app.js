@@ -3059,18 +3059,31 @@ async function captureAndKirimScreenshot(tanggal) {
 var _neracaWaSent = {}  // { 'YYYY-MM-DD': true } agar tidak kirim dua kali per tanggal
 
 async function autoKirimNeracaWA(rows, tanggal) {
-  if (_neracaWaSent[tanggal]) return  // sudah dikirim hari ini
   if (!isNeracaAllFilled(rows)) return
 
+  // ── Ambil tanggal terakhir yang benar-benar lengkap 19/19 dari DB ──────────
+  var tanggalLengkap = tanggal  // fallback ke picker jika API gagal
   try {
-    _neracaWaSent[tanggal] = true
+    var lcRes  = await fetch('/api/neraca-last-complete-date')
+    var lcJson = await lcRes.json()
+    if (lcJson.success && lcJson.tanggal) {
+      tanggalLengkap = lcJson.tanggal  // format YYYY-MM-DD dari DB
+    }
+  } catch(e) {
+    // Tetap pakai tanggal picker jika endpoint gagal
+  }
+
+  if (_neracaWaSent[tanggalLengkap]) return  // sudah dikirim untuk tanggal ini
+
+  try {
+    _neracaWaSent[tanggalLengkap] = true
     showToast('Semua data neraca terisi — mengirim ke WA Group...', 'info')
 
     // 1. Kirim screenshot tabel terlebih dahulu (tampil langsung di WA)
-    await captureAndKirimScreenshot(tanggal)
+    await captureAndKirimScreenshot(tanggalLengkap)
 
     // 2. Generate Excel → upload → kirim file xlsx
-    var result = buildNeracaExcelBuffer(rows, tanggal)
+    var result = buildNeracaExcelBuffer(rows, tanggalLengkap)
     var upRes  = await fetch('/api/neraca-excel-upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3082,14 +3095,14 @@ async function autoKirimNeracaWA(rows, tanggal) {
     var waRes  = await fetch('/api/kirim-wa-neraca', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileUrl: upJson.url, filename: result.fileName, tanggal: tanggal })
+      body: JSON.stringify({ fileUrl: upJson.url, filename: result.fileName, tanggal: tanggalLengkap })
     })
     var waJson = await waRes.json()
     if (!waJson.success) throw new Error(waJson.error)
 
-    showToast('✅ Screenshot + Excel neraca dikirim ke group WA!', 'success')
+    showToast('✅ Screenshot + Excel neraca dikirim ke group WA! (' + tanggalLengkap + ')', 'success')
   } catch(e) {
-    _neracaWaSent[tanggal] = false  // reset agar bisa retry
+    _neracaWaSent[tanggalLengkap] = false  // reset agar bisa retry
     showToast('Gagal kirim WA: ' + e.message, 'error')
   }
 }

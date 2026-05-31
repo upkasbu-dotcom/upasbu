@@ -1485,6 +1485,78 @@ app.get('/api/neraca-daya', async (c) => {
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
+// ─── NERACA LAST COMPLETE DATE ──────────────────────────────────────────────
+// Cari tanggal terbaru yang seluruh 19 ULD sudah punya data lengkap
+// (dm_pasok > 0, beban_puncak_siang > 0, beban_puncak_malam > 0)
+app.get('/api/neraca-last-complete-date', async (c) => {
+  try {
+    const db = c.env.DB
+    const REQUIRED_UNITS = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
+    const REQUIRED_COUNT = REQUIRED_UNITS.length  // 19
+
+    // Cari 30 hari terakhir yang ada datanya, dari paling baru
+    const candidates = await db.prepare(`
+      SELECT DISTINCT dm.tanggal
+      FROM data_monitoring dm
+      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+      WHERE mc.kode_unit IN (${REQUIRED_UNITS.join(',')})
+      ORDER BY dm.tanggal DESC
+      LIMIT 30
+    `).all<{ tanggal: string }>()
+
+    for (const row of candidates.results) {
+      const tgl = row.tanggal
+
+      // Hitung berapa unit punya data siang DAN malam lengkap
+      const check = await db.prepare(`
+        SELECT COUNT(DISTINCT mc.kode_unit) as cnt
+        FROM data_monitoring dm
+        JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+        WHERE dm.tanggal = ?
+          AND mc.kode_unit IN (${REQUIRED_UNITS.join(',')})
+          AND dm.status_mesin IN ('Operasi','Standby')
+        GROUP BY dm.tanggal
+        HAVING
+          SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 6 AND CAST(dm.jam AS INTEGER) <= 17) AND dm.status_mesin = 'Operasi' THEN 1 ELSE 0 END) > 0
+          AND SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin IN ('Operasi','Standby') THEN 1 ELSE 0 END) > 0
+      `).bind(tgl).first<{ cnt: number }>()
+
+      // Cek per-unit: semua 19 unit punya bp_siang > 0 dan bp_malam (dm_pasok) > 0
+      const unitCheck = await db.prepare(`
+        SELECT mc.kode_unit,
+          SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 6 AND CAST(dm.jam AS INTEGER) <= 17) AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as bp_siang,
+          SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin IN ('Operasi','Standby') THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok,
+          SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as bp_malam
+        FROM data_monitoring dm
+        JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+        WHERE dm.tanggal = ?
+          AND mc.kode_unit IN (${REQUIRED_UNITS.join(',')})
+        GROUP BY mc.kode_unit
+      `).bind(tgl).all<{ kode_unit: number, bp_siang: number, dm_pasok: number, bp_malam: number }>()
+
+      const unitMap: Record<number, { bp_siang: number, dm_pasok: number, bp_malam: number }> = {}
+      for (const u of unitCheck.results) unitMap[u.kode_unit] = u
+
+      // Semua 19 unit harus ada dan semua kolom > 0
+      let allComplete = true
+      for (const ku of REQUIRED_UNITS) {
+        const u = unitMap[ku]
+        if (!u || !u.dm_pasok || !u.bp_siang || !u.bp_malam) {
+          allComplete = false
+          break
+        }
+      }
+
+      if (allComplete) {
+        return c.json({ success: true, tanggal: tgl })
+      }
+    }
+
+    // Tidak ada tanggal lengkap dalam 30 hari terakhir
+    return c.json({ success: false, tanggal: null, error: 'Belum ada data lengkap 19/19 dalam 30 hari terakhir' })
+  } catch (e: any) { return c.json({ success: false, tanggal: null, error: e.message }, 500) }
+})
+
 // ─── NERACA DAYA BULANAN ────────────────────────────────────────────────────
 app.get('/api/neraca-daya-bulanan', async (c) => {
   try {
