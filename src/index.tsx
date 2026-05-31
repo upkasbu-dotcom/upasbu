@@ -4141,22 +4141,20 @@ async function handleScheduled(
   env: { DB: D1Database, FILES: KVNamespace },
   _ctx: ExecutionContext
 ): Promise<void> {
-  const db         = env.DB
-  const cronExpr   = event.cron  // e.g. "0 2 * * *"
-  const utcHour    = new Date(event.scheduledTime).getUTCHours()
+  const db       = env.DB
+  const cronExpr = event.cron  // "0 2 * * *" atau "0 12 * * *"
 
   try {
-    if (utcHour === 2) {
-      // 10:00 WITA — notif HOP BBM
+    if (cronExpr === '0 2 * * *') {
+      // 02:00 UTC = 10:00 WITA — notif HOP BBM ke AMC PRINDAVAN
       const { pesan, mentions } = await notifHopBBM(db)
       await kirimPesanGrup(pesan, mentions)
-    } else if (utcHour === 12) {
-      // 20:00 WITA — notif neraca daya
+    } else if (cronExpr === '0 12 * * *') {
+      // 12:00 UTC = 20:00 WITA — notif neraca daya ke AMC PRINDAVAN
       const { pesan, mentions } = await notifNeracaDaya(db)
       await kirimPesanGrup(pesan, mentions)
     }
   } catch(e:any) {
-    // Log error — tidak throw agar cron tidak retry terus
     console.error(`[cron ${cronExpr}] Error:`, e.message)
   }
 }
