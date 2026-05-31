@@ -3897,8 +3897,11 @@ async function kirimPesanGrup(message: string, mentions: string[] = []): Promise
     form.append('device_id', NOTIF_DEVICE_ID)
     form.append('group',     NOTIF_GROUP_NAME)
     form.append('message',   message)
-    // Field 'mention' diisi nomor-nomor yang mau di-tag (satu per append)
-    for (const no of mentions) form.append('mention', no)
+    // Field 'mention' format JID WhatsApp: nomor@s.whatsapp.net (format internal Baileys/WA)
+    // Dikirim sebagai single string comma-separated
+    if (mentions.length > 0) {
+      form.append('mention', mentions.map(no => `${no}@s.whatsapp.net`).join(','))
+    }
     const res  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:form })
     const json = await res.json() as { status:boolean, message:string }
     return { ok: json.status, info: json.message || '' }
