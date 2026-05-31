@@ -3941,8 +3941,8 @@ async function notifHopBBM(db: D1Database): Promise<string> {
 async function notifNeracaDaya(db: D1Database): Promise<string> {
   const tanggal = tanggalWITA()
 
-  // Cek keberadaan record — tanpa filter status_mesin
-  // 0 = ada data (bisa beban 0), NULL (tidak ada row) = belum masuk
+  // Query: SUM beban per sesi (siang/malam) + COUNT record untuk cek keberadaan data
+  // COUNT > 0 = ada data (termasuk beban=0), COUNT = 0 = belum masuk sama sekali
   const rows = await db.prepare(`
     SELECT
       mc.kode_unit,
@@ -3951,20 +3951,27 @@ async function notifNeracaDaya(db: D1Database): Promise<string> {
                  THEN 1 END) as cnt_siang,
       COUNT(CASE WHEN CAST(dm.jam AS INTEGER) >= 18
                    OR CAST(dm.jam AS INTEGER) <= 5
-                 THEN 1 END) as cnt_malam
+                 THEN 1 END) as cnt_malam,
+      SUM(CASE WHEN CAST(dm.jam AS INTEGER) >= 6
+                AND CAST(dm.jam AS INTEGER) <= 17
+               THEN COALESCE(dm.beban, 0) END) as bp_siang,
+      SUM(CASE WHEN CAST(dm.jam AS INTEGER) >= 18
+                 OR CAST(dm.jam AS INTEGER) <= 5
+               THEN COALESCE(dm.beban, 0) END) as bp_malam
     FROM data_monitoring dm
     JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
     WHERE dm.tanggal = ?
       AND mc.kode_unit IN (${NOTIF_ULD_ORDER.join(',')})
     GROUP BY mc.kode_unit
-  `).bind(tanggal).all<{ kode_unit: number, cnt_siang: number, cnt_malam: number }>()
+  `).bind(tanggal).all<{ kode_unit: number, cnt_siang: number, cnt_malam: number, bp_siang: number | null, bp_malam: number | null }>()
 
-  // Map: kode_unit → { cnt_siang, cnt_malam }
-  const dataMap: Record<number, { cnt_siang: number, cnt_malam: number }> = {}
+  // Map: kode_unit → { cnt_siang, cnt_malam, bp_siang, bp_malam }
+  const dataMap: Record<number, { cnt_siang: number, cnt_malam: number, bp_siang: number | null, bp_malam: number | null }> = {}
   for (const r of rows.results) dataMap[r.kode_unit] = r
 
   // Kategorikan tiap ULD
-  // adaSiang = ada record di jam siang (cnt_siang > 0), dst
+  // adaSiang = ada record di jam siang (cnt_siang > 0) — BP=0 tetap dianggap ada data
+  // adaMalam = ada record di jam malam (cnt_malam > 0)
   const belumKeduanya: string[] = []
   const belumSiang:    string[] = []
   const belumMalam:    string[] = []
@@ -3972,8 +3979,8 @@ async function notifNeracaDaya(db: D1Database): Promise<string> {
   for (const ku of NOTIF_ULD_ORDER) {
     const nama     = NOTIF_ULD_NAMES[ku] ?? String(ku)
     const d        = dataMap[ku]
-    const adaSiang = d && d.cnt_siang > 0   // 0 record = belum masuk
-    const adaMalam = d && d.cnt_malam > 0
+    const adaSiang = d != null && d.cnt_siang > 0
+    const adaMalam = d != null && d.cnt_malam > 0
 
     if (!adaSiang && !adaMalam) {
       belumKeduanya.push(nama)
@@ -3993,18 +4000,19 @@ async function notifNeracaDaya(db: D1Database): Promise<string> {
     )
   }
 
-  // Susun tabel ringkas: nama ULD | siang | malam
-  // Semua ULD yang bermasalah ditampilkan dalam satu tabel
-  // Kolom: nama ULD, siang (0=ada, -=belum), malam (0=ada, -=belum)
+  // Susun tabel: nama ULD | BP siang | BP malam
+  // - ada data  → tampilkan nilai BP (angka, bisa 0)
+  // - tidak ada record → tampilkan "-"
   const belumSet = new Set([...belumKeduanya, ...belumSiang, ...belumMalam])
   const tabelRows: string[] = []
   for (const ku of NOTIF_ULD_ORDER) {
     const nama = NOTIF_ULD_NAMES[ku] ?? String(ku)
     if (!belumSet.has(nama)) continue
-    const d        = dataMap[ku]
-    const siang    = (d && d.cnt_siang > 0) ? '0' : '-'
-    const malam    = (d && d.cnt_malam > 0) ? '0' : '-'
-    // Format: nama (max 22 char) | siang | malam
+    const d     = dataMap[ku]
+    // cnt > 0 = ada record → tampil nilai BP (Math.round, bisa 0)
+    // cnt = 0 / tidak ada row → "-"
+    const siang = (d != null && d.cnt_siang > 0) ? String(Math.round(d.bp_siang ?? 0)) : '-'
+    const malam = (d != null && d.cnt_malam > 0) ? String(Math.round(d.bp_malam ?? 0)) : '-'
     const label = nama.replace('ULD ', '').padEnd(20)
     tabelRows.push(`  ${label}  ${siang.padStart(5)}  ${malam.padStart(5)}`)
   }
@@ -4012,10 +4020,10 @@ async function notifNeracaDaya(db: D1Database): Promise<string> {
   const header = `  ${'NAMA ULD'.padEnd(20)}  ${'SIANG'.padStart(5)}  ${'MALAM'.padStart(5)}`
   const sep    = `  ${'-'.repeat(20)}  -----  -----`
 
-  let msg =
+  const msg =
     `⚠️ *[Neraca Daya ${fmtTgl(tanggal)}]*\n` +
     `Jam 20:00 WITA — *${totalBelum} ULD* belum lengkap:\n` +
-    `_(0 = ada data, - = belum masuk)_\n\n` +
+    `_(angka = BP MW, - = belum masuk)_\n\n` +
     `\`\`\`\n${header}\n${sep}\n${tabelRows.join('\n')}\n\`\`\`\n\n` +
     `_Segera lengkapi data hari ini._`
 
