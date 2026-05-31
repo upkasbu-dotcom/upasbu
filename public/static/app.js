@@ -2744,7 +2744,7 @@ function switchDataView(view) {
   document.getElementById('data-table-wrap').classList.toggle('hidden', view !== 'hop-bbm')
   document.getElementById('oli-table-wrap').classList.toggle('hidden', view !== 'stock-oli')
   // Show/hide tombol download Excel (hanya di neraca daya)
-  var btnDl = document.getElementById('btn-download-neraca')
+  var btnDl = document.getElementById('btn-xl')
   if (btnDl) btnDl.style.display = (view === 'neraca-daya') ? '' : 'none'
   // Show/hide tombol Resume (hanya di neraca daya)
   var btnResume = document.getElementById('btn-resume-data')
@@ -2783,29 +2783,7 @@ function _buildNeracaWorkbook(rows, tanggal) {
   throw new Error('_buildNeracaWorkbook deprecated — gunakan endpoint /api/download-neraca-excel')
 }
 
-async function downloadNeracaExcel() {
-  // Dialihkan ke server-side endpoint (format baru 2-sheet sesuai template UID KSKT)
-  var tanggal = document.getElementById('data-tanggal').value
-  if (!tanggal) { showToast('Pilih tanggal terlebih dahulu', 'info'); return }
-
-  var btn = document.getElementById('btn-download-neraca')
-  if (btn) { btn.disabled = true; btn.textContent = '⏳...' }
-
-  try {
-    var a = document.createElement('a')
-    a.href = '/api/download-neraca-excel?tanggal=' + tanggal
-    a.download = ''
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-  } catch(e) {
-    showToast('Gagal download: ' + e.message, 'error')
-  } finally {
-    setTimeout(function() {
-      if (btn) { btn.disabled = false; btn.textContent = 'EXCEL' }
-    }, 1500)
-  }
-}
+// downloadNeracaExcel dihapus — tombol EXCEL di HTML pakai onclick window.open('/api/xlsx')
 
 // ── Deteksi semua unit neraca daya sudah terisi ──────────────────────────────
 // rows = array dari /api/neraca-daya, NERACA_ORDER = 19 unit

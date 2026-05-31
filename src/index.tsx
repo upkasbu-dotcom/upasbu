@@ -3767,7 +3767,7 @@ app.get('/', (c) => {
           <option value="malam">MALAM</option>
         </select>
       </div>
-      <button id="btn-download-neraca" onclick="(function(btn){var tgl=document.getElementById('data-tanggal').value;if(!tgl){alert('Pilih tanggal terlebih dahulu');return;}btn.disabled=true;btn.textContent='⏳...';window.open('/api/xlsx?tanggal='+tgl,'_blank');setTimeout(function(){btn.disabled=false;btn.textContent='EXCEL'},2000);})(this)" style="display:none;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;flex-shrink:0;" title="Download Excel Neraca Daya">
+      <button id="btn-xl" onclick="(function(btn){var tgl=document.getElementById('data-tanggal').value;if(!tgl){alert('Pilih tanggal terlebih dahulu');return;}btn.disabled=true;btn.textContent='⏳...';window.open('/api/xlsx?tanggal='+tgl,'_blank');setTimeout(function(){btn.disabled=false;btn.textContent='EXCEL'},2000);})(this)" style="display:none;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;flex-shrink:0;" title="Download Excel Neraca Daya">
         EXCEL
       </button>
       <button id="btn-resume-data" onclick="onResumeDataClick()" style="display:none;background:#2563eb;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-weight:700;font-size:0.78rem;cursor:pointer;letter-spacing:0.05em;flex-shrink:0;">RESUME</button>
