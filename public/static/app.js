@@ -2969,7 +2969,9 @@ function isNeracaAllFilled(rows) {
   return true
 }
 
-// ── Generate Excel ArrayBuffer (reuse logika downloadNeracaExcel) ────────────
+// ── Generate Excel identik dengan tombol download, output base64 ──────────────
+// Reuse semua logika downloadNeracaExcel — hasilnya BYTE-FOR-BYTE sama dengan
+// file yang terdownload saat user klik tombol Excel
 function buildNeracaExcelBuffer(rows, tanggal) {
   var NERACA_ORDER = [399, 390, 382, 391, 376, 373, 395, 375, 366, 910, 911, 385, 913, 915, 920, 917, 918, 919, 372]
   var NERACA_ID_MAP = {
@@ -2978,6 +2980,8 @@ function buildNeracaExcelBuffer(rows, tanggal) {
     911: 801, 385: 805, 913: 811, 915: 322, 920: 324,
     917: 338, 918: 1202, 919: 1203, 372: 2760
   }
+
+  // Sort rows — identik dengan downloadNeracaExcel
   var rowMap = {}
   rows.forEach(function(r) { rowMap[r.kode_unit] = r })
   var sortedRows = []
@@ -2985,47 +2989,87 @@ function buildNeracaExcelBuffer(rows, tanggal) {
   rows.forEach(function(r) { if (NERACA_ORDER.indexOf(r.kode_unit) === -1) sortedRows.push(r) })
 
   var tglParts = tanggal.split('-')
-  var tglLabel = tglParts[2] + '.' + tglParts[1] + '.' + tglParts[0]
+  var tglLabel = tglParts[2] + '.' + tglParts[1] + '.' + tglParts[0]  // DD.MM.YYYY
 
-  var header = ['No','ID','Jenis','Sistem','Waktu','DMP (MW)','Captive Power (MW)','Beban Puncak (MW)','Cadangan (MW)','Kirim (MW)','ID Sistem Penerima','Terima (MW)','ID Sistem Pengirim','Status','Unit Tidak Siap','Keterangan']
+  // ── Sheet Neraca Daya — identik dengan downloadNeracaExcel ──────────────
+  var header = [
+    'No','ID','Jenis','Sistem','Waktu',
+    'DMP (MW)','Captive Power (MW)','Beban Puncak (MW)','Cadangan (MW)',
+    'Kirim (MW)','ID Sistem Penerima','Terima (MW)','ID Sistem Pengirim',
+    'Status','Unit Tidak Siap','Keterangan'
+  ]
   var wsData = [header]
   for (var i = 0; i < sortedRows.length; i++) {
-    var r = sortedRows[i]
-    var id    = NERACA_ID_MAP[r.kode_unit] || r.kode_unit
-    var sis   = (r.nama_unit || '-').replace(/^ULD /i, 'PLTD ')
-    var dmp   = r.dm_pasok          != null ? Math.round(r.dm_pasok / 1000 * 1000) / 1000 : null
-    var bpS   = r.beban_puncak_siang != null ? Math.round(r.beban_puncak_siang / 1000 * 1000) / 1000 : null
-    var bpM   = r.beban_puncak_malam != null ? Math.round(r.beban_puncak_malam / 1000 * 1000) / 1000 : null
-    wsData.push([i+1, id, 'ULD', sis, 'Siang', dmp||'', '', bpS||'', '', '', '', '', '', '', '', ''])
-    wsData.push(['',  id, 'ULD', '',  'Malam', dmp||'', '', bpM||'', '', '', '', '', '', '', '', ''])
+    var r      = sortedRows[i]
+    var no     = i + 1
+    var id     = NERACA_ID_MAP[r.kode_unit] || r.kode_unit
+    var sistem = (r.nama_unit || '-').replace(/^ULD /i, 'PLTD ')
+    var dmp    = r.dm_pasok           != null ? Math.round(r.dm_pasok / 1000 * 1000) / 1000 : null
+    var bpSiang= r.beban_puncak_siang != null ? Math.round(r.beban_puncak_siang / 1000 * 1000) / 1000 : null
+    var bpMalam= r.beban_puncak_malam != null ? Math.round(r.beban_puncak_malam / 1000 * 1000) / 1000 : null
+    // Baris Siang
+    wsData.push([
+      no, id, 'ULD', sistem, 'Siang',
+      dmp     != null ? Math.round(dmp     * 1000) / 1000 : '',
+      '',
+      bpSiang != null ? Math.round(bpSiang * 1000) / 1000 : '',
+      '', '', '', '', '', '', '', ''
+    ])
+    // Baris Malam
+    wsData.push([
+      '', id, 'ULD', '', 'Malam',
+      dmp     != null ? Math.round(dmp     * 1000) / 1000 : '',
+      '',
+      bpMalam != null ? Math.round(bpMalam * 1000) / 1000 : '',
+      '', '', '', '', '', '', '', ''
+    ])
   }
   var wb = XLSX.utils.book_new()
   var ws = XLSX.utils.aoa_to_sheet(wsData)
   var merges = []
   for (var mi = 0; mi < sortedRows.length; mi++) {
-    merges.push({ s: { r: 1 + mi*2, c: 3 }, e: { r: 2 + mi*2, c: 3 } })
+    var rSiang = 1 + mi * 2
+    var rMalam = rSiang + 1
+    merges.push({ s: { r: rSiang, c: 3 }, e: { r: rMalam, c: 3 } })
   }
   ws['!merges'] = merges
-  ws['!cols'] = [{wch:4},{wch:6},{wch:6},{wch:24},{wch:7},{wch:10},{wch:16},{wch:16},{wch:13},{wch:10},{wch:18},{wch:11},{wch:18},{wch:10},{wch:18},{wch:20}]
+  ws['!cols'] = [
+    { wch: 4  }, { wch: 6  }, { wch: 6  }, { wch: 24 }, { wch: 7  },
+    { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 13 }, { wch: 10 },
+    { wch: 18 }, { wch: 11 }, { wch: 18 }, { wch: 10 }, { wch: 18 }, { wch: 20 }
+  ]
   XLSX.utils.book_append_sheet(wb, ws, 'Neraca Daya')
 
-  // Sheet Kesiapan Pembangkit
+  // ── Sheet Kesiapan Pembangkit — identik dengan downloadNeracaExcel ───────
   var ksHeader = ['No','ID','Jenis','Sistem','Total Daya Terpasang (MW)','DMN (MW)','Unit Terbesar (MW)']
   var ksData   = [ksHeader]
   for (var ki = 0; ki < sortedRows.length; ki++) {
-    var kr = sortedRows[ki]
-    ksData.push([ki+1, NERACA_ID_MAP[kr.kode_unit]||kr.kode_unit, 'ULD',
-      (kr.nama_unit||'-').replace(/^ULD /i,'PLTD '),
-      kr.dm_terpasang != null ? Math.round(kr.dm_terpasang/1000*1000)/1000 : '',
-      kr.dm_pasok     != null ? Math.round(kr.dm_pasok/1000*1000)/1000     : '',
-      kr.max_dm       != null ? Math.round(kr.max_dm/1000*1000)/1000       : ''
-    ])
+    var kr   = sortedRows[ki]
+    var kNo  = ki + 1
+    var kId  = NERACA_ID_MAP[kr.kode_unit] || kr.kode_unit
+    var kSis = (kr.nama_unit || '-').replace(/^ULD /i, 'PLTD ')
+    var kDtp = kr.dm_terpasang != null ? Math.round(kr.dm_terpasang / 1000 * 1000) / 1000 : ''
+    var kDmn = kr.dm_pasok     != null ? Math.round(kr.dm_pasok     / 1000 * 1000) / 1000 : ''
+    var kMax = kr.max_dm       != null ? Math.round(kr.max_dm       / 1000 * 1000) / 1000 : ''
+    ksData.push([kNo, kId, 'ULD', kSis, kDtp, kDmn, kMax])
   }
   var wsKs = XLSX.utils.aoa_to_sheet(ksData)
-  wsKs['!cols'] = [{wch:4},{wch:6},{wch:6},{wch:24},{wch:24},{wch:12},{wch:18}]
+  wsKs['!cols'] = [
+    { wch: 4  }, { wch: 6  }, { wch: 6  }, { wch: 24 },
+    { wch: 24 }, { wch: 12 }, { wch: 18 }
+  ]
   XLSX.utils.book_append_sheet(wb, wsKs, 'Kesiapan Pembangkit')
 
-  return { buffer: XLSX.write(wb, { bookType: 'xlsx', type: 'base64' }), fileName: 'UID KSKT ' + tglLabel + '.xlsx' }
+  // ── Output sebagai Uint8Array lalu convert ke base64 ────────────────────
+  // Gunakan type:'array' (Uint8Array) → btoa manual per byte
+  // Ini identik dengan binary yang di-writeFile oleh tombol download
+  var uint8 = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  var binary = ''
+  for (var b = 0; b < uint8.length; b++) binary += String.fromCharCode(uint8[b])
+  var base64 = btoa(binary)
+
+  var fileName = 'UID KSKT ' + tglLabel + '.xlsx'
+  return { buffer: base64, fileName: fileName }
 }
 
 // ── Auto kirim Excel Neraca ke WA Group saat semua data terisi ───────────────
