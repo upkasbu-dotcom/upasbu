@@ -2914,7 +2914,6 @@ function buildNeracaExcelBuffer(rows, tanggal) {
 
 // ── Capture tabel neraca sebagai gambar PNG → kirim WA ───────────────────────
 async function captureAndKirimScreenshot(tanggal) {
-  // Render tabel ringkas dari data neraca ke div tersembunyi lalu screenshot
   var NERACA_ORDER = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
 
   // Ambil data fresh dari API
@@ -2932,59 +2931,85 @@ async function captureAndKirimScreenshot(tanggal) {
   var tglParts = tanggal.split('-')
   var tglLabel = tglParts[2] + '.' + tglParts[1] + '.' + tglParts[0]
 
-  // Build HTML tabel ringkas untuk screenshot
-  var html = '<div style="font-family:Arial,sans-serif;background:#fff;padding:16px;width:900px;">'
-  html += '<div style="background:#1a3352;color:#fff;padding:10px 16px;border-radius:6px 6px 0 0;margin-bottom:0;">'
-  html += '<b style="font-size:15px;">NERACA DAYA HARIAN — ' + tglLabel + '</b>'
-  html += '<span style="float:right;font-size:12px;opacity:0.8;">AMC UID KASELTENG</span></div>'
-  html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
-  // Header
-  html += '<thead><tr style="background:#2d6a9f;color:#fff;">'
-  var cols = ['No','ULD','OPS','STB','HAR','GGN','RSK','JML','DTP','DMN','MAKS','BP SIANG','CAD SIANG','BP MALAM','CAD MALAM','STATUS']
-  cols.forEach(function(c, ci) {
-    var w = ci === 1 ? 'width:180px;text-align:left;' : 'text-align:center;'
-    html += '<th style="padding:6px 8px;border:1px solid #1a4f80;' + w + '">' + c + '</th>'
+  function fn(v) { return (v != null && v !== '') ? Number(v).toLocaleString('id-ID') : '-' }
+
+  // Kolom: NO | ULD | OPS | STB | HAR | GGN | RSK | JML | DTP | DMN | MAKS | BP SIANG | CAD SIANG | BP MALAM | CAD MALAM | STATUS
+  // Definisi kolom: [label, width, align]
+  var colDefs = [
+    ['NO',        32,  'center'],
+    ['ULD',      175,  'left'  ],
+    ['OPS',       38,  'center'],
+    ['STB',       38,  'center'],
+    ['HAR',       38,  'center'],
+    ['GGN',       38,  'center'],
+    ['RSK',       38,  'center'],
+    ['JML',       38,  'center'],
+    ['DTP',       60,  'center'],
+    ['DMN',       60,  'center'],
+    ['MAKS',      60,  'center'],
+    ['BP SIANG',  70,  'center'],
+    ['CAD SIANG', 70,  'center'],
+    ['BP MALAM',  70,  'center'],
+    ['CAD MALAM', 70,  'center'],
+    ['STATUS',    72,  'center']
+  ]
+
+  // Hitung total lebar tabel
+  var totalW = colDefs.reduce(function(s,c){ return s + c[1] }, 0) + 32
+
+  // ── Header ──────────────────────────────────────────────────────────────────
+  var thStyle = function(cd) {
+    return 'padding:7px 4px;border:1px solid #1a4f80;text-align:' + cd[2] +
+           ';width:' + cd[1] + 'px;font-size:11px;white-space:nowrap;'
+  }
+
+  var headerRow = '<tr style="background:#1a3352;color:#fff;">'
+  colDefs.forEach(function(cd) {
+    headerRow += '<th style="' + thStyle(cd) + '">' + cd[0] + '</th>'
   })
-  html += '</tr></thead><tbody>'
+  headerRow += '</tr>'
 
-  function fn(v) { return v != null && v !== '-' ? v.toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.') : '-' }
+  // ── Data rows ────────────────────────────────────────────────────────────────
+  var totalOps=0, totalStb=0, totalHar=0, totalGgn=0, totalRsk=0, totalJml=0
+  var totalDtp=0, totalDmn=0, totalMaks=0, totalBpS=0, totalCadS=0, totalBpM=0, totalCadM=0
 
-  var totalOps=0,totalStb=0,totalHar=0,totalGgn=0,totalRsk=0,totalJml=0
-  var totalDtp=0,totalDmn=0,totalMaks=0,totalBpS=0,totalCadS=0,totalBpM=0,totalCadM=0
-
+  var dataRows = ''
   for (var i = 0; i < sorted.length; i++) {
-    var r = sorted[i]
-    var cadM = (r.dm_pasok != null && r.beban_puncak_malam != null && r.beban_puncak_malam > 0)
-               ? (r.dm_pasok - r.beban_puncak_malam) : null
+    var r   = sorted[i]
+    var cadM = (r.dm_pasok != null && r.beban_puncak_malam != null)
+               ? Math.round(r.dm_pasok - r.beban_puncak_malam) : null
     var cadS = (r.dm_pasok != null && r.beban_puncak_siang != null)
-               ? (r.dm_pasok - r.beban_puncak_siang) : null
-    var status = '-', statusBg = '#f1f5f9', statusFg = '#64748b'
+               ? Math.round(r.dm_pasok - r.beban_puncak_siang) : null
+
+    var status = '-', statusBg = 'transparent', statusFg = '#374151'
     if (cadM !== null) {
-      if      (cadM < 0)                              { status='DEFISIT'; statusBg='#fee2e2'; statusFg='#991b1b' }
-      else if (cadM >= 0 && cadM < (r.max_dm||0))    { status='SIAGA';   statusBg='#fef3c7'; statusFg='#92400e' }
-      else                                             { status='NORMAL';  statusBg='#d1fae5'; statusFg='#065f46' }
+      if      (cadM < 0)                           { status='DEFISIT'; statusBg='#fee2e2'; statusFg='#991b1b' }
+      else if (cadM < (r.max_dm || 0))             { status='SIAGA';   statusBg='#fef3c7'; statusFg='#92400e' }
+      else                                          { status='NORMAL';  statusBg='#d1fae5'; statusFg='#065f46' }
     }
-    var bg = i % 2 === 0 ? '#fff' : '#f8fafc'
-    var td = 'style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;background:' + bg + ';"'
-    var tdL = 'style="padding:5px 8px;border:1px solid #e2e8f0;text-align:left;background:' + bg + ';white-space:nowrap;"'
-    html += '<tr>'
-    html += '<td ' + td + '>' + (i+1) + '</td>'
-    html += '<td ' + tdL + '>' + (r.nama_unit||'-') + '</td>'
-    html += '<td ' + td + '>' + fn(r.jumlah_operasi) + '</td>'
-    html += '<td ' + td + '>' + fn(r.jumlah_standby) + '</td>'
-    html += '<td ' + td + '>' + fn(r.jumlah_pemeliharaan) + '</td>'
-    html += '<td ' + td + '>' + fn(r.jumlah_gangguan) + '</td>'
-    html += '<td ' + td + '>' + fn(r.jumlah_rusak) + '</td>'
-    html += '<td ' + td + '><b>' + fn(r.jumlah_mesin) + '</b></td>'
-    html += '<td ' + td + '>' + fn(r.dm_terpasang) + '</td>'
-    html += '<td ' + td + '>' + fn(r.dm_pasok) + '</td>'
-    html += '<td ' + td + '>' + fn(r.max_dm) + '</td>'
-    html += '<td ' + td + '>' + fn(r.beban_puncak_siang) + '</td>'
-    html += '<td ' + td + '><b>' + fn(cadS) + '</b></td>'
-    html += '<td ' + td + '>' + fn(r.beban_puncak_malam) + '</td>'
-    html += '<td ' + td + '><b>' + fn(cadM) + '</b></td>'
-    html += '<td style="padding:5px 8px;border:1px solid #e2e8f0;text-align:center;background:' + statusBg + ';color:' + statusFg + ';font-weight:bold;">' + status + '</td>'
-    html += '</tr>'
+
+    var bg  = i % 2 === 0 ? '#ffffff' : '#f0f4f8'
+    var td  = 'padding:5px 4px;border:1px solid #d1d5db;text-align:center;background:' + bg + ';font-size:11px;'
+    var tdL = 'padding:5px 6px;border:1px solid #d1d5db;text-align:left;background:' + bg + ';font-size:11px;white-space:nowrap;'
+
+    dataRows += '<tr>'
+    dataRows += '<td style="' + td + '">'                                                          + (i+1)                    + '</td>'
+    dataRows += '<td style="' + tdL + '">'                                                         + (r.nama_unit||'-')       + '</td>'
+    dataRows += '<td style="' + td + '">'                                                          + fn(r.jumlah_operasi)     + '</td>'
+    dataRows += '<td style="' + td + '">'                                                          + fn(r.jumlah_standby)     + '</td>'
+    dataRows += '<td style="' + td + '">'                                                          + fn(r.jumlah_pemeliharaan)+ '</td>'
+    dataRows += '<td style="' + td + '">'                                                          + fn(r.jumlah_gangguan)    + '</td>'
+    dataRows += '<td style="' + td + '">'                                                          + fn(r.jumlah_rusak)       + '</td>'
+    dataRows += '<td style="' + td + 'font-weight:700;">'                                          + fn(r.jumlah_mesin)       + '</td>'
+    dataRows += '<td style="' + td + '">'                                                          + fn(r.dm_terpasang)       + '</td>'
+    dataRows += '<td style="' + td + '">'                                                          + fn(r.dm_pasok)           + '</td>'
+    dataRows += '<td style="' + td + '">'                                                          + fn(r.max_dm)             + '</td>'
+    dataRows += '<td style="' + td + '">'                                                          + fn(r.beban_puncak_siang) + '</td>'
+    dataRows += '<td style="' + td + 'font-weight:700;">'                                          + fn(cadS)                 + '</td>'
+    dataRows += '<td style="' + td + '">'                                                          + fn(r.beban_puncak_malam) + '</td>'
+    dataRows += '<td style="' + td + 'font-weight:700;">'                                          + fn(cadM)                 + '</td>'
+    dataRows += '<td style="padding:5px 4px;border:1px solid #d1d5db;text-align:center;font-size:11px;font-weight:700;background:' + statusBg + ';color:' + statusFg + ';">' + status + '</td>'
+    dataRows += '</tr>'
 
     totalOps  += r.jumlah_operasi      || 0
     totalStb  += r.jumlah_standby      || 0
@@ -3001,30 +3026,48 @@ async function captureAndKirimScreenshot(tanggal) {
     if (cadM != null) totalCadM += cadM
   }
 
-  // Baris total
-  var ttd = 'style="padding:5px 8px;border:1px solid #1a4f80;text-align:center;background:#1a3352;color:#fff;font-weight:bold;"'
-  html += '<tr>'
-  html += '<td ' + ttd + '></td>'
-  html += '<td style="padding:5px 8px;border:1px solid #1a4f80;background:#1a3352;color:#fff;font-weight:bold;">TOTAL</td>'
-  html += '<td ' + ttd + '>' + totalOps  + '</td>'
-  html += '<td ' + ttd + '>' + totalStb  + '</td>'
-  html += '<td ' + ttd + '>' + totalHar  + '</td>'
-  html += '<td ' + ttd + '>' + totalGgn  + '</td>'
-  html += '<td ' + ttd + '>' + totalRsk  + '</td>'
-  html += '<td ' + ttd + '>' + totalJml  + '</td>'
-  html += '<td ' + ttd + '>' + fn(totalDtp)  + '</td>'
-  html += '<td ' + ttd + '>' + fn(totalDmn)  + '</td>'
-  html += '<td ' + ttd + '>' + fn(totalMaks) + '</td>'
-  html += '<td ' + ttd + '>' + fn(totalBpS)  + '</td>'
-  html += '<td ' + ttd + '>' + fn(Math.round(totalCadS)) + '</td>'
-  html += '<td ' + ttd + '>' + fn(totalBpM)  + '</td>'
-  html += '<td ' + ttd + '>' + fn(Math.round(totalCadM)) + '</td>'
-  html += '<td ' + ttd + '></td>'
-  html += '</tr>'
+  // ── Baris TOTAL ──────────────────────────────────────────────────────────────
+  var tt = 'padding:6px 4px;border:1px solid #1a4f80;text-align:center;background:#2d6a9f;color:#fff;font-weight:700;font-size:11px;'
+  var ttL= 'padding:6px 8px;border:1px solid #1a4f80;text-align:left;background:#2d6a9f;color:#fff;font-weight:700;font-size:11px;'
+  var totalRow = '<tr>'
+  totalRow += '<td style="' + tt + '">—</td>'
+  totalRow += '<td style="' + ttL + '">TOTAL</td>'
+  totalRow += '<td style="' + tt + '">' + totalOps              + '</td>'
+  totalRow += '<td style="' + tt + '">' + totalStb              + '</td>'
+  totalRow += '<td style="' + tt + '">' + totalHar              + '</td>'
+  totalRow += '<td style="' + tt + '">' + totalGgn              + '</td>'
+  totalRow += '<td style="' + tt + '">' + totalRsk              + '</td>'
+  totalRow += '<td style="' + tt + '">' + totalJml              + '</td>'
+  totalRow += '<td style="' + tt + '">' + fn(totalDtp)          + '</td>'
+  totalRow += '<td style="' + tt + '">' + fn(totalDmn)          + '</td>'
+  totalRow += '<td style="' + tt + '">' + fn(totalMaks)         + '</td>'
+  totalRow += '<td style="' + tt + '">' + fn(totalBpS)          + '</td>'
+  totalRow += '<td style="' + tt + '">' + fn(Math.round(totalCadS)) + '</td>'
+  totalRow += '<td style="' + tt + '">' + fn(totalBpM)          + '</td>'
+  totalRow += '<td style="' + tt + '">' + fn(Math.round(totalCadM)) + '</td>'
+  totalRow += '<td style="' + tt + '">—</td>'
+  totalRow += '</tr>'
 
-  html += '</tbody></table>'
-  html += '<div style="text-align:right;font-size:10px;color:#94a3b8;margin-top:6px;">Generated ' + new Date().toLocaleString('id-ID') + '</div>'
+  // ── Rakit HTML ───────────────────────────────────────────────────────────────
+  var html = ''
+  html += '<div style="font-family:Arial,sans-serif;background:#f8fafc;padding:14px 16px 16px;display:inline-block;">'
+
+  // Title bar
+  html += '<div style="background:#1a3352;color:#fff;padding:10px 16px;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;align-items:center;">'
+  html += '<span style="font-size:14px;font-weight:700;letter-spacing:.3px;">📊 NERACA DAYA HARIAN &mdash; ' + tglLabel + '</span>'
+  html += '<span style="font-size:11px;opacity:.75;">AMC UID KASELTENG &nbsp;|&nbsp; 19 ULD</span>'
   html += '</div>'
+
+  // Tabel
+  html += '<table style="border-collapse:collapse;width:' + totalW + 'px;background:#fff;">'
+  html += '<thead>' + headerRow + '</thead>'
+  html += '<tbody>' + dataRows + totalRow + '</tbody>'
+  html += '</table>'
+
+  // Footer
+  html += '<div style="text-align:right;font-size:10px;color:#6b7280;margin-top:6px;padding-right:2px;">'
+  html += 'Generated ' + new Date().toLocaleString('id-ID',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})
+  html += '</div></div>'
 
   // Render ke div tersembunyi → html2canvas
   var wrapper = document.createElement('div')
@@ -3034,9 +3077,9 @@ async function captureAndKirimScreenshot(tanggal) {
 
   try {
     var canvas = await html2canvas(wrapper.firstElementChild, {
-      scale: 2,           // 2x resolusi agar teks tajam
+      scale: 2,
       useCORS: true,
-      backgroundColor: '#ffffff',
+      backgroundColor: '#f8fafc',
       logging: false
     })
     var pngBase64 = canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '')
