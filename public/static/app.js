@@ -2792,44 +2792,47 @@ function _buildNeracaWorkbook(rows, tanggal) {
   var tglParts = tanggal.split('-')
   var tglLabel = tglParts[2] + '.' + tglParts[1] + '.' + tglParts[0]
 
-  // Helper: konversi kW ke MW (3 desimal), null jika tidak ada data
+  // Helper: konversi kW ke MW (3 desimal), '' jika tidak ada data (agar sel tetap hadir di XML)
   function toMW(kw) {
-    if (kw == null) return null
+    if (kw == null) return ''
     return Math.round(kw) / 1000
   }
 
+  // Baris kosong 16 kolom (A-P) — semua '' agar sel hadir di XML (inlineStr)
+  function emptyRow16() { return ['','','','','','','','','','','','','','','',''] }
+  // Baris kosong 7 kolom (A-G)
+  function emptyRow7()  { return ['','','','','','',''] }
+
   // ── Sheet 1: Neraca Daya — 2 baris per ULD (siang & malam) ──────────────
-  // Row 1: header kosong (kolom A-P)
-  // Baris data: baris ganjil=siang (A=nomor), baris genap=malam (A=kosong)
-  // Col A: nomor urut (hanya baris siang)
-  // Col B: kode_mesin
-  // Col C,D,E: kosong
+  // Row 1: header kosong (A-P, semua '')
+  // Col A: nomor urut (hanya baris siang, baris malam = '')
+  // Col B: kode_mesin (angka)
+  // Col C,D,E,G,I-P: kosong ''
   // Col F: dm_terpasang (MW)
-  // Col G: kosong
   // Col H: beban_puncak (siang di baris 1, malam di baris 2)
-  // Col I-P: kosong
-  var wsData = [['','','','','','','','','','','','','','','','']]
+  var wsData = [emptyRow16()]
 
   for (var i = 0; i < sorted.length; i++) {
     var r = sorted[i]
     var kmRaw = r.kode_mesin != null ? Number(r.kode_mesin) : null
-    var km    = (kmRaw && !isNaN(kmRaw)) ? kmRaw : null
-    var dtpMW      = toMW(r.dm_terpasang)
-    var bpSiangMW  = toMW(r.beban_puncak_siang)
-    var bpMalamMW  = toMW(r.beban_puncak_malam)
+    var km    = (kmRaw && !isNaN(kmRaw)) ? kmRaw : ''
+    var dtpMW     = toMW(r.dm_terpasang)
+    var bpSiangMW = toMW(r.beban_puncak_siang)
+    var bpMalamMW = toMW(r.beban_puncak_malam)
 
-    // Baris siang: A=nomor, B=kode_mesin, F=dm_terpasang(MW), H=BP siang(MW)
-    var row1 = [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
-    row1[0] = i + 1
-    row1[1] = km
-    row1[5] = dtpMW
-    row1[7] = bpSiangMW
+    // Baris siang: A=nomor(n), B=kode_mesin(n), C-E='', F=DTP(n), G='', H=BPS(n), I-P=''
+    var row1 = emptyRow16()
+    row1[0] = i + 1   // A: nomor (number)
+    row1[1] = km      // B: kode_mesin (number atau '')
+    row1[5] = dtpMW   // F: dm_terpasang MW
+    row1[7] = bpSiangMW // H: BP siang MW
 
-    // Baris malam: A=kosong, B=kode_mesin, F=dm_terpasang(MW), H=BP malam(MW)
-    var row2 = [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
-    row2[1] = km
-    row2[5] = dtpMW
-    row2[7] = bpMalamMW
+    // Baris malam: A='', B=kode_mesin(n), C-E='', F=DTP(n), G='', H=BPM(n), I-P=''
+    var row2 = emptyRow16()
+    // row2[0] tetap '' (col A kosong untuk baris malam)
+    row2[1] = km      // B: kode_mesin (number atau '')
+    row2[5] = dtpMW   // F: dm_terpasang MW
+    row2[7] = bpMalamMW // H: BP malam MW
 
     wsData.push(row1)
     wsData.push(row2)
@@ -2846,29 +2849,29 @@ function _buildNeracaWorkbook(rows, tanggal) {
   XLSX.utils.book_append_sheet(wb, ws, 'Neraca Daya')
 
   // ── Sheet 2: Kesiapan Pembangkit — 1 baris per ULD ────────────────────────
-  // Row 1: header kosong (kolom A-G)
-  // Col A: nomor urut
-  // Col B: kode_mesin
-  // Col C,D: kosong
-  // Col E: dm_pasok (MW) — total daya mampu ULD
-  // Col F: BP Siang (MW)
-  // Col G: BP Malam (MW)
-  var ksData = [['','','','','','','']]
+  // Row 1: header kosong (A-G, semua '')
+  // Col A: nomor urut (n)
+  // Col B: kode_mesin (n atau '')
+  // Col C,D: ''
+  // Col E: dm_pasok (MW, n)
+  // Col F: BP Siang (MW, n)
+  // Col G: BP Malam (MW, n)
+  var ksData = [emptyRow7()]
   for (var ki = 0; ki < sorted.length; ki++) {
     var kr   = sorted[ki]
     var kmr  = kr.kode_mesin != null ? Number(kr.kode_mesin) : null
-    var kmOk = (kmr && !isNaN(kmr)) ? kmr : null
+    var kmOk = (kmr && !isNaN(kmr)) ? kmr : ''
     var dpMW  = toMW(kr.dm_pasok != null ? kr.dm_pasok : kr.dm_terpasang)
     var bpsMW = toMW(kr.beban_puncak_siang)
     var bpmMW = toMW(kr.beban_puncak_malam)
     ksData.push([
-      ki + 1,   // A: nomor
-      kmOk,     // B: kode_mesin
-      null,     // C: kosong
-      null,     // D: kosong
-      dpMW,     // E: dm_pasok (MW)
-      bpsMW,    // F: BP Siang (MW)
-      bpmMW     // G: BP Malam (MW)
+      ki + 1, // A: nomor
+      kmOk,   // B: kode_mesin
+      '',     // C: kosong
+      '',     // D: kosong
+      dpMW,   // E: dm_pasok (MW)
+      bpsMW,  // F: BP Siang (MW)
+      bpmMW   // G: BP Malam (MW)
     ])
   }
   var wsKs = XLSX.utils.aoa_to_sheet(ksData)
