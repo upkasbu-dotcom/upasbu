@@ -1,20 +1,24 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { serveStatic } from 'hono/cloudflare-workers'
-
 type Bindings = {
   DB: D1Database
   FILES: KVNamespace
+  ASSETS: Fetcher
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
 app.use('/api/*', cors())
-// Static files: cache 7 hari di browser, 1 jam di edge
-app.use('/static/*', async (c, next) => {
-  await next()
-  c.res.headers.set('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400')
+// Static files: serve dari ASSETS binding (Cloudflare Workers Assets)
+app.use('/static/*', async (c) => {
+  const url = new URL(c.req.url)
+  // Strip /static prefix → file path di dist/static/
+  const filePath = url.pathname.replace(/^\/static/, '')
+  const assetUrl = new URL(filePath, url.origin)
+  const response = await c.env.ASSETS.fetch(new Request(assetUrl.toString(), c.req.raw))
+  const newRes = new Response(response.body, response)
+  newRes.headers.set('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400')
+  return newRes
 })
-app.use('/static/*', serveStatic({ root: './public' }))
 
 // Auto-init DB tables — hanya sekali per Worker instance (in-memory flag)
 let _dbInited = false
@@ -3796,7 +3800,7 @@ app.get('/', (c) => {
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="/static/app.js?v=20260531a"></script>
+<script src="/static/app.js?v=20260531b"></script>
 </body>
 </html>`
   const resp = c.html(html)
