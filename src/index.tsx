@@ -2195,17 +2195,26 @@ function buildSheetXml(rows: (string|number|null|symbol)[][]): string {
 
 function buildNeracaXlsx(rows: any[], tanggal: string): Uint8Array {
   const NERACA_ORDER = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
-  const UNIT_META: Record<number,{id:number,nama:string}> = {
-    399:{id:560,nama:'PLTD TUMBANG SENAMANG'},390:{id:561,nama:'PLTD TELAGA'},
-    382:{id:562,nama:'PLTD PAGATAN'},391:{id:563,nama:'PLTD TELAGA PULANG'},
-    376:{id:564,nama:'PLTD MENDAWAI'},373:{id:566,nama:'PLTD KENAMBUI'},
-    395:{id:569,nama:'PLTD TUMBANG MANJUL'},375:{id:571,nama:'PLTD KUDANGAN'},
-    366:{id:800,nama:'PLTD BABAI'},910:{id:804,nama:'PLTD MANGKATIP'},
-    911:{id:801,nama:'PLTD TELUK BETUNG'},385:{id:805,nama:'PLTD RANGGA ILUNG'},
-    913:{id:811,nama:'PLTD TUMPUNG LAUNG'},915:{id:322,nama:'PLTD SUNGAI BALI'},
-    920:{id:324,nama:'PLTD MARABATUAN'},917:{id:338,nama:'PLTD KERASIAN'},
-    918:{id:1202,nama:'PLTD KERAYAAN'},919:{id:1203,nama:'PLTD KERUMPUTAN'},
-    372:{id:2760,nama:'PLTD GUNUNG PUREI'}
+  const UNIT_META: Record<number,{id:number,nama:string,maks:number}> = {
+    399:{id:560,nama:'PLTD Tumbang Senamang', maks:0.08},
+    390:{id:561,nama:'PLTD Telaga',           maks:0.08},
+    382:{id:562,nama:'PLTD Pagatan',          maks:0.38},
+    391:{id:563,nama:'PLTD Telaga Pulang',    maks:0.09},
+    376:{id:564,nama:'PLTD Mendawai',         maks:0.40},
+    373:{id:566,nama:'PLTD Kenambui',         maks:0.09},
+    395:{id:569,nama:'PLTD Tumbang Manjul',   maks:0.18},
+    375:{id:571,nama:'PLTD Kudangan',         maks:0.17},
+    366:{id:800,nama:'PLTD Babai',            maks:0.09},
+    910:{id:804,nama:'PLTD Mangkatip',        maks:0.08},
+    911:{id:801,nama:'PLTD Teluk Betung',     maks:0.08},
+    385:{id:805,nama:'PLTD Rangga Ilung',     maks:0.16},
+    913:{id:811,nama:'PLTD Tumpung Laung',    maks:0.16},
+    915:{id:322,nama:'PLTD Sungai Bali',      maks:0.17},
+    920:{id:324,nama:'PLTD Marabatuan',       maks:0.08},
+    917:{id:338,nama:'PLTD Kerasian',         maks:0.085},
+    918:{id:1202,nama:'PLTD Kerayaan',        maks:0.085},
+    919:{id:1203,nama:'PLTD Kerumputan',      maks:0.08},
+    372:{id:2760,nama:'PLTD Gunung Purei',    maks:0.08},
   }
   const rowMap: Record<number,any> = {}
   rows.forEach(r => rowMap[r.kode_unit]=r)
@@ -2226,24 +2235,28 @@ function buildNeracaXlsx(rows: any[], tanggal: string): Uint8Array {
      'Status','Unit Tidak Siap','Keterangan']
   ]
   sorted.forEach((r,i) => {
-    const meta = UNIT_META[r.kode_unit]||{id:null,nama:r.nama_unit||''}
-    // F,G,H = EMPTY_CELL → <c r="X"/> (sel hadir tanpa value, sesuai template)
-    // I-P   = ''         → shared string '' (sel hadir, isi string kosong)
-    // A,D baris malam    = '' (sel hadir, string kosong)
-    const E = EMPTY_CELL as any
-    s1.push([i+1, meta.id, 'ULD', meta.nama, 'Siang', E, E, E, '','','','','','','',''])
-    s1.push(['',  meta.id, 'ULD', '',         'Malam', E, E, E, '','','','','','','',''])
+    const meta = UNIT_META[r.kode_unit]||{id:null as any,nama:r.nama_unit||'',maks:null as any}
+    // F = DMP (MW), H = Beban Puncak (MW) — berisi data dari DB
+    // G = null (sel tidak ada), I-P = null (sel tidak ada)
+    // A baris malam = null, D baris malam = null
+    const dmp = toMW(r.dm_pasok!=null?r.dm_pasok:r.dm_terpasang)
+    const bpS = toMW(r.beban_puncak_siang)
+    const bpM = toMW(r.beban_puncak_malam)
+    s1.push([i+1, meta.id, 'ULD', meta.nama, 'Siang', dmp, null, bpS, null,null,null,null,null,null,null,null])
+    s1.push([null, meta.id, 'ULD', null,      'Malam', dmp, null, bpM, null,null,null,null,null,null,null,null])
   })
 
   // Sheet 2: Kesiapan Pembangkit
-  // Sesuai template: hanya kolom A-D yang ada isinya, E/F/G kosong (sel tidak hadir)
+  // E = DTP total (MW), F = DMN (MW), G = Unit Terbesar/MAKS (MW)
   const s2: (string|number|null)[][] = [
     ['No','ID','Jenis','Sistem','Total Daya Terpasang (MW)','DMN (MW)','Unit Terbesar (MW)']
   ]
   sorted.forEach((r,i) => {
-    const meta = UNIT_META[r.kode_unit]||{id:null,nama:r.nama_unit||''}
-    // E,F,G tidak ada nilai (null = sel tidak hadir) — diisi manual
-    s2.push([i+1, meta.id, 'ULD', meta.nama, null, null, null])
+    const meta = UNIT_META[r.kode_unit]||{id:null as any,nama:r.nama_unit||'',maks:null as any}
+    const dtp = toMW(r.dm_terpasang)
+    const dmn = toMW(r.dm_pasok!=null?r.dm_pasok:r.dm_terpasang)
+    const maks = meta.maks ?? null
+    s2.push([i+1, meta.id, 'ULD', meta.nama, dtp, dmn, maks])
   })
 
   const sheet1Xml = buildSheetXml(s1)
