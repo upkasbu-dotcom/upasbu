@@ -2776,11 +2776,40 @@ function switchDataView(view) {
 
 // ── Download Excel Neraca Daya ────────────────────────────────────────────
 // ── Shared: buat workbook neraca (identik untuk download & WA) ───────────────
-// Format sesuai template UID KSKT: 2 sheet, satuan MW
-// Sheet 1: 2 baris/ULD (siang+malam), Col A=No, B=kode_mesin, F=DTP(MW), H=BP(MW)
-// Sheet 2: 1 baris/ULD, Col A=No, B=kode_mesin, E=DMP(MW), F=BPS(MW), G=BPM(MW)
+// Format sesuai template UID KSKT DD.MM.YYYY.xlsx
+// Sheet 1 "Neraca Daya"       : Row1=header, 2 baris/ULD (siang+malam), 16 kolom A-P
+//   A=No, B=ID(kode_mesin), C=Jenis('ULD'), D=Sistem(nama), E=Waktu('Siang'/'Malam'),
+//   F=DMP(MW), G=CaptivePower(''), H=BebanPuncak(MW), I-P=kolom lain('')
+// Sheet 2 "Kesiapan Pembangkit": Row1=header, 1 baris/ULD, 7 kolom A-G
+//   A=No, B=ID(kode_mesin), C=Jenis('ULD'), D=Sistem(nama),
+//   E=TotalDayaTerpasang(MW), F=DMN(MW), G=UnitTerbesar('')
 function _buildNeracaWorkbook(rows, tanggal) {
+  // Urutan tampil sesuai template (kode_unit internal)
   var NERACA_ORDER = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
+
+  // Mapping kode_unit → { id: kode_mesin (angka), nama: nama sistem (string) }
+  // Diambil dari template referensi DD.MM.YYYY — hardcoded karena DB kode_mesin masih NULL
+  var UNIT_META = {
+    399: { id: 560,  nama: 'PLTD TUMBANG SENAMANG' },
+    390: { id: 561,  nama: 'PLTD TELAGA'            },
+    382: { id: 562,  nama: 'PLTD PAGATAN'           },
+    391: { id: 563,  nama: 'PLTD TELAGA PULANG'     },
+    376: { id: 564,  nama: 'PLTD MENDAWAI'          },
+    373: { id: 566,  nama: 'PLTD KENAMBUI'          },
+    395: { id: 569,  nama: 'PLTD TUMBANG MANJUL'    },
+    375: { id: 571,  nama: 'PLTD KUDANGAN'          },
+    366: { id: 800,  nama: 'PLTD BABAI'             },
+    910: { id: 804,  nama: 'PLTD MANGKATIP'         },
+    911: { id: 801,  nama: 'PLTD TELUK BETUNG'      },
+    385: { id: 805,  nama: 'PLTD RANGGA ILUNG'      },
+    913: { id: 811,  nama: 'PLTD TUMPUNG LAUNG'     },
+    915: { id: 322,  nama: 'PLTD SUNGAI BALI'       },
+    920: { id: 324,  nama: 'PLTD MARABATUAN'        },
+    917: { id: 338,  nama: 'PLTD KERASIAN'          },
+    918: { id: 1202, nama: 'PLTD KERAYAAN'          },
+    919: { id: 1203, nama: 'PLTD KERUMPUTAN'        },
+    372: { id: 2760, nama: 'PLTD GUNUNG PUREI'      }
+  }
 
   // Sort sesuai NERACA_ORDER, unit di luar order ditaruh di belakang
   var rowMap = {}
@@ -2792,47 +2821,58 @@ function _buildNeracaWorkbook(rows, tanggal) {
   var tglParts = tanggal.split('-')
   var tglLabel = tglParts[2] + '.' + tglParts[1] + '.' + tglParts[0]
 
-  // Helper: konversi kW ke MW (3 desimal), '' jika tidak ada data (agar sel tetap hadir di XML)
+  // Helper: konversi kW ke MW, null jika tidak ada data (sel kosong = tidak ada nilai)
   function toMW(kw) {
-    if (kw == null) return ''
+    if (kw == null) return null
     return Math.round(kw) / 1000
   }
 
-  // Baris kosong 16 kolom (A-P) — semua '' agar sel hadir di XML (inlineStr)
-  function emptyRow16() { return ['','','','','','','','','','','','','','','',''] }
-  // Baris kosong 7 kolom (A-G)
-  function emptyRow7()  { return ['','','','','','',''] }
-
-  // ── Sheet 1: Neraca Daya — 2 baris per ULD (siang & malam) ──────────────
-  // Row 1: header kosong (A-P, semua '')
-  // Col A: nomor urut (hanya baris siang, baris malam = '')
-  // Col B: kode_mesin (angka)
-  // Col C,D,E,G,I-P: kosong ''
-  // Col F: dm_terpasang (MW)
-  // Col H: beban_puncak (siang di baris 1, malam di baris 2)
-  var wsData = [emptyRow16()]
+  // ── Sheet 1: Neraca Daya ─────────────────────────────────────────────────
+  // Row 1: header teks sesuai template
+  var s1Header = [
+    'No', 'ID', 'Jenis', 'Sistem', 'Waktu',
+    'DMP (MW)', 'Captive Power (MW)', 'Beban Puncak (MW)',
+    'Cadangan (MW)', 'Kirim (MW)', 'ID Sistem Penerima',
+    'Terima (MW)', 'ID Sistem Pengirim', 'Status',
+    'Unit Tidak Siap', 'Keterangan'
+  ]
+  var wsData = [s1Header]
 
   for (var i = 0; i < sorted.length; i++) {
-    var r = sorted[i]
-    var kmRaw = r.kode_mesin != null ? Number(r.kode_mesin) : null
-    var km    = (kmRaw && !isNaN(kmRaw)) ? kmRaw : ''
-    var dtpMW     = toMW(r.dm_terpasang)
+    var r   = sorted[i]
+    var meta = UNIT_META[r.kode_unit] || { id: null, nama: r.nama_unit || '' }
+    var km  = meta.id   // angka (number) atau null
+    var nm  = meta.nama // string nama sistem
+
+    var dmpMW     = toMW(r.dm_pasok != null ? r.dm_pasok : r.dm_terpasang)
     var bpSiangMW = toMW(r.beban_puncak_siang)
     var bpMalamMW = toMW(r.beban_puncak_malam)
 
-    // Baris siang: A=nomor(n), B=kode_mesin(n), C-E='', F=DTP(n), G='', H=BPS(n), I-P=''
-    var row1 = emptyRow16()
-    row1[0] = i + 1   // A: nomor (number)
-    row1[1] = km      // B: kode_mesin (number atau '')
-    row1[5] = dtpMW   // F: dm_terpasang MW
-    row1[7] = bpSiangMW // H: BP siang MW
+    // Baris siang — 16 kolom A-P, kolom I-P pakai '' agar sel hadir di XML
+    var row1 = [
+      i + 1,      // A: No
+      km,         // B: ID (kode_mesin, angka)
+      'ULD',      // C: Jenis
+      nm,         // D: Sistem (nama)
+      'Siang',    // E: Waktu
+      dmpMW,      // F: DMP (MW) — nilai data
+      '',         // G: Captive Power — kosong (hadir di XML)
+      bpSiangMW,  // H: Beban Puncak (MW) — nilai data
+      '','','','','','','',''  // I-P: kolom lain — kosong (hadir di XML)
+    ]
 
-    // Baris malam: A='', B=kode_mesin(n), C-E='', F=DTP(n), G='', H=BPM(n), I-P=''
-    var row2 = emptyRow16()
-    // row2[0] tetap '' (col A kosong untuk baris malam)
-    row2[1] = km      // B: kode_mesin (number atau '')
-    row2[5] = dtpMW   // F: dm_terpasang MW
-    row2[7] = bpMalamMW // H: BP malam MW
+    // Baris malam — 16 kolom A-P, D kosong sesuai template
+    var row2 = [
+      '',         // A: kosong (nomor hanya di baris siang)
+      km,         // B: ID (kode_mesin)
+      'ULD',      // C: Jenis
+      '',         // D: Sistem kosong di baris malam
+      'Malam',    // E: Waktu
+      dmpMW,      // F: DMP (MW) — nilai data
+      '',         // G: Captive Power — kosong
+      bpMalamMW,  // H: Beban Puncak (MW) — nilai data
+      '','','','','','','',''  // I-P: kolom lain — kosong
+    ]
 
     wsData.push(row1)
     wsData.push(row2)
@@ -2841,41 +2881,42 @@ function _buildNeracaWorkbook(rows, tanggal) {
   var wb = XLSX.utils.book_new()
   var ws = XLSX.utils.aoa_to_sheet(wsData)
   ws['!cols'] = [
-    {wch:5},{wch:8},{wch:6},{wch:6},{wch:6},
-    {wch:10},{wch:6},{wch:10},
-    {wch:6},{wch:6},{wch:6},{wch:6},
-    {wch:6},{wch:6},{wch:6},{wch:6}
+    {wch:5},{wch:8},{wch:6},{wch:26},{wch:8},
+    {wch:10},{wch:18},{wch:16},
+    {wch:12},{wch:10},{wch:20},{wch:10},{wch:20},{wch:10},{wch:16},{wch:14}
   ]
   XLSX.utils.book_append_sheet(wb, ws, 'Neraca Daya')
 
-  // ── Sheet 2: Kesiapan Pembangkit — 1 baris per ULD ────────────────────────
-  // Row 1: header kosong (A-G, semua '')
-  // Col A: nomor urut (n)
-  // Col B: kode_mesin (n atau '')
-  // Col C,D: ''
-  // Col E: dm_pasok (MW, n)
-  // Col F: BP Siang (MW, n)
-  // Col G: BP Malam (MW, n)
-  var ksData = [emptyRow7()]
+  // ── Sheet 2: Kesiapan Pembangkit ──────────────────────────────────────────
+  // Row 1: header teks sesuai template
+  var s2Header = [
+    'No', 'ID', 'Jenis', 'Sistem',
+    'Total Daya Terpasang (MW)', 'DMN (MW)', 'Unit Terbesar (MW)'
+  ]
+  var ksData = [s2Header]
+
   for (var ki = 0; ki < sorted.length; ki++) {
     var kr   = sorted[ki]
-    var kmr  = kr.kode_mesin != null ? Number(kr.kode_mesin) : null
-    var kmOk = (kmr && !isNaN(kmr)) ? kmr : ''
-    var dpMW  = toMW(kr.dm_pasok != null ? kr.dm_pasok : kr.dm_terpasang)
-    var bpsMW = toMW(kr.beban_puncak_siang)
-    var bpmMW = toMW(kr.beban_puncak_malam)
+    var kmeta = UNIT_META[kr.kode_unit] || { id: null, nama: kr.nama_unit || '' }
+    var kmId = kmeta.id
+    var kmNm = kmeta.nama
+
+    var dtpMW = toMW(kr.dm_terpasang)
+    var dmnMW = toMW(kr.dm_pasok != null ? kr.dm_pasok : kr.dm_terpasang)
+
     ksData.push([
-      ki + 1, // A: nomor
-      kmOk,   // B: kode_mesin
-      '',     // C: kosong
-      '',     // D: kosong
-      dpMW,   // E: dm_pasok (MW)
-      bpsMW,  // F: BP Siang (MW)
-      bpmMW   // G: BP Malam (MW)
+      ki + 1, // A: No
+      kmId,   // B: ID (kode_mesin)
+      'ULD',  // C: Jenis
+      kmNm,   // D: Sistem
+      dtpMW,  // E: Total Daya Terpasang (MW) — dm_terpasang
+      dmnMW,  // F: DMN (MW) — dm_pasok / dm_terpasang
+      null    // G: Unit Terbesar — kosong
     ])
   }
+
   var wsKs = XLSX.utils.aoa_to_sheet(ksData)
-  wsKs['!cols'] = [{wch:5},{wch:8},{wch:6},{wch:6},{wch:10},{wch:10},{wch:10}]
+  wsKs['!cols'] = [{wch:5},{wch:8},{wch:6},{wch:26},{wch:26},{wch:10},{wch:16}]
   XLSX.utils.book_append_sheet(wb, wsKs, 'Kesiapan Pembangkit')
 
   return { wb: wb, fileName: 'UID KSKT ' + tglLabel + '.xlsx' }
