@@ -2041,11 +2041,14 @@ app.get('/api/neraca-excel-file/:key{.+}', async (c) => {
     const { value, metadata } = await c.env.FILES.getWithMetadata<{ filename: string }>(key)
     if (!value) return c.json({ error: 'File tidak ditemukan atau sudah kedaluwarsa' }, 404)
     const filename = metadata?.filename || 'neraca.xlsx'
-    const buf = Uint8Array.from(atob(value), ch => ch.charCodeAt(0))
-    return new Response(buf, {
+    // Decode base64 → binary dengan cara aman (handle byte > 127)
+    const binaryStr = atob(value)
+    const bytes = new Uint8Array(binaryStr.length)
+    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i) & 0xff
+    return new Response(bytes, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
         'Cache-Control': 'no-store'
       }
     })

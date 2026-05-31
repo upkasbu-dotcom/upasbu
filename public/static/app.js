@@ -2906,10 +2906,10 @@ function isNeracaAllFilled(rows) {
 // ── Generate Excel base64 untuk kirim WA (reuse _buildNeracaWorkbook) ─────────
 function buildNeracaExcelBuffer(rows, tanggal) {
   var result = _buildNeracaWorkbook(rows, tanggal)
-  var uint8  = XLSX.write(result.wb, { bookType: 'xlsx', type: 'array' })
-  var binary = ''
-  for (var b = 0; b < uint8.length; b++) binary += String.fromCharCode(uint8[b])
-  return { buffer: btoa(binary), fileName: result.fileName }
+  // Gunakan type:'base64' langsung dari SheetJS — menghindari btoa(String.fromCharCode)
+  // yang corrupt saat ada byte > 127 (karakter non-Latin1)
+  var b64 = XLSX.write(result.wb, { bookType: 'xlsx', type: 'base64' })
+  return { buffer: b64, fileName: result.fileName }
 }
 
 // ── Capture tabel neraca sebagai gambar PNG → kirim WA ───────────────────────
