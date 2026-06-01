@@ -1529,14 +1529,14 @@ app.get('/api/neraca-last-complete-date', async (c) => {
     for (const row of candidates.results) {
       const tgl = row.tanggal
 
-      // Hitung berapa unit yang punya setidaknya 1 record pada tanggal ini
-      // (sama dengan kriteria frontend: != null)
+      // Hitung berapa unit yang punya record MALAM (jam 18-23 atau 00-05)
       const unitCheck = await db.prepare(`
         SELECT COUNT(DISTINCT mc.kode_unit) as cnt
         FROM data_monitoring dm
         JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
         WHERE dm.tanggal = ?
           AND mc.kode_unit IN (${REQUIRED_UNITS.join(',')})
+          AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
       `).bind(tgl).first<{ cnt: number }>()
 
       if (unitCheck && unitCheck.cnt >= REQUIRED_COUNT) {
@@ -1545,7 +1545,7 @@ app.get('/api/neraca-last-complete-date', async (c) => {
     }
 
     // Tidak ada tanggal lengkap dalam 30 hari terakhir
-    return c.json({ success: false, tanggal: null, error: 'Belum ada data lengkap 19/19 dalam 30 hari terakhir' })
+    return c.json({ success: false, tanggal: null, error: 'Belum ada data malam lengkap 19/19 dalam 30 hari terakhir' })
   } catch (e: any) { return c.json({ success: false, tanggal: null, error: e.message }, 500) }
 })
 
@@ -2544,534 +2544,26 @@ app.post('/api/neraca-last-sent-date', async (c) => {
 // ===========================================================
 // API: NERACA AUTO-KIRIM SERVER-SIDE (tanpa html2canvas)
 // GET  /api/neraca-auto-kirim?tanggal=YYYY-MM-DD
-// Flow:
-//   1. Cek neraca-last-sent-date di KV
-//   2. Cari tanggal_lengkap terbaru (19/19) dari DB
-//   3. Jika tanggal_lengkap <= last_sent_date → skip (sudah pernah kirim)
-//   4. Generate PNG server-side → simpan di KV → kirim screenshot ke grup WA
-//   5. Ambil Excel dari KV (jika sudah diupload frontend) atau skip jika belum ada
-//      Jika ada → kirim URL Excel ke grup WA juga
-//   6. Update neraca-last-sent-date = tanggal_lengkap di KV
+// Flow: cek malam 19/19 → anti-duplikat KV → screenshot service → kirim grup WA
+// Mendelegasikan ke fungsi helper autoKirimNeraca()
+// query param ?tanggal= diabaikan (selalu pakai tanggal lengkap dari DB)
 // ===========================================================
 app.get('/api/neraca-auto-kirim', async (c) => {
   try {
-    const db     = c.env.DB
-    const tanggal = c.req.query('tanggal') || new Date().toISOString().split('T')[0]
+    const origin = new URL(c.req.url).origin
+    const result = await autoKirimNeraca(c.env.DB, c.env.FILES, origin)
 
-    const NERACA_ORDER   = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
-    const REQUIRED_COUNT = NERACA_ORDER.length  // 19
-    const DEVICE_ID      = '550fd04ee9fc7c4b4e057d0bce6270f3'
-    const GROUP_NAME     = 'AMC UID KASELTENG'
-
-    // ── ANTI-DUPLIKAT: cek last-sent-date di KV ──────────────────────────────
-    // Cari tanggal_lengkap terbaru: 19/19 ULD punya record SIANG (6–17) DAN MALAM (18–23/00–05)
-    const candidates = await db.prepare(`
-      SELECT DISTINCT dm.tanggal
-      FROM data_monitoring dm
-      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
-      WHERE mc.kode_unit IN (${NERACA_ORDER.join(',')})
-      ORDER BY dm.tanggal DESC
-      LIMIT 30
-    `).all<{ tanggal: string }>()
-
-    let tanggalLengkap: string | null = null
-    for (const row of candidates.results) {
-      // Satu query: hitung distinct ULD yang punya record SIANG dan MALAM sekaligus
-      const check = await db.prepare(`
-        SELECT
-          COUNT(DISTINCT CASE
-            WHEN CAST(dm.jam AS INTEGER) >= 6 AND CAST(dm.jam AS INTEGER) <= 17
-            THEN mc.kode_unit END) as cnt_siang,
-          COUNT(DISTINCT CASE
-            WHEN CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5
-            THEN mc.kode_unit END) as cnt_malam
-        FROM data_monitoring dm
-        JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
-        WHERE dm.tanggal = ?
-          AND mc.kode_unit IN (${NERACA_ORDER.join(',')})
-      `).bind(row.tanggal).first<{ cnt_siang: number, cnt_malam: number }>()
-
-      const siangLengkap = (check?.cnt_siang ?? 0) >= REQUIRED_COUNT  // 19/19 siang
-      const malamLengkap = (check?.cnt_malam ?? 0) >= REQUIRED_COUNT  // 19/19 malam
-
-      if (siangLengkap && malamLengkap) {
-        tanggalLengkap = row.tanggal
-        break
-      }
+    if (result.error) {
+      return c.json({ success: false, error: result.error }, 500)
     }
-
-    if (!tanggalLengkap) {
-      return c.json({ success: false, skipped: true, reason: 'Belum ada data beban puncak siang & malam lengkap 19/19 dalam 30 hari terakhir' })
+    if (result.skipped) {
+      return c.json({ success: true, skipped: true, reason: result.reason, tanggal_lengkap: result.tanggal })
     }
-
-    // Baca last-sent-date dari KV
-    const lastSentDate = await c.env.FILES.get('neraca-last-sent-date')
-
-    // Jika tanggal_lengkap <= last_sent_date → skip (sudah dikirim)
-    if (lastSentDate && tanggalLengkap <= lastSentDate) {
-      return c.json({
-        success: true,
-        skipped: true,
-        reason: `Sudah dikirim untuk tanggal ${tanggalLengkap} (last_sent: ${lastSentDate})`,
-        tanggal_lengkap: tanggalLengkap,
-        last_sent_date: lastSentDate
-      })
-    }
-
-    // Gunakan tanggalLengkap dari DB (bukan dari query param)
-    // query param ?tanggal= tetap sebagai override jika perlu manual
-    const forceParam = c.req.query('tanggal')
-    const tanggalKirim = (forceParam && forceParam !== new Date().toISOString().split('T')[0])
-      ? forceParam   // manual override
-      : tanggalLengkap
-
-    const tglFmt = tanggalKirim.split('-').reverse().join('.')
-
-    // ── 1. Query data neraca langsung dari DB (sama persis dengan /api/neraca-daya) ─
-    // Catatan: internal fetch tidak bisa di Cloudflare Workers, jadi query inline
-
-    // H-1 untuk fallback DMN/MAKS
-    const tglDate2 = new Date(tanggalKirim)
-    tglDate2.setDate(tglDate2.getDate() - 1)
-    const tanggalH1 = tglDate2.toISOString().split('T')[0]
-
-    // DM terpasang per unit
-    const terpasangRows2 = await db.prepare(
-      `SELECT kode_unit, SUM(terpasang) as dm_terpasang FROM mesin_cache WHERE terpasang IS NOT NULL GROUP BY kode_unit`
-    ).all<{ kode_unit: number, dm_terpasang: number }>()
-    const terpasangMap2: Record<number, number> = {}
-    for (const r of terpasangRows2.results) terpasangMap2[r.kode_unit] = Math.round(r.dm_terpasang || 0)
-
-    // Data monitoring tanggal yang diminta (gunakan tanggalKirim)
-    const monRows2 = await db.prepare(`
-      SELECT
-        mc.kode_unit,
-        mc.nama_unit,
-        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin IN ('Operasi','Standby') THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok,
-        MAX(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin IN ('Operasi','Standby') THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as max_dm,
-        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Operasi' THEN 1 END) as jumlah_operasi,
-        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Standby' THEN 1 END) as jumlah_standby,
-        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Pemeliharaan' THEN 1 END) as jumlah_pemeliharaan,
-        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Gangguan' THEN 1 END) as jumlah_gangguan,
-        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Rusak' THEN 1 END) as jumlah_rusak,
-        COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) THEN 1 END) as jumlah_mesin,
-        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 6 AND CAST(dm.jam AS INTEGER) <= 17) AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak_siang,
-        SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as beban_puncak_malam
-      FROM data_monitoring dm
-      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
-      WHERE dm.tanggal = ?
-      GROUP BY mc.kode_unit, mc.nama_unit
-    `).bind(tanggalKirim).all<{ kode_unit:number, nama_unit:string, dm_pasok:number, max_dm:number, jumlah_operasi:number, jumlah_standby:number, jumlah_pemeliharaan:number, jumlah_gangguan:number, jumlah_rusak:number, jumlah_mesin:number, beban_puncak_siang:number, beban_puncak_malam:number }>()
-    const monMap2: Record<number, any> = {}
-    for (const r of monRows2.results) {
-      monMap2[r.kode_unit] = {
-        nama_unit:           r.nama_unit,
-        dm_pasok:            Math.round(r.dm_pasok || 0),
-        max_dm:              Math.round(r.max_dm   || 0),
-        jumlah_operasi:      r.jumlah_operasi      || 0,
-        jumlah_standby:      r.jumlah_standby      || 0,
-        jumlah_pemeliharaan: r.jumlah_pemeliharaan || 0,
-        jumlah_gangguan:     r.jumlah_gangguan     || 0,
-        jumlah_rusak:        r.jumlah_rusak        || 0,
-        jumlah_mesin:        r.jumlah_mesin        || 0,
-        beban_puncak_siang:  Math.round(r.beban_puncak_siang  || 0),
-        beban_puncak_malam:  Math.round(r.beban_puncak_malam  || 0),
-        has_malam:           (r.dm_pasok || 0) > 0
-      }
-    }
-
-    // Data H-1 malam (fallback DMN/MAKS jika data malam hari ini belum ada)
-    const h1Rows2 = await db.prepare(`
-      SELECT
-        mc.kode_unit,
-        SUM(CASE WHEN dm.status_mesin IN ('Operasi','Standby') AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok_h1,
-        MAX(CASE WHEN dm.status_mesin IN ('Operasi','Standby') AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5) THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as max_dm_h1
-      FROM data_monitoring dm
-      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
-      WHERE dm.tanggal = ?
-      GROUP BY mc.kode_unit
-    `).bind(tanggalH1).all<{ kode_unit:number, dm_pasok_h1:number, max_dm_h1:number }>()
-    const h1Map2: Record<number, { dm_pasok_h1:number, max_dm_h1:number }> = {}
-    for (const r of h1Rows2.results) h1Map2[r.kode_unit] = { dm_pasok_h1: Math.round(r.dm_pasok_h1||0), max_dm_h1: Math.round(r.max_dm_h1||0) }
-
-    // Build rawMap dengan logika DMN/MAKS sama seperti /api/neraca-daya
-    const rawMap: Record<number, any> = {}
-    for (const ku of NERACA_ORDER) {
-      const mon = monMap2[ku]
-      const h1  = h1Map2[ku]
-      if (!mon && !h1) continue
-      const hasMalam = mon?.has_malam ?? false
-      const dmn  = hasMalam ? (mon?.dm_pasok ?? null) : (h1?.dm_pasok_h1 ?? null)
-      const maks = hasMalam ? (mon?.max_dm   ?? null) : (h1?.max_dm_h1   ?? null)
-      rawMap[ku] = {
-        kode_unit:           ku,
-        nama_unit:           mon?.nama_unit || String(ku),
-        dm_terpasang:        terpasangMap2[ku] ?? 0,
-        jumlah_operasi:      mon?.jumlah_operasi      ?? 0,
-        jumlah_standby:      mon?.jumlah_standby      ?? 0,
-        jumlah_pemeliharaan: mon?.jumlah_pemeliharaan ?? 0,
-        jumlah_gangguan:     mon?.jumlah_gangguan     ?? 0,
-        jumlah_rusak:        mon?.jumlah_rusak        ?? 0,
-        jumlah_mesin:        mon?.jumlah_mesin        ?? 0,
-        dm_pasok:            dmn  ?? 0,
-        max_dm:              maks ?? 0,
-        beban_puncak_siang:  mon?.beban_puncak_siang  ?? 0,
-        beban_puncak_malam:  mon?.beban_puncak_malam  ?? 0,
-      }
-    }
-
-    type NRow = { no:number, nama:string, ops:number, stb:number, har:number, ggn:number, rsk:number, jml:number, dtp:number, dmn:number, maks:number, bps:number, cads:number, bpm:number, cadm:number, status:string, statusColor:string }
-    const rows: NRow[] = []
-    let tOps=0,tStb=0,tHar=0,tGgn=0,tRsk=0,tJml=0,tDtp=0,tDmn=0,tMaks=0,tBps=0,tCads=0,tBpm=0,tCadm=0
-    for (let i=0; i<NERACA_ORDER.length; i++) {
-      const ku = NERACA_ORDER[i]
-      const r  = rawMap[ku]
-      const dm  = r ? Math.round(r.dm_pasok           || 0) : 0
-      const bps = r ? Math.round(r.beban_puncak_siang  || 0) : 0
-      const bpm = r ? Math.round(r.beban_puncak_malam  || 0) : 0
-      const mx  = r ? Math.round(r.max_dm              || 0) : 0
-      const dtp = r ? Math.round(r.dm_terpasang        || 0) : 0
-      const ops = r ? (r.jumlah_operasi      || 0) : 0
-      const stb = r ? (r.jumlah_standby      || 0) : 0
-      const har = r ? (r.jumlah_pemeliharaan || 0) : 0
-      const ggn = r ? (r.jumlah_gangguan     || 0) : 0
-      const rsk = r ? (r.jumlah_rusak        || 0) : 0
-      const jml = r ? (r.jumlah_mesin        || 0) : 0
-      const cads = dm - bps
-      const cadm = dm - bpm
-      let status = '', sc = '#374151'
-      if (r && dm > 0) {
-        if      (cadm < 0)   { status = 'DEFISIT'; sc = '#991b1b' }
-        else if (cadm < mx)  { status = 'SIAGA';   sc = '#92400e' }
-        else                 { status = 'NORMAL';  sc = '#065f46' }
-      }
-      rows.push({ no:i+1, nama:r?.nama_unit||String(ku), ops, stb, har, ggn, rsk, jml, dtp, dmn:dm, maks:mx, bps, cads, bpm, cadm, status, statusColor:sc })
-      tOps+=ops; tStb+=stb; tHar+=har; tGgn+=ggn; tRsk+=rsk; tJml+=jml
-      tDtp+=dtp; tDmn+=dm; tMaks+=mx; tBps+=bps; tCads+=cads; tBpm+=bpm; tCadm+=cadm
-    }
-
-    // ── 2. Generate PNG (pure pixel renderer, no external libs) ──────────────
-    function n(v:number){ return v===0?'0':v.toLocaleString('id-ID') }
-
-    // Dimensi kolom: [label, width-in-pixels]
-    const COLS = [
-      ['NO',28],['ULD',168],['OPS',32],['STB',32],['HAR',32],['GGN',32],['RSK',32],['JML',32],
-      ['DTP',56],['DMN',56],['MAKS',56],['BP SIANG',64],['CAD SIANG',64],['BP MALAM',64],['CAD MALAM',64],['STATUS',68]
-    ] as [string,number][]
-    const W = COLS.reduce((s,c)=>s+c[1],0) + 2
-    const ROW_H = 22
-    const HEAD_H = 26
-    const TITLE_H = 34
-    const FOOTER_H = 20
-    const TABLE_H  = HEAD_H + (rows.length + 1) * ROW_H
-    const TOTAL_H  = TITLE_H + TABLE_H + FOOTER_H + 16
-    const IMG_W    = W + 24
-    const IMG_H    = TOTAL_H + 24
-
-    // ── Bitmap font 5×7 (Workers-compatible, no canvas needed) ───────────────
-    const F: Record<string,[number,number,number,number,number]> = {
-      ' ':[0,0,0,0,0],'!':[0,0,95,0,0],'"':[0,7,0,7,0],'#':[20,127,20,127,20],
-      '$':[36,42,127,42,18],'%':[35,19,8,100,98],'&':[54,73,85,34,80],"'":[0,5,3,0,0],
-      '(':[0,28,34,65,0],')':[0,65,34,28,0],'*':[20,8,62,8,20],'+':[8,8,62,8,8],
-      ',':[0,80,48,0,0],'-':[8,8,8,8,8],'.':[0,96,96,0,0],'/':[32,16,8,4,2],
-      '0':[62,81,73,69,62],'1':[0,66,127,64,0],'2':[66,97,81,73,70],'3':[33,65,69,75,49],
-      '4':[24,20,18,127,16],'5':[39,69,69,69,57],'6':[60,74,73,73,48],'7':[1,113,9,5,3],
-      '8':[54,73,73,73,54],'9':[6,73,73,41,30],':':[0,54,54,0,0],';':[0,86,54,0,0],
-      '<':[8,20,34,65,0],'=':[20,20,20,20,20],'>':[0,65,34,20,8],'?':[2,1,81,9,6],
-      '@':[50,73,121,65,62],'A':[126,17,17,17,126],'B':[127,73,73,73,54],'C':[62,65,65,65,34],
-      'D':[127,65,65,34,28],'E':[127,73,73,73,65],'F':[127,9,9,9,1],'G':[62,65,73,73,122],
-      'H':[127,8,8,8,127],'I':[0,65,127,65,0],'J':[32,64,65,63,1],'K':[127,8,20,34,65],
-      'L':[127,64,64,64,64],'M':[127,2,4,2,127],'N':[127,4,8,16,127],'O':[62,65,65,65,62],
-      'P':[127,9,9,9,6],'Q':[62,65,81,33,94],'R':[127,9,25,41,70],'S':[70,73,73,73,49],
-      'T':[1,1,127,1,1],'U':[63,64,64,64,63],'V':[31,32,64,32,31],'W':[63,64,56,64,63],
-      'X':[99,20,8,20,99],'Y':[7,8,112,8,7],'Z':[97,81,73,69,67],'[':[0,127,65,65,0],
-      '\\':[2,4,8,16,32],']':[0,65,65,127,0],'^':[4,2,1,2,4],'_':[64,64,64,64,64],
-      '`':[0,1,2,4,0],'a':[32,84,84,84,120],'b':[127,72,68,68,56],'c':[56,68,68,68,32],
-      'd':[56,68,68,72,127],'e':[56,84,84,84,24],'f':[8,126,9,1,2],'g':[12,82,82,82,62],
-      'h':[127,8,4,4,120],'i':[0,68,125,64,0],'j':[32,64,68,61,0],'k':[127,16,40,68,0],
-      'l':[0,65,127,64,0],'m':[124,4,24,4,120],'n':[124,8,4,4,120],'o':[56,68,68,68,56],
-      'p':[124,20,20,20,8],'q':[8,20,20,24,124],'r':[124,8,4,4,8],'s':[72,84,84,84,32],
-      't':[4,63,68,64,32],'u':[60,64,64,32,124],'v':[28,32,64,32,28],'w':[60,64,48,64,60],
-      'x':[68,40,16,40,68],'y':[12,80,80,80,60],'z':[68,100,84,76,68],'{':[0,8,54,65,0],
-      '|':[0,0,127,0,0],'}':[0,65,54,8,0],'~':[16,8,8,16,8],
-    }
-    // Text width helper
-    function tW(s:string){ return s.length*6 }
-    // Draw text onto pixel buffer: scale=1 means 5x7px per char, scale=2 = 10x14px
-    function putText(buf:Uint8Array, s:string, px:number, py:number, scale:number, r:number, g:number, b:number){
-      for(let ci=0;ci<s.length;ci++){
-        const ch=s[ci]
-        const g5=F[ch]||F[' ']
-        for(let col=0;col<5;col++){
-          for(let row=0;row<7;row++){
-            if((g5[col]>>row)&1){
-              for(let sy=0;sy<scale;sy++) for(let sx=0;sx<scale;sx++){
-                const bx=px+ci*(5*scale+scale)+col*scale+sx
-                const by=py+row*scale+sy
-                if(bx>=0&&bx<IMG_W&&by>=0&&by<IMG_H){
-                  const idx=(by*IMG_W+bx)*3
-                  buf[idx]=r; buf[idx+1]=g; buf[idx+2]=b
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    // Fill rect
-    function fillRect(buf:Uint8Array, x:number, y:number, w:number, h:number, r:number, g:number, b:number){
-      for(let ry=y;ry<y+h;ry++) for(let rx=x;rx<x+w;rx++){
-        if(rx>=0&&rx<IMG_W&&ry>=0&&ry<IMG_H){ const i=(ry*IMG_W+rx)*3; buf[i]=r;buf[i+1]=g;buf[i+2]=b }
-      }
-    }
-    // Horizontal line
-    function hLine(buf:Uint8Array, x:number, y:number, w:number, r:number, g:number, b:number){
-      fillRect(buf,x,y,w,1,r,g,b)
-    }
-    // Vertical line
-    function vLine(buf:Uint8Array, x:number, y:number, h:number, r:number, g:number, b:number){
-      fillRect(buf,x,y,1,h,r,g,b)
-    }
-    // Draw text centered in cell
-    function putTextCenter(buf:Uint8Array, s:string, cx:number, cy:number, cellW:number, cellH:number, scale:number, r:number, g:number, b:number){
-      const tw=s.length*(5*scale+scale); const th=7*scale
-      putText(buf,s,cx+Math.floor((cellW-tw)/2),cy+Math.floor((cellH-th)/2),scale,r,g,b)
-    }
-    // Draw text left-aligned in cell
-    function putTextLeft(buf:Uint8Array, s:string, cx:number, cy:number, cellH:number, scale:number, r:number, g:number, b:number){
-      const th=7*scale
-      putText(buf,s,cx+4,cy+Math.floor((cellH-th)/2),scale,r,g,b)
-    }
-
-    // ── Allocate pixel buffer ─────────────────────────────────────────────────
-    const buf = new Uint8Array(IMG_W * IMG_H * 3)
-    // Background #f1f5f9
-    buf.fill(0); for(let i=0;i<IMG_W*IMG_H;i++){buf[i*3]=241;buf[i*3+1]=245;buf[i*3+2]=249}
-
-    let cy2=12
-    // Title bar #1a3352
-    fillRect(buf,12,cy2,W,TITLE_H,26,51,82)
-    putText(buf,`NERACA DAYA HARIAN - ${tglFmt}`,26,cy2+10,2,255,255,255)
-    const sub='AMC UID KASELTENG | 19 ULD'
-    putText(buf,sub,IMG_W-12-sub.length*6,cy2+21,1,200,217,236)
-    cy2+=TITLE_H
-
-    // Header row #1a3352
-    fillRect(buf,12,cy2,W,HEAD_H,26,51,82)
-    let hx=12
-    for(const[label,cw] of COLS){
-      putTextCenter(buf,label,hx,cy2,cw,HEAD_H,1,255,255,255)
-      vLine(buf,hx+cw,cy2,HEAD_H,26,79,128)
-      hx+=cw
-    }
-    hLine(buf,12,cy2+HEAD_H,W,26,79,128)
-    cy2+=HEAD_H
-
-    // Data rows
-    for(const r of rows){
-      const even=r.no%2===0
-      fillRect(buf,12,cy2,W,ROW_H,even?240:255,even?244:255,even?248:255)
-      const vals=[String(r.no),r.nama,n(r.ops),n(r.stb),n(r.har),n(r.ggn),n(r.rsk),n(r.jml),n(r.dtp),n(r.dmn),n(r.maks),n(r.bps),n(r.cads),n(r.bpm),n(r.cadm),r.status]
-      let dx=12
-      for(let ci2=0;ci2<COLS.length;ci2++){
-        const [,cw]=COLS[ci2]; const v=vals[ci2]
-        // Status badge background
-        if(ci2===15&&r.status){
-          const [br,bg,bb]=r.status==='DEFISIT'?[254,226,226]:r.status==='SIAGA'?[254,243,199]:[209,250,229]
-          fillRect(buf,dx+2,cy2+3,cw-4,ROW_H-6,br,bg,bb)
-        }
-        const [fr,fg,fb]=ci2===15?(r.status==='DEFISIT'?[153,27,27]:r.status==='SIAGA'?[146,64,14]:[6,95,70]):[30,41,59]
-        if(ci2===1) putTextLeft(buf,v,dx,cy2,ROW_H,1,fr,fg,fb)
-        else        putTextCenter(buf,v,dx,cy2,cw,ROW_H,1,fr,fg,fb)
-        vLine(buf,dx+cw,cy2,ROW_H,226,232,240)
-        dx+=cw
-      }
-      hLine(buf,12,cy2+ROW_H,W,226,232,240)
-      cy2+=ROW_H
-    }
-
-    // Total row #2d6a9f
-    fillRect(buf,12,cy2,W,ROW_H,45,106,159)
-    const tots=['—','TOTAL',n(tOps),n(tStb),n(tHar),n(tGgn),n(tRsk),n(tJml),n(tDtp),n(tDmn),n(tMaks),n(tBps),n(tCads),n(tBpm),n(tCadm),'—']
-    let dx2=12
-    for(let ci2=0;ci2<COLS.length;ci2++){
-      const [,cw]=COLS[ci2]
-      if(ci2===1) putTextLeft(buf,tots[ci2],dx2,cy2,ROW_H,1,255,255,255)
-      else        putTextCenter(buf,tots[ci2],dx2,cy2,cw,ROW_H,1,255,255,255)
-      vLine(buf,dx2+cw,cy2,ROW_H,26,79,128)
-      dx2+=cw
-    }
-    hLine(buf,12,cy2+ROW_H,W,26,79,128)
-    cy2+=ROW_H
-
-    // Border
-    hLine(buf,12,TITLE_H+12,W,203,213,225); hLine(buf,12,cy2,W,203,213,225)
-    vLine(buf,12,TITLE_H+12,cy2-TITLE_H-12,203,213,225); vLine(buf,12+W,TITLE_H+12,cy2-TITLE_H-12,203,213,225)
-
-    // Footer
-    const now=new Date()
-    const ftxt=`Generated ${now.toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'})} ${now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}`
-    putText(buf,ftxt,IMG_W-12-ftxt.length*6,cy2+6,1,107,114,128)
-
-    // ── Encode PNG (uncompressed STORED deflate — O(n), no async needed) ─────
-    // Uncompressed PNG: deflate level-0 STORED blocks (max 65535 bytes per block)
-    function encodePNG(pxBuf:Uint8Array, w:number, h:number): Uint8Array {
-      // Build raw scanlines (filter byte 0 per row)
-      const rowSize = 1 + w * 3
-      const raw = new Uint8Array(h * rowSize)
-      for(let y=0;y<h;y++){
-        raw[y*rowSize]=0
-        for(let x=0;x<w;x++){
-          const si=y*rowSize+1+x*3; const pi=(y*w+x)*3
-          raw[si]=pxBuf[pi]; raw[si+1]=pxBuf[pi+1]; raw[si+2]=pxBuf[pi+2]
-        }
-      }
-
-      // Adler32 for zlib wrapper
-      function adler32(data:Uint8Array):number{
-        let s1=1,s2=0
-        for(let i=0;i<data.length;i++){s1=(s1+data[i])%65521;s2=(s2+s1)%65521}
-        return((s2<<16)|s1)>>>0
-      }
-
-      // CRC32
-      const ct=new Uint32Array(256)
-      for(let i=0;i<256;i++){let c=i;for(let j=0;j<8;j++)c=(c&1)?0xEDB88320^(c>>>1):c>>>1;ct[i]=c}
-      function crc32(b:Uint8Array,st=0,len=b.length):number{
-        let c=0xFFFFFFFF
-        for(let i=st;i<st+len;i++)c=ct[(c^b[i])&0xff]^(c>>>8)
-        return(c^0xFFFFFFFF)>>>0
-      }
-
-      // Build DEFLATE STORED blocks (level 0)
-      // zlib header (CMF=0x78, FLG makes it divisible by 31): 0x78 0x01
-      const BLOCK_MAX = 65535
-      const numBlocks = Math.ceil(raw.length / BLOCK_MAX)
-      // Each STORED block: 1 (BFINAL+BTYPE) + 2 (LEN) + 2 (NLEN) + LEN bytes
-      let deflateSize = 2 + 4  // zlib header (2) + adler32 (4)
-      for(let i=0;i<numBlocks;i++){
-        const blen = Math.min(BLOCK_MAX, raw.length - i*BLOCK_MAX)
-        deflateSize += 5 + blen  // 1(hdr)+2(len)+2(nlen)+data
-      }
-      const deflate = new Uint8Array(deflateSize)
-      const dv = new DataView(deflate.buffer)
-      deflate[0]=0x78; deflate[1]=0x01  // zlib header
-      let dp=2
-      for(let i=0;i<numBlocks;i++){
-        const isLast = i===numBlocks-1 ? 1 : 0
-        const bStart = i*BLOCK_MAX
-        const bLen = Math.min(BLOCK_MAX, raw.length - bStart)
-        deflate[dp++] = isLast  // BFINAL | BTYPE(0=STORED)
-        dv.setUint16(dp, bLen, true); dp+=2
-        dv.setUint16(dp, (~bLen)&0xFFFF, true); dp+=2
-        deflate.set(raw.subarray(bStart, bStart+bLen), dp); dp+=bLen
-      }
-      dv.setUint32(dp, adler32(raw))  // adler32 checksum
-
-      // PNG chunk helper
-      function chunk(type:string, data:Uint8Array):Uint8Array{
-        const tb=new TextEncoder().encode(type)
-        const len4=new Uint8Array(4); new DataView(len4.buffer).setUint32(0,data.length)
-        const comb=new Uint8Array(4+data.length); comb.set(tb);comb.set(data,4)
-        const crc4=new Uint8Array(4); new DataView(crc4.buffer).setUint32(0,crc32(comb))
-        const out=new Uint8Array(4+4+data.length+4)
-        out.set(len4,0);out.set(tb,4);out.set(data,8);out.set(crc4,8+data.length)
-        return out
-      }
-      const sig=new Uint8Array([137,80,78,71,13,10,26,10])
-      const ihdr=new Uint8Array(13)
-      const ihdrDv=new DataView(ihdr.buffer)
-      ihdrDv.setUint32(0,w);ihdrDv.setUint32(4,h);ihdr[8]=8;ihdr[9]=2  // 8-bit RGB
-      const ihdrC=chunk('IHDR',ihdr)
-      const idatC=chunk('IDAT',deflate)
-      const iendC=chunk('IEND',new Uint8Array(0))
-      const total=sig.length+ihdrC.length+idatC.length+iendC.length
-      const out=new Uint8Array(total)
-      let o=0
-      out.set(sig,o);o+=sig.length
-      out.set(ihdrC,o);o+=ihdrC.length
-      out.set(idatC,o);o+=idatC.length
-      out.set(iendC,o)
-      return out
-    }
-
-    const pngBytes = encodePNG(buf, IMG_W, IMG_H)
-    // base64 encode
-    let pngBase64 = ''
-    const CHUNK_SIZE = 8192
-    for(let i=0;i<pngBytes.length;i+=CHUNK_SIZE){
-      pngBase64 += String.fromCharCode(...pngBytes.subarray(i,i+CHUNK_SIZE))
-    }
-    pngBase64 = btoa(pngBase64)
-
-    // ── 3. Simpan PNG ke KV → expose via endpoint publik ─────────────────────
-    const pngKey = `neraca-png-${tanggalKirim}`
-    await c.env.FILES.put(pngKey, pngBase64, { expirationTtl: 86400 })
-
-    // ── 4. Build public URL untuk PNG ────────────────────────────────────────
-    const baseUrl2  = new URL(c.req.url).origin
-    const imgUrl    = `${baseUrl2}/api/neraca-png/${pngKey}`
-
-    // ── 5. Kirim screenshot PNG ke WA Grup ───────────────────────────────────
-    const message = `📊 *Neraca Daya ${tglFmt}*\nRingkasan neraca daya harian seluruh ULD.`
-    const waForm  = new FormData()
-    waForm.append('device_id', DEVICE_ID)
-    waForm.append('group',     GROUP_NAME)
-    waForm.append('message',   message)
-    waForm.append('file',      imgUrl)
-    const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waForm })
-    const waJson = await waRes.json() as { status:boolean, message:string }
-    if (!waJson.status) return c.json({ success:false, error:`Screenshot WA gagal: ${waJson.message}` }, 500)
-
-    // ── 6. Kirim URL Excel ke WA Grup (jika Excel sudah diupload ke KV) ──────
-    // Key Excel = "UID KSKT DD.MM.YYYY.xlsx" (disimpan frontend via /api/neraca-excel-upload)
-    let excelSent = false
-    let excelUrl  = ''
-    try {
-      const excelFilename = `UID KSKT ${tglFmt}.xlsx`
-      const excelB64 = await c.env.FILES.get(excelFilename)
-      if (excelB64) {
-        excelUrl = `${baseUrl2}/api/neraca-excel-file/${encodeURIComponent(excelFilename)}`
-        const excelMsg = `📊 *Neraca Daya ${tglFmt}*\nData neraca daya harian seluruh ULD telah lengkap (19/19).\n\n📥 *Download Excel:*\n${excelUrl}`
-        const waExcelForm = new FormData()
-        waExcelForm.append('device_id', DEVICE_ID)
-        waExcelForm.append('group',     GROUP_NAME)
-        waExcelForm.append('message',   excelMsg)
-        const waExcelRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waExcelForm })
-        const waExcelJson = await waExcelRes.json() as { status:boolean, message:string }
-        excelSent = waExcelJson.status
-      }
-    } catch(_) { /* Excel belum diupload atau gagal — tidak blocking */ }
-
-    // ── 7. Kirim ke grup AMC PRINDAVAN ───────────────────────────────────────
-    // Dijamin sampai sini: data malam 19/19 sudah terpenuhi (kondisi di atas)
-    let prindavanSent = false
-    try {
-      const msgPrindavan =
-        `✅ *Neraca Daya ${tglFmt}*\n` +
-        `Data malam seluruh *19 ULD* sudah lengkap.\n` +
-        `Laporan telah dikirim ke grup AMC UID KALSELTENG.`
-      const waPrindavan = new FormData()
-      waPrindavan.append('device_id', DEVICE_ID)
-      waPrindavan.append('group',     'AMC PRINDAVAN')
-      waPrindavan.append('message',   msgPrindavan)
-      const resPrindavan = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waPrindavan })
-      const jsonPrindavan = await resPrindavan.json() as { status:boolean, message:string }
-      prindavanSent = jsonPrindavan.status
-    } catch(_) { /* tidak blocking */ }
-
-    // ── 8. Update KV neraca-last-sent-date = tanggalKirim ────────────────────
-    await c.env.FILES.put('neraca-last-sent-date', tanggalKirim)
-
     return c.json({
       success: true,
-      imgUrl,
-      tanggal_kirim: tanggalKirim,
-      last_sent_date_updated: tanggalKirim,
-      excel_sent: excelSent,
-      excel_url: excelUrl || null,
-      prindavan_sent: prindavanSent,
-      message: `Screenshot${excelSent ? ' + Excel' : ''} dikirim ke grup WA AMC UID KASELTENG (${tglFmt})${prindavanSent ? ' + notif ke AMC PRINDAVAN' : ''}`
+      tanggal_kirim: result.tanggal,
+      last_sent_date_updated: result.tanggal,
+      message: result.message
     })
   } catch (e:any) { return c.json({ success:false, error:e.message }, 500) }
 })
@@ -4511,27 +4003,176 @@ app.get('/api/cron-test', async (c) => {
 })
 
 // ============================================================
-// SCHEDULED HANDLER — dipanggil oleh Cloudflare Cron Trigger
-// Cron 1: "0 2 * * *"  → 02:00 UTC = 10:00 WITA (notif HOP BBM)
-// Cron 2: "0 12 * * *" → 12:00 UTC = 20:00 WITA (notif neraca daya)
+// HELPER: AUTO-KIRIM NERACA DAYA (screenshot + excel ke WA Grup)
+// Dipanggil dari cron malam DAN dari endpoint /api/neraca-auto-kirim
+// Parameter origin: base URL Pages (untuk membentuk excel URL)
 // ============================================================
+async function autoKirimNeraca(
+  db: D1Database,
+  kv: KVNamespace,
+  origin: string   // mis. "https://mesin-monitor.pages.dev"
+): Promise<{ skipped?: boolean, reason?: string, tanggal?: string, error?: string, message?: string }> {
+
+  const NERACA_ORDER   = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
+  const REQUIRED_COUNT = NERACA_ORDER.length  // 19
+  const DEVICE_ID      = '550fd04ee9fc7c4b4e057d0bce6270f3'
+  const GROUP_NAME     = 'AMC UID KASELTENG'
+  const SCREENSHOT_SERVICE_URL = 'https://3001-ixws25249u6ccmhjmwoyc-18e660f9.sandbox.novita.ai'
+
+  // ── 1. Cari tanggal_lengkap: 19/19 ULD punya record MALAM ────────────────
+  const candidates = await db.prepare(`
+    SELECT DISTINCT dm.tanggal
+    FROM data_monitoring dm
+    JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+    WHERE mc.kode_unit IN (${NERACA_ORDER.join(',')})
+    ORDER BY dm.tanggal DESC
+    LIMIT 30
+  `).all<{ tanggal: string }>()
+
+  let tanggalLengkap: string | null = null
+  for (const row of candidates.results) {
+    const check = await db.prepare(`
+      SELECT
+        COUNT(DISTINCT CASE
+          WHEN CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5
+          THEN mc.kode_unit END) as cnt_malam
+      FROM data_monitoring dm
+      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+      WHERE dm.tanggal = ?
+        AND mc.kode_unit IN (${NERACA_ORDER.join(',')})
+    `).bind(row.tanggal).first<{ cnt_malam: number }>()
+    if ((check?.cnt_malam ?? 0) >= REQUIRED_COUNT) {
+      tanggalLengkap = row.tanggal
+      break
+    }
+  }
+
+  if (!tanggalLengkap) {
+    return { skipped: true, reason: 'Belum ada data beban puncak malam lengkap 19/19 dalam 30 hari terakhir' }
+  }
+
+  // ── 2. Anti-duplikat: cek KV ─────────────────────────────────────────────
+  const lastSentDate = await kv.get('neraca-last-sent-date')
+  if (lastSentDate && tanggalLengkap <= lastSentDate) {
+    return {
+      skipped: true,
+      reason: `Sudah dikirim untuk tanggal ${tanggalLengkap} (last_sent: ${lastSentDate})`,
+      tanggal: tanggalLengkap
+    }
+  }
+
+  const tanggalKirim = tanggalLengkap
+  const tglFmt = tanggalKirim.split('-').reverse().join('.')
+
+  // ── 3. Screenshot via Playwright service ─────────────────────────────────
+  let imgUrl = ''
+  try {
+    const ssRes = await fetch(`${SCREENSHOT_SERVICE_URL}/screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tanggal: tanggalKirim }),
+      signal: AbortSignal.timeout(60000)
+    })
+    const ssJson = await ssRes.json() as { success: boolean, url?: string, error?: string }
+    if (ssJson.success && ssJson.url) imgUrl = ssJson.url
+  } catch(e: any) {
+    console.error('[autoKirimNeraca] Screenshot service error:', e.message)
+  }
+  if (!imgUrl) {
+    return { error: 'Screenshot service tidak tersedia. Pastikan sandbox aktif.' }
+  }
+
+  // ── 4. Kirim screenshot ke WA Grup AMC UID KASELTENG ─────────────────────
+  const waForm = new FormData()
+  waForm.append('device_id', DEVICE_ID)
+  waForm.append('group',     GROUP_NAME)
+  waForm.append('message',   `📊 *Neraca Daya ${tglFmt}*\nTabel Neraca Daya seluruh ULD (No s/d Status)`)
+  waForm.append('file',      imgUrl)
+  const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waForm })
+  const waJson = await waRes.json() as { status:boolean, message:string }
+  if (!waJson.status) {
+    return { error: `Screenshot WA gagal: ${waJson.message}` }
+  }
+
+  // ── 5. Kirim URL Excel ke grup ────────────────────────────────────────────
+  let excelSent = false
+  try {
+    const excelUrl  = `${origin}/api/xlsx?tanggal=${tanggalKirim}`
+    const excelMsg  = `📥 *Download Excel Neraca Daya ${tglFmt}*\nUID KSKT ${tglFmt}.xlsx\n\n${excelUrl}`
+    const waExcelForm = new FormData()
+    waExcelForm.append('device_id', DEVICE_ID)
+    waExcelForm.append('group',     GROUP_NAME)
+    waExcelForm.append('message',   excelMsg)
+    const waExcelRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waExcelForm })
+    const waExcelJson = await waExcelRes.json() as { status:boolean, message:string }
+    excelSent = waExcelJson.status
+  } catch(_) { /* tidak blocking */ }
+
+  // ── 6. Notif ke AMC PRINDAVAN ─────────────────────────────────────────────
+  let prindavanSent = false
+  try {
+    const msgPrindavan =
+      `✅ *Neraca Daya ${tglFmt}*\n` +
+      `Data malam seluruh *19 ULD* sudah lengkap.\n` +
+      `Laporan telah dikirim ke grup AMC UID KALSELTENG.`
+    const waPrindavan = new FormData()
+    waPrindavan.append('device_id', DEVICE_ID)
+    waPrindavan.append('group',     'AMC PRINDAVAN')
+    waPrindavan.append('message',   msgPrindavan)
+    const resPrindavan = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waPrindavan })
+    const jsonPrindavan = await resPrindavan.json() as { status:boolean, message:string }
+    prindavanSent = jsonPrindavan.status
+  } catch(_) { /* tidak blocking */ }
+
+  // ── 7. Update KV last-sent-date ───────────────────────────────────────────
+  await kv.put('neraca-last-sent-date', tanggalKirim)
+
+  return {
+    tanggal: tanggalKirim,
+    message: `Screenshot${excelSent ? ' + Excel' : ''} dikirim ke grup WA AMC UID KASELTENG (${tglFmt})${prindavanSent ? ' + notif ke AMC PRINDAVAN' : ''}`
+  }
+}
+
+// ============================================================
+// SCHEDULED HANDLER — dipanggil oleh Cloudflare Cron Trigger
+// Cron 1: "0 2 * * *"   → 02:00 UTC = 10:00 WITA (notif HOP BBM)
+// Cron 2: "0 12 * * *"  → 12:00 UTC = 20:00 WITA (notif neraca teks ke AMC PRINDAVAN)
+// Cron 3-7: "0 10-15 * * *" → 18:00–23:00 WITA (auto-kirim neraca screenshot+excel ke AMC UID KASELTENG)
+// ============================================================
+const MALAM_CRONS = ['0 10 * * *','0 11 * * *','0 12 * * *','0 13 * * *','0 14 * * *','0 15 * * *']
+
 async function handleScheduled(
   event: ScheduledEvent,
   env: { DB: D1Database, FILES: KVNamespace },
   _ctx: ExecutionContext
 ): Promise<void> {
   const db       = env.DB
-  const cronExpr = event.cron  // "0 2 * * *" atau "0 12 * * *"
+  const cronExpr = event.cron
 
   try {
     if (cronExpr === '0 2 * * *') {
       // 02:00 UTC = 10:00 WITA — notif HOP BBM ke AMC PRINDAVAN
       const { pesan, mentions } = await notifHopBBM(db)
       await kirimPesanGrup(pesan, mentions)
-    } else if (cronExpr === '0 12 * * *') {
-      // 12:00 UTC = 20:00 WITA — notif neraca daya ke AMC PRINDAVAN
-      const { pesan, mentions } = await notifNeracaDaya(db)
-      await kirimPesanGrup(pesan, mentions)
+
+    } else if (MALAM_CRONS.includes(cronExpr)) {
+      // 18:00–23:00 WITA — cek malam 19/19 → screenshot + excel ke AMC UID KASELTENG
+      // (juga berlaku untuk 0 12 * * * = 20:00 WITA, menggantikan notif teks lama)
+      console.log(`[cron ${cronExpr}] Mulai cek neraca malam WITA...`)
+      const result = await autoKirimNeraca(db, env.FILES, 'https://mesin-monitor.pages.dev')
+      if (result.skipped) {
+        console.log(`[cron ${cronExpr}] Skipped: ${result.reason}`)
+      } else if (result.error) {
+        console.error(`[cron ${cronExpr}] Error: ${result.error}`)
+      } else {
+        console.log(`[cron ${cronExpr}] Berhasil: ${result.message}`)
+      }
+
+      // Notif teks neraca daya ke AMC PRINDAVAN (hanya jam 20:00 WITA = 12:00 UTC)
+      if (cronExpr === '0 12 * * *') {
+        const { pesan, mentions } = await notifNeracaDaya(db)
+        await kirimPesanGrup(pesan, mentions)
+      }
     }
   } catch(e:any) {
     console.error(`[cron ${cronExpr}] Error:`, e.message)
