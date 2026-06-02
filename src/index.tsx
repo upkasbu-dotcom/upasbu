@@ -3392,6 +3392,26 @@ app.get('/', (c) => {
   </div>
   <!-- SFC -->
   <div id="sfc-table-wrap" class="hidden">
+    <!-- Tabel SFC di atas grafik -->
+    <div style="margin-bottom:12px;">
+      <div id="sfc-tabel-title" style="font-size:0.78rem;font-weight:700;color:#1e3a5f;margin-bottom:6px;padding:0 2px;">SFC per ULD</div>
+      <!-- Tabel ULD (mode semua ULD) -->
+      <div id="sfc-tabel-uld-wrap" style="overflow-x:auto;display:none;">
+        <table id="sfc-tabel-uld" style="border-collapse:collapse;font-size:0.75rem;">
+          <thead id="sfc-tabel-uld-head"></thead>
+          <tbody id="sfc-tabel-uld-body"></tbody>
+        </table>
+      </div>
+      <!-- Tabel Mesin (mode ULD dipilih) -->
+      <div id="sfc-tabel-mesin-wrap" style="overflow-x:auto;display:none;">
+        <div style="font-size:0.78rem;font-weight:700;color:#1e3a5f;margin-bottom:6px;padding:0 2px;" id="sfc-tabel-mesin-title">SFC per Mesin</div>
+        <table id="sfc-tabel-mesin" style="border-collapse:collapse;font-size:0.75rem;">
+          <thead id="sfc-tabel-mesin-head"></thead>
+          <tbody id="sfc-tabel-mesin-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <!-- Grafik SFC -->
     <div style="padding:8px 0;">
       <canvas id="sfc-chart" style="width:100%;max-height:480px;"></canvas>
     </div>

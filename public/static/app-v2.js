@@ -4066,7 +4066,8 @@ async function loadSfcTab() {
       sel.appendChild(opt)
     })
 
-    // Render chart sesuai filter
+    // Render tabel + chart sesuai filter
+    sfcRenderTabel()
     sfcRenderChart()
 
     document.getElementById('info-data-record').textContent =
@@ -4080,7 +4081,112 @@ async function loadSfcTab() {
 }
 
 function onSfcUldChange() {
+  sfcRenderTabel()
   sfcRenderChart()
+}
+
+function sfcRenderTabel() {
+  var selVal  = document.getElementById('sfc-sel-uld').value
+  var tanggal = document.getElementById('data-tanggal').value
+  var dates   = sfcAllDates
+  var units   = sfcAllUnits
+
+  if (!dates || dates.length === 0 || !units || units.length === 0) return
+
+  function fmtD(d) { var p = d.split('-'); return p[2]+'/'+p[1] }
+
+  function sfcCellStyle(v) {
+    if (v === null || v === undefined) return 'color:#94a3b8;text-align:center;'
+    if (v <= 0.3157) return 'color:#16a34a;font-weight:700;text-align:center;'
+    if (v <= 0.3188) return 'color:#d97706;font-weight:700;text-align:center;'
+    return 'color:#dc2626;font-weight:700;text-align:center;'
+  }
+  function sfcCellVal(v) {
+    return (v !== null && v !== undefined) ? v.toFixed(3) : '\u2014'
+  }
+
+  var TH_BASE = 'background:#1e3a5f;color:#fff;padding:6px 8px;white-space:nowrap;font-size:0.7rem;font-weight:600;border:1px solid #2d5a8e;text-align:center;'
+  var TD_BASE = 'padding:5px 8px;border:1px solid #e2e8f0;font-size:0.72rem;'
+  // Kolom NO: lebar tetap 32px agar tidak melar
+  var TH_NO = TH_BASE + 'width:32px;max-width:32px;min-width:0;padding:6px 4px;'
+  var TD_NO = TD_BASE + 'width:32px;max-width:32px;min-width:0;white-space:nowrap;text-align:center;color:#64748b;padding:5px 4px;'
+
+  if (selVal) {
+    var unit = units.find(function(u) { return String(u.kode_unit) === String(selVal) })
+    document.getElementById('sfc-tabel-uld-wrap').style.display   = 'none'
+    document.getElementById('sfc-tabel-mesin-wrap').style.display = 'block'
+    if (!unit) { document.getElementById('sfc-tabel-mesin-body').innerHTML = ''; return }
+    document.getElementById('sfc-tabel-mesin-title').textContent =
+      'SFC per Mesin \u2014 ' + unit.nama_unit + ' \u2014 30 Hari s/d ' + fmtD(tanggal)
+    var mesinList = unit.mesin || []
+    var headHTML = '<tr>'
+    headHTML += '<th style="' + TH_NO + '">NO</th>'
+    headHTML += '<th style="' + TH_BASE + 'text-align:left;min-width:160px;">MESIN</th>'
+    dates.forEach(function(d) { headHTML += '<th style="' + TH_BASE + 'min-width:52px;">' + fmtD(d) + '</th>' })
+    headHTML += '<th style="' + TH_BASE + 'background:#2d5a8e;min-width:68px;">RATA-RATA</th></tr>'
+    document.getElementById('sfc-tabel-mesin-head').innerHTML = headHTML
+    var tblMesin = document.getElementById('sfc-tabel-mesin')
+    tblMesin.style.tableLayout = 'fixed'
+    tblMesin.style.width = 'max-content'
+    var bodyHTML = ''
+    for (var mi = 0; mi < mesinList.length; mi++) {
+      var m = mesinList[mi]
+      var vals = []
+      dates.forEach(function(d) { vals.push(m.daily ? m.daily[d] : null) })
+      var validVals = vals.filter(function(v) { return v !== null && v !== undefined })
+      var avg = validVals.length > 0 ? validVals.reduce(function(a,b){return a+b},0)/validVals.length : null
+      var rowBg = mi % 2 === 0 ? '#ffffff' : '#f8fafc'
+      bodyHTML += '<tr style="background:' + rowBg + ';">' 
+      bodyHTML += '<td style="' + TD_NO + '">' + (mi+1) + '</td>'
+      bodyHTML += '<td style="' + TD_BASE + 'font-weight:600;color:#1e3a5f;">' + (m.nama_mesin || '-') + '</td>'
+      vals.forEach(function(v) { bodyHTML += '<td style="' + TD_BASE + sfcCellStyle(v) + '">' + sfcCellVal(v) + '</td>' })
+      bodyHTML += '<td style="' + TD_BASE + 'background:#f0f4ff;' + sfcCellStyle(avg) + 'font-size:0.73rem;">' + sfcCellVal(avg) + '</td></tr>'
+    }
+    if (mesinList.length > 0) {
+      bodyHTML += '<tr style="background:#e8f0fe;font-weight:700;">'
+      bodyHTML += '<td style="' + TD_NO + '"></td>'
+      bodyHTML += '<td style="' + TD_BASE + 'font-weight:700;color:#1e3a5f;">RATA-RATA ULD</td>'
+      dates.forEach(function(d) {
+        var v = unit.daily ? unit.daily[d] : null
+        bodyHTML += '<td style="' + TD_BASE + sfcCellStyle(v) + 'font-size:0.73rem;">' + sfcCellVal(v) + '</td>'
+      })
+      var uldVals = dates.map(function(d){ return unit.daily ? unit.daily[d] : null }).filter(function(v){return v!==null && v!==undefined})
+      var uldAvg = uldVals.length > 0 ? uldVals.reduce(function(a,b){return a+b},0)/uldVals.length : null
+      bodyHTML += '<td style="' + TD_BASE + 'background:#dbeafe;' + sfcCellStyle(uldAvg) + 'font-size:0.73rem;">' + sfcCellVal(uldAvg) + '</td></tr>'
+    }
+    document.getElementById('sfc-tabel-mesin-body').innerHTML = bodyHTML
+    return
+  }
+
+  document.getElementById('sfc-tabel-uld-wrap').style.display   = 'block'
+  document.getElementById('sfc-tabel-mesin-wrap').style.display = 'none'
+  document.getElementById('sfc-tabel-title').textContent = 'SFC per ULD \u2014 30 Hari s/d ' + fmtD(tanggal)
+  var headHTML = '<tr>'
+  headHTML += '<th style="' + TH_NO + '">NO</th>'
+  headHTML += '<th style="' + TH_BASE + 'text-align:left;min-width:200px;">ULD</th>'
+  dates.forEach(function(d) { headHTML += '<th style="' + TH_BASE + 'min-width:52px;">' + fmtD(d) + '</th>' })
+  headHTML += '<th style="' + TH_BASE + 'background:#2d5a8e;min-width:68px;">RATA-RATA</th></tr>'
+  document.getElementById('sfc-tabel-uld-head').innerHTML = headHTML
+  var tblUld = document.getElementById('sfc-tabel-uld')
+  tblUld.style.tableLayout = 'fixed'
+  tblUld.style.width = 'max-content'
+  var bodyHTML = ''
+  for (var ui = 0; ui < units.length; ui++) {
+    var u = units[ui]
+    var vals = []
+    dates.forEach(function(d) { vals.push(u.daily ? u.daily[d] : null) })
+    var validVals = vals.filter(function(v) { return v !== null && v !== undefined })
+    var avg = validVals.length > 0 ? validVals.reduce(function(a,b){return a+b},0)/validVals.length : null
+    var rowBg = ui % 2 === 0 ? '#ffffff' : '#f8fafc'
+    bodyHTML += '<tr style="background:' + rowBg + ';cursor:pointer;" '
+    bodyHTML += 'onclick="(function(){var s=document.getElementById(\'sfc-sel-uld\');s.value=\'' + u.kode_unit + '\';onSfcUldChange();})()"'
+    bodyHTML += ' title="Klik untuk lihat detail per mesin">'
+    bodyHTML += '<td style="' + TD_NO + '">' + (ui+1) + '</td>'
+    bodyHTML += '<td style="' + TD_BASE + 'font-weight:600;color:#1e3a5f;white-space:nowrap;"><span style="color:#2563eb;text-decoration:underline;cursor:pointer;">' + u.nama_unit + '</span></td>'
+    vals.forEach(function(v) { bodyHTML += '<td style="' + TD_BASE + sfcCellStyle(v) + '">' + sfcCellVal(v) + '</td>' })
+    bodyHTML += '<td style="' + TD_BASE + 'background:#f0f4ff;' + sfcCellStyle(avg) + 'font-size:0.73rem;">' + sfcCellVal(avg) + '</td></tr>'
+  }
+  document.getElementById('sfc-tabel-uld-body').innerHTML = bodyHTML
 }
 
 function sfcRenderChart() {
