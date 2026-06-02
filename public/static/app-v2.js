@@ -2611,7 +2611,8 @@ function renderReview(unit, tanggal, d) {
     'Saldo Awal : ' + fmtNumPlain(d.saldo_awal) + '\n' +
     'Saldo Akhir : ' + fmtNumPlain(d.saldo_akhir) + '\n' +
     'Penerimaan BBM : ' + penBbmTeks + '\n' +
-    'Estimasi Pemakaian BBM Maksimal : ' + fmtNumPlain(d.estimasi_bbm_max)
+    'Estimasi Pemakaian BBM Maksimal : ' + fmtNumPlain(d.estimasi_bbm_max) + '\n' +
+    'Jenis BB : B40'
 
   var html = '<div class="review-wrap">'
   html += '<div class="review-kop"><div class="review-kop-left">'
@@ -2795,9 +2796,8 @@ function isNeracaAllFilled(rows) {
   for (var i = 0; i < NERACA_ORDER.length; i++) {
     var r = rowMap[NERACA_ORDER[i]]
     if (!r) return false
-    // Wajib ada record siang DAN malam (has_siang & has_malam dari cnt record, bukan nilai beban)
-    // beban=0 tetap dianggap ada data, yang penting ada record di jam tsb
-    if (!r.has_siang || !r.has_malam) return false
+    // Trigger hanya saat data beban puncak MALAM semua ULD sudah terisi
+    if (!r.has_malam) return false
   }
   return true
 }
@@ -3031,22 +3031,8 @@ async function autoKirimNeracaWA(rows, tanggal) {
   try {
     showToast('Semua data neraca terisi — memproses pengiriman WA...', 'info')
 
-    // 1. Upload Excel ke KV (agar server bisa sertakan URL Excel saat kirim WA)
-    var result = await buildNeracaExcelBuffer(rows, tanggalLengkap)
-    var upRes  = await fetch('/api/neraca-excel-upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename: result.fileName, data: result.buffer })
-    })
-    var upJson = await upRes.json()
-    if (!upJson.success) {
-      // Excel upload gagal — lanjut kirim screenshot saja (non-fatal)
-      console.warn('Upload Excel gagal:', upJson.error)
-    }
-
-    // 2. Panggil satu endpoint → server cek anti-duplikat KV, generate PNG,
-    //    kirim screenshot + URL Excel ke grup WA, update last-sent-date di KV
-    var autoRes  = await fetch('/api/neraca-auto-kirim')
+    // Langsung panggil auto-kirim dengan tanggal yang dipilih user
+    var autoRes  = await fetch('/api/neraca-auto-kirim?tanggal=' + tanggalLengkap)
     var autoJson = await autoRes.json()
 
     if (autoJson.skipped) {
