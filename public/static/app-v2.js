@@ -4121,7 +4121,7 @@ function sfcRenderTabel() {
     var mesinList = unit.mesin || []
     var headHTML = '<tr>'
     headHTML += '<th style="' + TH_NO + '">NO</th>'
-    headHTML += '<th style="' + TH_BASE + 'text-align:left;min-width:160px;">MESIN</th>'
+    headHTML += '<th style="' + TH_BASE + 'text-align:center;min-width:160px;">MESIN</th>'
     dates.forEach(function(d) { headHTML += '<th style="' + TH_BASE + 'min-width:52px;">' + fmtD(d) + '</th>' })
     headHTML += '<th style="' + TH_BASE + 'background:#2d5a8e;min-width:68px;">RATA-RATA</th></tr>'
     document.getElementById('sfc-tabel-mesin-head').innerHTML = headHTML
@@ -4138,7 +4138,7 @@ function sfcRenderTabel() {
       var rowBg = mi % 2 === 0 ? '#ffffff' : '#f8fafc'
       bodyHTML += '<tr style="background:' + rowBg + ';">' 
       bodyHTML += '<td style="' + TD_NO + '">' + (mi+1) + '</td>'
-      bodyHTML += '<td style="' + TD_BASE + 'font-weight:600;color:#1e3a5f;">' + (m.nama_mesin || '-') + '</td>'
+      bodyHTML += '<td style="' + TD_BASE + 'font-weight:600;color:#1e3a5f;text-align:center;">' + (m.nama_mesin || '-') + '</td>'
       vals.forEach(function(v) { bodyHTML += '<td style="' + TD_BASE + sfcCellStyle(v) + '">' + sfcCellVal(v) + '</td>' })
       bodyHTML += '<td style="' + TD_BASE + 'background:#f0f4ff;' + sfcCellStyle(avg) + 'font-size:0.73rem;">' + sfcCellVal(avg) + '</td></tr>'
     }
@@ -4163,7 +4163,7 @@ function sfcRenderTabel() {
   document.getElementById('sfc-tabel-title').textContent = 'SFC per ULD \u2014 30 Hari s/d ' + fmtD(tanggal)
   var headHTML = '<tr>'
   headHTML += '<th style="' + TH_NO + '">NO</th>'
-  headHTML += '<th style="' + TH_BASE + 'text-align:left;min-width:200px;">ULD</th>'
+  headHTML += '<th style="' + TH_BASE + 'text-align:center;min-width:200px;">ULD</th>'
   dates.forEach(function(d) { headHTML += '<th style="' + TH_BASE + 'min-width:52px;">' + fmtD(d) + '</th>' })
   headHTML += '<th style="' + TH_BASE + 'background:#2d5a8e;min-width:68px;">RATA-RATA</th></tr>'
   document.getElementById('sfc-tabel-uld-head').innerHTML = headHTML
@@ -4182,7 +4182,7 @@ function sfcRenderTabel() {
     bodyHTML += 'onclick="(function(){var s=document.getElementById(\'sfc-sel-uld\');s.value=\'' + u.kode_unit + '\';onSfcUldChange();})()"'
     bodyHTML += ' title="Klik untuk lihat detail per mesin">'
     bodyHTML += '<td style="' + TD_NO + '">' + (ui+1) + '</td>'
-    bodyHTML += '<td style="' + TD_BASE + 'font-weight:600;color:#1e3a5f;white-space:nowrap;"><span style="color:#2563eb;text-decoration:underline;cursor:pointer;">' + u.nama_unit + '</span></td>'
+    bodyHTML += '<td style="' + TD_BASE + 'font-weight:600;color:#1e3a5f;white-space:nowrap;text-align:center;"><span style="color:#2563eb;text-decoration:underline;cursor:pointer;">' + u.nama_unit + '</span></td>'
     vals.forEach(function(v) { bodyHTML += '<td style="' + TD_BASE + sfcCellStyle(v) + '">' + sfcCellVal(v) + '</td>' })
     bodyHTML += '<td style="' + TD_BASE + 'background:#f0f4ff;' + sfcCellStyle(avg) + 'font-size:0.73rem;">' + sfcCellVal(avg) + '</td></tr>'
   }
