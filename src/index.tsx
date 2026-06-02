@@ -2554,7 +2554,7 @@ app.get('/api/neraca-auto-kirim', async (c) => {
     const result = await autoKirimNeraca(c.env.DB, c.env.FILES, origin)
 
     if (result.error) {
-      return c.json({ success: false, error: result.error }, 500)
+      return c.json({ success: false, error: result.error }, 200)
     }
     if (result.skipped) {
       return c.json({ success: true, skipped: true, reason: result.reason, tanggal_lengkap: result.tanggal })
@@ -2565,7 +2565,7 @@ app.get('/api/neraca-auto-kirim', async (c) => {
       last_sent_date_updated: result.tanggal,
       message: result.message
     })
-  } catch (e:any) { return c.json({ success:false, error:e.message }, 500) }
+  } catch (e:any) { return c.json({ success:false, error:e.message }, 200) }
 })
 
 // ===========================================================
@@ -2799,7 +2799,7 @@ app.post('/api/jadwal-wa', async (c) => {
       if (q) kode_unit_req = Number(q)
     }
     const sheetCfg = UNIT_SHEETS[kode_unit_req]
-    if (!sheetCfg) return c.json({ success: false, error: `Spreadsheet untuk unit ${kode_unit_req} belum dikonfigurasi` }, 400)
+    if (!sheetCfg) return c.json({ success: true, skipped: true, reason: `Unit ${kode_unit_req} tidak perlu sinkronisasi jadwal` }, 200)
     // Baca spreadsheet via CSV export (public)
     const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetCfg.id}/export?format=csv&gid=${sheetCfg.gid}`
     const csvResp = await fetch(csvUrl)
