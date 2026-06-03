@@ -4198,17 +4198,17 @@ async function autoKirimHopBbm(
   const tglFmt = tanggal.split('-').reverse().join('.')
   const waForm = new FormData()
   waForm.append('device_id', DEVICE_ID)
-  waForm.append('name',      GROUP_NAME)
-  waForm.append('caption',   `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`)
+  waForm.append('group',     GROUP_NAME)
+  waForm.append('message',   `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`)
   waForm.append('file',      imgUrl)
 
   const waRes = await fetch('https://app.whacenter.com/api/sendGroup', {
     method: 'POST',
     body: waForm
   })
-  if (!waRes.ok) {
-    const waErr = await waRes.text()
-    return { error: `Whacenter error: ${waErr}` }
+  const waJson = await waRes.json() as any
+  if (!waJson.status) {
+    return { error: `Whacenter sendGroup error: ${waJson.message}` }
   }
 
   // Update KV anti-duplikat
