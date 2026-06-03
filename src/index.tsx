@@ -4248,12 +4248,14 @@ app.post('/api/hop-last-sent-date', async (c) => {
 
 // ============================================================
 // SCHEDULED HANDLER — dipanggil oleh Cloudflare Cron Trigger
+// Cron 0: "* * * * *"   → setiap menit — keep-alive ping screenshot service
 // Cron 1: "0 2 * * *"   → 02:00 UTC = 10:00 WITA (notif HOP BBM teks)
 // Cron 2: "0 3 * * *"   → 03:00 UTC = 11:00 WITA (screenshot HOP BBM → AMC UID KASELTENG)
 // Cron 3: "0 12 * * *"  → 12:00 UTC = 20:00 WITA (notif neraca teks ke AMC PRINDAVAN)
 // Cron 4-9: "0 10-15 * * *" → 18:00–23:00 WITA (auto-kirim neraca screenshot+excel ke AMC UID KASELTENG)
 // ============================================================
 const MALAM_CRONS = ['0 10 * * *','0 11 * * *','0 12 * * *','0 13 * * *','0 14 * * *','0 15 * * *']
+const SCREENSHOT_SERVICE_KEEPALIVE = 'https://3001-ixws25249u6ccmhjmwoyc-18e660f9.sandbox.novita.ai'
 
 async function handleScheduled(
   event: ScheduledEvent,
@@ -4264,7 +4266,13 @@ async function handleScheduled(
   const cronExpr = event.cron
 
   try {
-    if (cronExpr === '0 2 * * *') {
+    if (cronExpr === '* * * * *') {
+      // Setiap menit — keep-alive ping agar sandbox tidak sleep
+      try {
+        await fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/health`, { signal: AbortSignal.timeout(5000) })
+      } catch(_) { /* sandbox sedang sleep, tidak apa-apa */ }
+
+    } else if (cronExpr === '0 2 * * *') {
       // 02:00 UTC = 10:00 WITA — notif HOP BBM teks ke AMC PRINDAVAN
       const { pesan, mentions } = await notifHopBBM(db)
       await kirimPesanGrup(pesan, mentions)
