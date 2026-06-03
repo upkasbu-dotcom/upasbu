@@ -4154,10 +4154,104 @@ async function autoKirimNeraca(
 }
 
 // ============================================================
+// HELPER: AUTO-KIRIM HOP BBM (screenshot tabel HOP → WA Grup)
+// Dipanggil dari cron jam 03:00 UTC = 11:00 WITA
+// Data pakai H-1 (tanggal kemarin)
+// ============================================================
+async function autoKirimHopBbm(
+  kv: KVNamespace,
+  origin: string
+): Promise<{ skipped?: boolean, reason?: string, tanggal?: string, error?: string, message?: string }> {
+
+  const SCREENSHOT_SERVICE_URL = 'https://3001-ixws25249u6ccmhjmwoyc-18e660f9.sandbox.novita.ai'
+  const DEVICE_ID  = '550fd04ee9fc7c4b4e057d0bce6270f3'
+  const GROUP_NAME = 'AMC UID KASELTENG'
+
+  // Tanggal H-1 WITA
+  const nowWita = new Date(new Date().getTime() + 8 * 60 * 60 * 1000)
+  nowWita.setDate(nowWita.getDate() - 1)
+  const tanggal = nowWita.toISOString().split('T')[0]  // YYYY-MM-DD H-1
+
+  // Anti-duplikat: cek KV
+  const lastSent = await kv.get('hop-last-sent-date')
+  if (lastSent && tanggal <= lastSent) {
+    return { skipped: true, reason: `Sudah dikirim untuk tanggal ${tanggal} (last_sent: ${lastSent})`, tanggal }
+  }
+
+  // Screenshot via Playwright service
+  let imgUrl = ''
+  try {
+    const ssRes = await fetch(`${SCREENSHOT_SERVICE_URL}/screenshot-hop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tanggal }),
+      signal: AbortSignal.timeout(90000)
+    })
+    const ssJson = await ssRes.json() as { success: boolean, url?: string, error?: string }
+    if (ssJson.success && ssJson.url) imgUrl = ssJson.url
+    else return { error: `Screenshot HOP gagal: ${ssJson.error || 'unknown'}` }
+  } catch(e: any) {
+    return { error: `Screenshot service tidak tersedia: ${e.message}` }
+  }
+
+  // Kirim ke WA Grup AMC UID KASELTENG
+  const tglFmt = tanggal.split('-').reverse().join('.')
+  const waForm = new FormData()
+  waForm.append('device_id', DEVICE_ID)
+  waForm.append('name',      GROUP_NAME)
+  waForm.append('caption',   `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`)
+  waForm.append('file',      imgUrl)
+
+  const waRes = await fetch('https://app.whacenter.com/api/sendGroup', {
+    method: 'POST',
+    body: waForm
+  })
+  if (!waRes.ok) {
+    const waErr = await waRes.text()
+    return { error: `Whacenter error: ${waErr}` }
+  }
+
+  // Update KV anti-duplikat
+  await kv.put('hop-last-sent-date', tanggal)
+
+  return {
+    tanggal,
+    message: `Screenshot HOP BBM dikirim ke grup WA ${GROUP_NAME} (${tglFmt})`
+  }
+}
+
+// ============================================================
+// ENDPOINT: /api/hop-auto-kirim (GET) — trigger manual / test
+// ============================================================
+app.get('/api/hop-auto-kirim', async (c) => {
+  try {
+    const origin = new URL(c.req.url).origin
+    const result = await autoKirimHopBbm(c.env.FILES, origin)
+    if (result.error)   return c.json({ success: false, error: result.error }, 200)
+    if (result.skipped) return c.json({ success: true, skipped: true, reason: result.reason, tanggal: result.tanggal })
+    return c.json({ success: true, tanggal: result.tanggal, message: result.message })
+  } catch(e:any) { return c.json({ success: false, error: e.message }, 200) }
+})
+
+// ============================================================
+// ENDPOINT: /api/hop-last-sent-date (GET/POST) — baca/set KV
+// ============================================================
+app.get('/api/hop-last-sent-date', async (c) => {
+  const val = await c.env.FILES.get('hop-last-sent-date')
+  return c.json({ success: true, date: val || null })
+})
+app.post('/api/hop-last-sent-date', async (c) => {
+  const body = await c.req.json() as any
+  if (body?.date) await c.env.FILES.put('hop-last-sent-date', body.date)
+  return c.json({ success: true })
+})
+
+// ============================================================
 // SCHEDULED HANDLER — dipanggil oleh Cloudflare Cron Trigger
-// Cron 1: "0 2 * * *"   → 02:00 UTC = 10:00 WITA (notif HOP BBM)
-// Cron 2: "0 12 * * *"  → 12:00 UTC = 20:00 WITA (notif neraca teks ke AMC PRINDAVAN)
-// Cron 3-7: "0 10-15 * * *" → 18:00–23:00 WITA (auto-kirim neraca screenshot+excel ke AMC UID KASELTENG)
+// Cron 1: "0 2 * * *"   → 02:00 UTC = 10:00 WITA (notif HOP BBM teks)
+// Cron 2: "0 3 * * *"   → 03:00 UTC = 11:00 WITA (screenshot HOP BBM → AMC UID KASELTENG)
+// Cron 3: "0 12 * * *"  → 12:00 UTC = 20:00 WITA (notif neraca teks ke AMC PRINDAVAN)
+// Cron 4-9: "0 10-15 * * *" → 18:00–23:00 WITA (auto-kirim neraca screenshot+excel ke AMC UID KASELTENG)
 // ============================================================
 const MALAM_CRONS = ['0 10 * * *','0 11 * * *','0 12 * * *','0 13 * * *','0 14 * * *','0 15 * * *']
 
@@ -4171,13 +4265,24 @@ async function handleScheduled(
 
   try {
     if (cronExpr === '0 2 * * *') {
-      // 02:00 UTC = 10:00 WITA — notif HOP BBM ke AMC PRINDAVAN
+      // 02:00 UTC = 10:00 WITA — notif HOP BBM teks ke AMC PRINDAVAN
       const { pesan, mentions } = await notifHopBBM(db)
       await kirimPesanGrup(pesan, mentions)
 
+    } else if (cronExpr === '0 3 * * *') {
+      // 03:00 UTC = 11:00 WITA — screenshot HOP BBM H-1 → AMC UID KASELTENG
+      console.log(`[cron ${cronExpr}] Mulai screenshot HOP BBM H-1...`)
+      const result = await autoKirimHopBbm(env.FILES, 'https://mesin-monitor.pages.dev')
+      if (result.skipped) {
+        console.log(`[cron ${cronExpr}] Skipped: ${result.reason}`)
+      } else if (result.error) {
+        console.error(`[cron ${cronExpr}] Error: ${result.error}`)
+      } else {
+        console.log(`[cron ${cronExpr}] Berhasil: ${result.message}`)
+      }
+
     } else if (MALAM_CRONS.includes(cronExpr)) {
       // 18:00–23:00 WITA — cek malam 19/19 → screenshot + excel ke AMC UID KASELTENG
-      // (juga berlaku untuk 0 12 * * * = 20:00 WITA, menggantikan notif teks lama)
       console.log(`[cron ${cronExpr}] Mulai cek neraca malam WITA...`)
       const result = await autoKirimNeraca(db, env.FILES, 'https://mesin-monitor.pages.dev')
       if (result.skipped) {

@@ -7,12 +7,14 @@
     "nodejs_compat"
   ],
   // Cron Triggers (UTC — WITA = UTC+8)
-  // 02:00 UTC = 10:00 WITA  → notif HOP BBM belum masuk
+  // 02:00 UTC = 10:00 WITA  → notif HOP BBM teks ke AMC PRINDAVAN
+  // 03:00 UTC = 11:00 WITA  → screenshot HOP BBM H-1 → AMC UID KASELTENG
   // 12:00 UTC = 20:00 WITA  → notif neraca daya (teks) ke AMC PRINDAVAN
   // 10:00–15:00 UTC = 18:00–23:00 WITA → cek & auto-kirim neraca daya (screenshot+excel) ke AMC UID KASELTENG
   "triggers": {
     "crons": [
       "0 2 * * *",
+      "0 3 * * *",
       "0 10 * * *",
       "0 11 * * *",
       "0 12 * * *",
