@@ -2083,8 +2083,10 @@ app.delete('/api/tad/:id', async (c) => {
 // ===========================================================
 
 // ── XLSX builder berbasis template (template di-embed sebagai base64) ──────────
-// Strategi: load template ZIP → patch sheet1.xml + sheet2.xml dengan nilai data → repack ZIP
-// Semua style, merge cells, sharedStrings, theme, dll DIPERTAHANKAN dari template
+// Strategi: load template ZIP → ambil sheet1.xml + sheet2.xml verbatim dari template →
+// inject hanya nilai numerik ke sel data tertentu → repack ZIP
+// SEMUA komponen lain (style, theme, mergeCells, sharedStrings, cols, pageSetup, dll)
+// DIPERTAHANKAN 100% dari template — tidak ada XML yang dibuat ulang
 
 // ── ZIP helper (store-only, no compression) ───────────────────────────────────
 function b64ToU8(s: string): Uint8Array {
@@ -2102,19 +2104,37 @@ function _crc32(d:Uint8Array):number{
   for(let i=0;i<256;i++){let c=i;for(let j=0;j<8;j++)c=c&1?(0xEDB88320^(c>>>1)):(c>>>1);t[i]=c}
   let c=-1;for(let i=0;i<d.length;i++)c=(c>>>8)^t[(c^d[i])&0xff];return(c^-1)>>>0
 }
-// Parse ZIP → Map<filename, rawBytes>
-function _zipParse(buf:Uint8Array):Map<string,Uint8Array>{
-  const v=new DataView(buf.buffer,buf.byteOffset,buf.byteLength),m=new Map<string,Uint8Array>()
+// Parse ZIP → Map<filename, rawBytes (compressed bytes as-is)>
+function _zipParse(buf:Uint8Array):Map<string,{data:Uint8Array,method:number,crc:number,usize:number}>{
+  const v=new DataView(buf.buffer,buf.byteOffset,buf.byteLength)
+  const m=new Map<string,{data:Uint8Array,method:number,crc:number,usize:number}>()
   let i=0
   while(i<buf.length-4){
     if(v.getUint32(i,true)!==0x04034B50){i++;continue}
-    const fl=v.getUint16(i+26,true),el=v.getUint16(i+28,true),cl=v.getUint32(i+18,true)
+    const method=v.getUint16(i+8,true)
+    const crc=v.getUint32(i+14,true)
+    const cl=v.getUint32(i+18,true)
+    const usize=v.getUint32(i+22,true)
+    const fl=v.getUint16(i+26,true),el=v.getUint16(i+28,true)
     const fn=new TextDecoder().decode(buf.slice(i+30,i+30+fl))
-    const off=i+30+fl+el; m.set(fn,buf.slice(off,off+cl)); i=off+cl
+    const off=i+30+fl+el
+    m.set(fn,{data:buf.slice(off,off+cl),method,crc,usize})
+    i=off+cl
   }
   return m
 }
-// Repack Map → ZIP (store)
+// Decompress a DEFLATE-compressed entry using DecompressionStream
+async function _inflate(compressed:Uint8Array):Promise<Uint8Array>{
+  const ds=new DecompressionStream('deflate-raw')
+  const writer=ds.writable.getWriter()
+  const reader=ds.readable.getReader()
+  writer.write(compressed)
+  writer.close()
+  const chunks:Uint8Array[]=[]
+  while(true){const{done,value}=await reader.read();if(done)break;chunks.push(value)}
+  return _cat(...chunks)
+}
+// Repack Map → ZIP (store, uncompressed)
 function _zipPack(entries:Map<string,Uint8Array>):Uint8Array{
   const ls:Uint8Array[]=[],cs:Uint8Array[]=[]; let off=0
   const dt=0x4A21,dd=0x5565
@@ -2127,21 +2147,37 @@ function _zipPack(entries:Map<string,Uint8Array>):Uint8Array{
   const cd=_cat(...cs)
   return _cat(...ls,cd,_cat(new Uint8Array([0x50,0x4B,0x05,0x06]),_le2(0),_le2(0),_le2(entries.size),_le2(entries.size),_le4(cd.length),_le4(off),_le2(0)))
 }
-// Repack: ambil semua entry dari template, override entri yg ada di patches
-function zipRepack(tplBytes:Uint8Array, patches:Map<string,Uint8Array>):Uint8Array{
-  const m=_zipParse(tplBytes)
-  for(const[k,v] of patches) m.set(k,v)
-  return _zipPack(m)
+// Repack template ZIP: decompress all entries, apply text patches, rebuild as store ZIP
+async function zipRepack(tplBytes:Uint8Array, patches:Map<string,string>):Promise<Uint8Array>{
+  const parsed=_zipParse(tplBytes)
+  const out=new Map<string,Uint8Array>()
+  for(const[name,entry] of parsed){
+    if(patches.has(name)){
+      // Use patched text content
+      out.set(name, new TextEncoder().encode(patches.get(name)!))
+    } else if(entry.method===8){
+      // DEFLATE compressed → decompress first
+      out.set(name, await _inflate(entry.data))
+    } else {
+      // STORE → use as-is
+      out.set(name, entry.data)
+    }
+  }
+  return _zipPack(out)
 }
 
 // Template: template_harian_uid_kalimantan_selatan_dan_kalimantan_tengah.xlsx (base64)
 const NERACA_TEMPLATE_B64 = `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`
 
 // ── buildNeracaXlsx: patch template dengan data dari DB ───────────────────────
-// Pendekatan: load template ZIP → patch hanya sheet1.xml + sheet2.xml dengan
-// nilai numerik data (F=DMP, H=BP untuk sheet1; E=DTP, F=DMN, G=MAKS untuk sheet2)
-// Semua style, merge cells D, sharedStrings, theme, dll dari TEMPLATE dipertahankan
-function buildNeracaXlsx(rows: any[], tanggal: string): Uint8Array {
+// Pendekatan baru (template-injection):
+//   1. Load template ZIP → decompress sheet1.xml + sheet2.xml → teks XML asli
+//   2. Inject nilai numerik hanya pada sel data tertentu via regex replacement
+//      - sheet1: kolom F (DMP) dan H (Beban Puncak) per baris
+//      - sheet2: kolom E (DTP), F (DMN), G (MAKS) per baris
+//   3. Repack ZIP dengan sheet1/sheet2 baru, semua file lain dari template (decompressed)
+// TIDAK ADA cell, row, kolom, style, merge, sharedString, dsb yang dibuat ulang
+async function buildNeracaXlsx(rows: any[], tanggal: string): Promise<Uint8Array> {
   const NERACA_ORDER = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
   // ID (kolom B) sesuai template sharedStrings index 17-37
   const UNIT_META: Record<number,{id:number,ss:number,maks:number}> = {
@@ -2171,78 +2207,81 @@ function buildNeracaXlsx(rows: any[], tanggal: string): Uint8Array {
   rows.forEach(r=>{ if(!NERACA_ORDER.includes(r.kode_unit)) sorted.push(r) })
   const toMW = (kw:number|null) => kw==null?null:+(Math.round(kw)/1000).toFixed(3)
 
-  // ── Bangun sheet1.xml (Neraca Daya) — patch nilai F dan H per baris ──────
-  // Template: tiap ULD = 2 baris (odd=siang,even=malam), data rows mulai r=2
-  // F = DMP (MW), H = Beban Puncak (MW), kolom lain dari template (unchanged)
-  // Style references (s="...") HARUS sama dengan template
-  const enc = new TextEncoder()
-  const dec = new TextDecoder()
+  // ── Load template ZIP dan decompress sheet1.xml + sheet2.xml ──────────────
+  const templateZip = b64ToU8(NERACA_TEMPLATE_B64)
+  const parsed = _zipParse(templateZip)
 
-  // Helper: bangun row XML sheet1 dari template row, update F (idx5) dan H (idx7)
-  // Gunakan style template persis: s="6" untuk kolom F-P (numerik data)
-  function sheet1Row(rn: number, isOdd: boolean, meta: typeof UNIT_META[number]|null,
-                     no: number|null, dmp: number|null, bp: number|null): string {
-    // Kolom A-E sama dengan template (style s="3"/"7"/"8"), F dan H diisi data
-    if (isOdd && meta) {
-      // Baris ganjil (siang): A=no(s=3), B=id(s=3), C=ULD(s=3,t=s,ss=16), D=nama(s=4,t=s,ss=meta.ss), E=Siang(s=5,t=s,ss=18)
-      const fv = dmp!=null?`<v>${dmp}</v>`:''
-      const hv = bp!=null?`<v>${bp}</v>`:''
-      return `<row r="${rn}" spans="1:16" customHeight="1" ht="25"><c r="A${rn}" s="3"><v>${no}</v></c><c r="B${rn}" s="3"><v>${meta.id}</v></c><c r="C${rn}" s="3" t="s"><v>16</v></c><c r="D${rn}" s="4" t="s"><v>${meta.ss}</v></c><c r="E${rn}" s="5" t="s"><v>18</v></c><c r="F${rn}" s="6">${fv}</c><c r="G${rn}" s="6"/><c r="H${rn}" s="6">${hv}</c><c r="I${rn}" s="6"/><c r="J${rn}" s="6"/><c r="K${rn}" s="6"/><c r="L${rn}" s="6"/><c r="M${rn}" s="6"/><c r="N${rn}" s="6"/><c r="O${rn}" s="6"/><c r="P${rn}" s="6"/></row>`
-    } else if (meta) {
-      // Baris genap (malam): A=empty(s=7), B=id(s=8), C=ULD(s=8,t=s,ss=16), D=empty(s=4), E=Malam(s=5,t=s,ss=19)
-      const fv = dmp!=null?`<v>${dmp}</v>`:''
-      const hv = bp!=null?`<v>${bp}</v>`:''
-      return `<row r="${rn}" spans="1:16" customHeight="1" ht="25"><c r="A${rn}" s="7"/><c r="B${rn}" s="8"><v>${meta.id}</v></c><c r="C${rn}" s="8" t="s"><v>16</v></c><c r="D${rn}" s="4"/><c r="E${rn}" s="5" t="s"><v>19</v></c><c r="F${rn}" s="6">${fv}</c><c r="G${rn}" s="6"/><c r="H${rn}" s="6">${hv}</c><c r="I${rn}" s="6"/><c r="J${rn}" s="6"/><c r="K${rn}" s="6"/><c r="L${rn}" s="6"/><c r="M${rn}" s="6"/><c r="N${rn}" s="6"/><c r="O${rn}" s="6"/><c r="P${rn}" s="6"/></row>`
+  // Helper: dekompresi entry ZIP (DEFLATE method=8, STORE method=0)
+  const dec = new TextDecoder()
+  async function getEntryText(name: string): Promise<string> {
+    const e = parsed.get(name)
+    if (!e) throw new Error(`Entry not found: ${name}`)
+    if (e.method === 8) {
+      return dec.decode(await _inflate(e.data))
     }
-    return ''
+    return dec.decode(e.data)
   }
 
-  // Header row (r=1) — persis dari template, tidak diubah
-  const hdr1 = `<row r="1" spans="1:16" customHeight="1" ht="25"><c r="A1" s="2" t="s"><v>0</v></c><c r="B1" s="2" t="s"><v>1</v></c><c r="C1" s="2" t="s"><v>2</v></c><c r="D1" s="2" t="s"><v>3</v></c><c r="E1" s="2" t="s"><v>4</v></c><c r="F1" s="2" t="s"><v>5</v></c><c r="G1" s="2" t="s"><v>6</v></c><c r="H1" s="2" t="s"><v>7</v></c><c r="I1" s="2" t="s"><v>8</v></c><c r="J1" s="2" t="s"><v>9</v></c><c r="K1" s="2" t="s"><v>10</v></c><c r="L1" s="2" t="s"><v>11</v></c><c r="M1" s="2" t="s"><v>12</v></c><c r="N1" s="2" t="s"><v>13</v></c><c r="O1" s="2" t="s"><v>14</v></c><c r="P1" s="2" t="s"><v>15</v></c></row>`
+  // ── Ambil XML asli dari template ──────────────────────────────────────────
+  let sheet1Xml = await getEntryText('xl/worksheets/sheet1.xml')
+  let sheet2Xml = await getEntryText('xl/worksheets/sheet2.xml')
 
-  const dataRows1: string[] = [hdr1]
-  const merges1: string[] = []
+  // ── Helper: inject nilai numerik ke sel tertentu ───────────────────────────
+  // Template cells sheet1 (F,H per row) empty: <c r="F2" s="6"/>
+  // Template cells sheet1 (F,H per row) with value: <c r="F2" s="6"><v>...</v></c>
+  // Kita ganti: <c r="Xn" s="..."/> → <c r="Xn" s="..."><v>val</v></c>
+  //         atau <c r="Xn" s="..."><v>existing</v></c> → <c r="Xn" s="..."><v>val</v></c>
+  function injectNum(xml: string, cellRef: string, val: number|null): string {
+    if (val === null) return xml // kosongkan: biarkan sel empty dari template
+    // Ganti sel empty <c r="Xn" s="N"/> atau <c r="Xn" s="N" t="..."/>  → dengan value
+    // Pola: <c r="CELLREF" ... /> (self-closing) atau <c r="CELLREF" ...><v>old</v></c>
+    const escaped = cellRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    // Self-closing tanpa value
+    xml = xml.replace(
+      new RegExp(`(<c r="${escaped}"[^>]*?)/>`, 'g'),
+      `$1><v>${val}</v></c>`
+    )
+    // Sudah ada value — ganti value lama
+    xml = xml.replace(
+      new RegExp(`(<c r="${escaped}"[^>]*>)<v>[^<]*</v></c>`, 'g'),
+      `$1<v>${val}</v></c>`
+    )
+    return xml
+  }
+
+  // ── Patch sheet1.xml: inject DMP (kolom F) dan Beban Puncak (kolom H) ────
+  // Template: row 2,3=ULD#1 siang/malam, row 4,5=ULD#2, dst. (F=DMP, H=BP)
   sorted.forEach((r, i) => {
-    const meta = UNIT_META[r.kode_unit] ?? null
-    const dmp  = toMW(r.dm_pasok!=null?r.dm_pasok:r.dm_terpasang)
-    const bpS  = toMW(r.beban_puncak_siang)
-    const bpM  = toMW(r.beban_puncak_malam)
-    const rSiang = 2 + i*2       // row number Excel baris siang
-    const rMalam = 2 + i*2 + 1  // row number Excel baris malam
-    dataRows1.push(sheet1Row(rSiang, true,  meta, i+1, dmp, bpS))
-    dataRows1.push(sheet1Row(rMalam, false, meta, null, dmp, bpM))
-    // Merge kolom D per ULD
-    merges1.push(`<mergeCell ref="D${rSiang}:D${rMalam}"/>`)
+    const rSiang = 2 + i * 2      // row siang (baris ganjil di Excel)
+    const rMalam = 2 + i * 2 + 1 // row malam (baris genap di Excel)
+    const dmp = toMW(r.dm_pasok != null ? r.dm_pasok : r.dm_terpasang)
+    const bpS = toMW(r.beban_puncak_siang)
+    const bpM = toMW(r.beban_puncak_malam)
+    // Kolom F = DMP (sama untuk siang dan malam)
+    sheet1Xml = injectNum(sheet1Xml, `F${rSiang}`, dmp)
+    sheet1Xml = injectNum(sheet1Xml, `F${rMalam}`, dmp)
+    // Kolom H = Beban Puncak
+    sheet1Xml = injectNum(sheet1Xml, `H${rSiang}`, bpS)
+    sheet1Xml = injectNum(sheet1Xml, `H${rMalam}`, bpM)
   })
 
-  const lastRow1 = 1 + sorted.length * 2
-  const mergeBlock1 = `<mergeCells count="${merges1.length}">${merges1.join('')}</mergeCells>`
-  const sheet1Xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xml:space="preserve" xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><outlinePr summaryBelow="1" summaryRight="1"/><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:P${lastRow1}"/><sheetViews><sheetView tabSelected="0" workbookViewId="0" showGridLines="true" showRowColHeaders="1"><selection activeCell="A1" sqref="A1"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="14.4" outlineLevelRow="0" outlineLevelCol="0"/><cols><col min="1" max="1" width="3.570557" bestFit="true" customWidth="true" style="0"/><col min="2" max="2" width="5.855713" bestFit="true" customWidth="true" style="0"/><col min="3" max="3" width="7.426758" bestFit="true" customWidth="true" style="0"/><col min="4" max="4" width="30" customWidth="true" style="0"/><col min="5" max="5" width="7.426758" bestFit="true" customWidth="true" style="0"/><col min="6" max="6" width="20" customWidth="true" style="0"/><col min="7" max="7" width="20" customWidth="true" style="0"/><col min="8" max="8" width="20" customWidth="true" style="0"/><col min="9" max="9" width="20" customWidth="true" style="0"/><col min="10" max="10" width="20" customWidth="true" style="0"/><col min="11" max="11" width="20" customWidth="true" style="0"/><col min="12" max="12" width="20" customWidth="true" style="0"/><col min="13" max="13" width="20" customWidth="true" style="0"/><col min="14" max="14" width="8.712158000000001" bestFit="true" customWidth="true" style="0"/><col min="15" max="15" width="50" customWidth="true" style="0"/><col min="16" max="16" width="50" customWidth="true" style="0"/></cols><sheetData>${dataRows1.join('')}</sheetData><sheetProtection sheet="true" objects="false" scenarios="false" formatCells="false" formatColumns="false" formatRows="false" insertColumns="false" insertRows="false" insertHyperlinks="false" deleteColumns="false" deleteRows="false" selectLockedCells="false" sort="false" autoFilter="false" pivotTables="false" selectUnlockedCells="false"/>${mergeBlock1}<printOptions gridLines="false" gridLinesSet="true"/><pageMargins left="" right="" top="" bottom="" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" scale="100" fitToHeight="1" fitToWidth="1"/><headerFooter differentOddEven="false" differentFirst="false" scaleWithDoc="true" alignWithMargins="true"><oddHeader></oddHeader><oddFooter></oddFooter><evenHeader></evenHeader><evenFooter></evenFooter><firstHeader></firstHeader><firstFooter></firstFooter></headerFooter></worksheet>`
-
-  // ── Bangun sheet2.xml (Kesiapan Pembangkit) ───────────────────────────────
-  // E=DTP, F=DMN, G=MAKS, style s="6" untuk numerik, s="1" untuk A-D, s="5" untuk D
-  const hdr2 = `<row r="1" spans="1:7" customHeight="1" ht="25"><c r="A1" s="2" t="s"><v>0</v></c><c r="B1" s="2" t="s"><v>1</v></c><c r="C1" s="2" t="s"><v>2</v></c><c r="D1" s="2" t="s"><v>3</v></c><c r="E1" s="2" t="s"><v>38</v></c><c r="F1" s="2" t="s"><v>39</v></c><c r="G1" s="2" t="s"><v>40</v></c></row>`
-  const dataRows2: string[] = [hdr2]
+  // ── Patch sheet2.xml: inject DTP (E), DMN (F), MAKS (G) per baris ────────
+  // Template: row 2=ULD#1, row 3=ULD#2, dst.
   sorted.forEach((r, i) => {
     const meta = UNIT_META[r.kode_unit] ?? null
+    const rn   = i + 2
     const dtp  = toMW(r.dm_terpasang)
-    const dmn  = toMW(r.dm_pasok!=null?r.dm_pasok:r.dm_terpasang)
+    const dmn  = toMW(r.dm_pasok != null ? r.dm_pasok : r.dm_terpasang)
     const maks = meta ? meta.maks : null
-    const rn   = i+2
-    const ev = dtp!=null?`<v>${dtp}</v>`:''
-    const fv = dmn!=null?`<v>${dmn}</v>`:''
-    const gv = maks!=null?`<v>${maks}</v>`:''
-    const ssD = meta ? meta.ss : 17
-    dataRows2.push(`<row r="${rn}" spans="1:7" customHeight="1" ht="25"><c r="A${rn}" s="1"><v>${i+1}</v></c><c r="B${rn}" s="1"><v>${meta?meta.id:0}</v></c><c r="C${rn}" s="1" t="s"><v>16</v></c><c r="D${rn}" s="5" t="s"><v>${ssD}</v></c><c r="E${rn}" s="6">${ev}</c><c r="F${rn}" s="6">${fv}</c><c r="G${rn}" s="6">${gv}</c></row>`)
+    sheet2Xml = injectNum(sheet2Xml, `E${rn}`, dtp)
+    sheet2Xml = injectNum(sheet2Xml, `F${rn}`, dmn)
+    sheet2Xml = injectNum(sheet2Xml, `G${rn}`, maks)
   })
-  const lastRow2 = 1 + sorted.length
-  const sheet2Xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xml:space="preserve" xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><outlinePr summaryBelow="1" summaryRight="1"/><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:G${lastRow2}"/><sheetViews><sheetView tabSelected="1" workbookViewId="0" showGridLines="true" showRowColHeaders="1"><selection activeCell="A1" sqref="A1"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="14.4" outlineLevelRow="0" outlineLevelCol="0"/><cols><col min="1" max="1" width="3.570557" bestFit="true" customWidth="true" style="0"/><col min="2" max="2" width="5.855713" bestFit="true" customWidth="true" style="0"/><col min="3" max="3" width="7.426758" bestFit="true" customWidth="true" style="0"/><col min="4" max="4" width="30" customWidth="true" style="0"/><col min="5" max="5" width="30" customWidth="true" style="0"/><col min="6" max="6" width="20" customWidth="true" style="0"/><col min="7" max="7" width="20" customWidth="true" style="0"/></cols><sheetData>${dataRows2.join('')}</sheetData><sheetProtection sheet="true" objects="false" scenarios="false" formatCells="false" formatColumns="false" formatRows="false" insertColumns="false" insertRows="false" insertHyperlinks="false" deleteColumns="false" deleteRows="false" selectLockedCells="false" sort="false" autoFilter="false" pivotTables="false" selectUnlockedCells="false"/><printOptions gridLines="false" gridLinesSet="true"/><pageMargins left="" right="" top="" bottom="" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" scale="100" fitToHeight="1" fitToWidth="1"/><headerFooter differentOddEven="false" differentFirst="false" scaleWithDoc="true" alignWithMargins="true"><oddHeader></oddHeader><oddFooter></oddFooter><evenHeader></evenHeader><evenFooter></evenFooter><firstHeader></firstHeader><firstFooter></firstFooter></headerFooter></worksheet>`
 
-  // ── Repack ZIP: patch sheet1.xml + sheet2.xml, semua file lain dari template ─
-  const templateZip = b64ToU8(NERACA_TEMPLATE_B64)
-  const patches = new Map<string,Uint8Array>([
-    ['xl/worksheets/sheet1.xml', enc.encode(sheet1Xml)],
-    ['xl/worksheets/sheet2.xml', enc.encode(sheet2Xml)],
+  // ── Repack ZIP: semua entry dari template di-decompress, patch sheet1+sheet2 ─
+  const patches = new Map<string, string>([
+    ['xl/worksheets/sheet1.xml', sheet1Xml],
+    ['xl/worksheets/sheet2.xml', sheet2Xml],
   ])
   return zipRepack(templateZip, patches)
 }
@@ -2301,7 +2340,7 @@ app.get('/api/download-neraca-excel', async (c) => {
       }
     })
 
-    const xlsxBytes = buildNeracaXlsx(rows, tanggal)
+    const xlsxBytes = await buildNeracaXlsx(rows, tanggal)
     const tglP = tanggal.split('-')
     const fileName = `UID KSKT ${tglP[2]}.${tglP[1]}.${tglP[0]}.xlsx`
 
@@ -2357,7 +2396,7 @@ app.get('/api/xlsx', async (c) => {
       const dmn = hasMalam ? (mon?.dm_pasok ?? null) : (h1Map[u.kode_unit] ?? null)
       return { kode_unit: u.kode_unit, nama_unit: u.nama_unit, dm_terpasang: terpasangMap[u.kode_unit] ?? null, dm_pasok: dmn, beban_puncak_siang: mon?.beban_puncak_siang ?? null, beban_puncak_malam: mon?.beban_puncak_malam ?? null }
     })
-    const xlsxBytes = buildNeracaXlsx(rows, tanggal)
+    const xlsxBytes = await buildNeracaXlsx(rows, tanggal)
     const tglP = tanggal.split('-')
     const fileName = `UID KSKT ${tglP[2]}.${tglP[1]}.${tglP[0]}.xlsx`
     return new Response(xlsxBytes, {
