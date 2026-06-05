@@ -2164,14 +2164,16 @@ function xmlEsc(s: string|number|null): string {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
 }
 
-// Build cell XML: r=ref, v=value, t=type (n=number, s=shared, inlineStr)
-// Sentinel: sel hadir tapi kosong (seperti <c r="F2"/> di template)
+// Build cell XML: r=ref, v=value
+// String pakai sharedStrings (t="s"), number pakai <v>, null = sel tidak ditulis
 const EMPTY_CELL = Symbol('EMPTY_CELL')
-function cellXml(ref: string, v: string|number|null|symbol, isStr=false): string {
-  if (v === EMPTY_CELL) return `<c r="${ref}"/>`        // <c r="X"/> — sel hadir, no value (F,G,H)
-  if (v === null || v === undefined) return ''           // null = sel tidak ditulis ke XML sama sekali
-  if (v === '') return `<c r="${ref}" t="s"><v>0</v></c>`  // shared string index 0 = '' (pakai sharedStrings)
-  if (isStr || typeof v === 'string') return `<c r="${ref}" t="inlineStr"><is><t>${xmlEsc(String(v))}</t></is></c>`
+function cellXml(ref: string, v: string|number|null|symbol, ssMap: Map<string,number>): string {
+  if (v === EMPTY_CELL) return `<c r="${ref}"/>`
+  if (v === null || v === undefined) return ''
+  if (typeof v === 'string') {
+    const idx = ssMap.get(v) ?? 0
+    return `<c r="${ref}" t="s"><v>${idx}</v></c>`
+  }
   return `<c r="${ref}"><v>${v}</v></c>`
 }
 
@@ -2181,16 +2183,20 @@ function colLetter(n: number): string {
   return s
 }
 
-function buildSheetXml(rows: (string|number|null|symbol)[][]): string {
+// mergeCells: array of {ref: 'D2:D3'} — OOXML <mergeCell ref="..."/>
+function buildSheetXml(rows: (string|number|null|symbol)[][], ssMap: Map<string,number>, mergeCells: {ref:string}[] = []): string {
   const rowsXml = rows.map((row, ri) => {
     const rn = ri+1
     const cells = row.map((v, ci) => {
       const ref = colLetter(ci)+rn
-      return cellXml(ref, v as any, typeof v === 'string')
+      return cellXml(ref, v as any, ssMap)
     }).join('')
     return `<row r="${rn}">${cells}</row>`
   }).join('')
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowsXml}</sheetData></worksheet>`
+  const mergeBlock = mergeCells.length
+    ? `<mergeCells count="${mergeCells.length}">${mergeCells.map(m=>`<mergeCell ref="${m.ref}"/>`).join('')}</mergeCells>`
+    : ''
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowsXml}</sheetData>${mergeBlock}</worksheet>`
 }
 
 function buildNeracaXlsx(rows: any[], tanggal: string): Uint8Array {
@@ -2259,13 +2265,44 @@ function buildNeracaXlsx(rows: any[], tanggal: string): Uint8Array {
     s2.push([i+1, meta.id, 'ULD', meta.nama, dtp, dmn, maks])
   })
 
-  const sheet1Xml = buildSheetXml(s1)
-  const sheet2Xml = buildSheetXml(s2)
+  // ── Shared Strings: kumpulkan semua string unik dari s1 + s2 ──────────────
+  const ssMap = new Map<string,number>()
+  const ssArr: string[] = []
+  const collectStrings = (rows: (string|number|null|symbol)[][]) => {
+    for (const row of rows)
+      for (const v of row)
+        if (typeof v === 'string' && !ssMap.has(v)) { ssMap.set(v, ssArr.length); ssArr.push(v) }
+  }
+  collectStrings(s1)
+  collectStrings(s2)
 
-  // sharedStrings: ss[0]='' (untuk kolom I-P yang kosong)
+  // ── Merge cells Sheet1: kolom D (index 3) jika kolom B (index 1) sama ──────
+  // Baris ke-0 adalah header (row 1 di Excel), data mulai row 2
+  const mergeS1: {ref:string}[] = []
+  {
+    // Kelompokkan baris berdasarkan nilai kolom B (ID)
+    // Untuk tiap grup ID yang sama, cari rentang baris di kolom D lalu merge
+    let bi = 0 // indeks di s1 (0-based, row 0 = header)
+    while (bi < s1.length) {
+      const idVal = s1[bi][1]  // kolom B
+      if (idVal === null || idVal === undefined || bi === 0) { bi++; continue }
+      // Cari semua baris berturut-turut dengan ID sama
+      let ei = bi
+      while (ei + 1 < s1.length && s1[ei+1][1] === idVal) ei++
+      if (ei > bi) {
+        // rowNum di Excel = bi+1 (0-based → 1-based)
+        mergeS1.push({ ref: `D${bi+1}:D${ei+1}` })
+      }
+      bi = ei + 1
+    }
+  }
+
+  const sheet1Xml = buildSheetXml(s1, ssMap, mergeS1)
+  const sheet2Xml = buildSheetXml(s2, ssMap)
+
   const sharedStrings = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">
-<si><t/></si>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${ssArr.length}" uniqueCount="${ssArr.length}">
+${ssArr.map(s=>`<si><t xml:space="preserve">${xmlEsc(s)}</t></si>`).join('\n')}
 </sst>`
 
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
