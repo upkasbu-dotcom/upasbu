@@ -4182,7 +4182,7 @@ async function autoKirimHopBbm(
   const tglFmt = tanggal.split('-').reverse().join('.')
 
   // ── 1. Ambil screenshot 1 gambar dari Playwright service ──────────────────
-  let imgUrl = ''
+  let rawImg = ''  // imgbb URL atau data:image/png;base64,...
   try {
     const shotRes = await fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
       method: 'POST',
@@ -4192,15 +4192,17 @@ async function autoKirimHopBbm(
     })
     const shotJson = await shotRes.json() as { success: boolean, url?: string, error?: string }
     if (!shotJson.success) return { error: `Screenshot service error: ${shotJson.error}` }
-    imgUrl = await resolveImgUrl(shotJson.url || '', kv, `hop-tabel-${tanggal}.png`, origin)
+    rawImg = shotJson.url || ''
   } catch(e: any) {
     return { error: `Gagal ambil screenshot HOP BBM: ${e.message}` }
   }
+  if (!rawImg) return { error: 'Screenshot service tidak mengembalikan URL/data gambar' }
 
   // ── 2. Kirim ke WA Grup AMC UID KASELTENG ─────────────────────────────────
-  // Fetch PNG sebagai Blob binary agar Whacenter menerima sebagai gambar
-  const imgBlob = await fetchImgBlob(imgUrl)
-  if (!imgBlob) return { error: 'Gagal fetch PNG untuk dikirim ke WA' }
+  // Langsung decode rawImg (URL imgbb atau base64) → Blob binary
+  // JANGAN lewat resolveImgUrl/CF KV — CF Worker tidak bisa self-fetch
+  const imgBlob = await fetchImgBlob(rawImg)
+  if (!imgBlob) return { error: 'Gagal decode PNG untuk dikirim ke WA' }
 
   const waForm = new FormData()
   waForm.append('device_id', DEVICE_ID)
@@ -4266,11 +4268,13 @@ app.get('/api/hop-test-kirim', async (c) => {
     const shotJson = await shotRes.json() as { success: boolean, url?: string, error?: string }
     if (!shotJson.success) return c.json({ success: false, error: `Screenshot error: ${shotJson.error}` })
 
-    const imgUrl = await resolveImgUrl(shotJson.url || '', c.env.FILES, `hop-test-${tanggal}.png`, origin, 3600)
+    const rawImg = shotJson.url || ''
+    if (!rawImg) return c.json({ success: false, error: 'Screenshot service tidak mengembalikan gambar' })
 
-    // Fetch PNG sebagai Blob binary agar Whacenter kirim sebagai gambar (bukan URL teks)
-    const imgBlob = await fetchImgBlob(imgUrl)
-    if (!imgBlob) return c.json({ success: false, error: 'Gagal fetch PNG untuk dikirim ke WA' })
+    // Langsung decode rawImg (URL imgbb atau base64) → Blob binary
+    // JANGAN lewat resolveImgUrl/CF KV — CF Worker tidak bisa self-fetch
+    const imgBlob = await fetchImgBlob(rawImg)
+    if (!imgBlob) return c.json({ success: false, error: 'Gagal decode PNG untuk dikirim ke WA' })
 
     // Format nomor: pastikan diawali 62
     let nomorFmt = nomor.replace(/\D/g, '')
@@ -4286,7 +4290,7 @@ app.get('/api/hop-test-kirim', async (c) => {
     const waRes  = await fetch('https://app.whacenter.com/api/send', { method: 'POST', body: waForm })
     const waJson = await waRes.json() as any
 
-    return c.json({ success: true, tanggal, nomor: nomorFmt, img_url: imgUrl, wa_response: waJson })
+    return c.json({ success: true, tanggal, nomor: nomorFmt, img_url: rawImg.startsWith('data:') ? '(base64)' : rawImg, wa_response: waJson })
   } catch(e:any) { return c.json({ success: false, error: e.message }, 200) }
 })
 
