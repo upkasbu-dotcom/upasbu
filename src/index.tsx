@@ -2689,7 +2689,7 @@ app.get('/api/wa-redirect/:id', async (c) => {
 // API: KIRIM WA VIA WHACENTER
 // ============================================================
 const WHACENTER_DEVICE_ID = '550fd04ee9fc7c4b4e057d0bce6270f3'
-const WHACENTER_NUMBER    = '628528559663'
+const WHACENTER_NUMBER    = '6285285596663'
 
 app.post('/api/kirim-wa', async (c) => {
   try {
@@ -2762,7 +2762,7 @@ app.post('/api/jadwal-wa', async (c) => {
 
     // Parse CSV sederhana
     const lines = csvText.trim().split('\n')
-    if (lines.length < 2) return c.json({ success: false, error: 'Spreadsheet kosong' }, 400)
+    if (lines.length < 2) return c.json({ success: true, inserted: 0, total: 0, note: 'Spreadsheet belum ada data' }, 200)
 
     const idxTanggal = 1  // kolom B = index 1
     const idxJam     = 25 // kolom Z = index 25
@@ -2821,7 +2821,7 @@ app.post('/api/jadwal-wa', async (c) => {
       jadwalSet.add(`${tanggal}|${jam}`)
     }
 
-    if (jadwalSet.size === 0) return c.json({ success: false, error: 'Tidak ada jadwal valid ditemukan di kolom Z' }, 400)
+    if (jadwalSet.size === 0) return c.json({ success: true, inserted: 0, total: 0, note: 'Tidak ada jadwal valid di kolom Z (Generate Jam)' }, 200)
 
     // Simpan ke tabel jadwal_wa (INSERT OR IGNORE — tidak timpa yang sudah ada)
     let inserted = 0
