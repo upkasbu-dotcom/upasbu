@@ -4175,49 +4175,30 @@ async function autoKirimHopBbm(
 
   const tglFmt = tanggal.split('-').reverse().join('.')
 
-  // ── 1. Ambil screenshot 1 gambar dari Playwright service ──────────────────
-  let rawImg = ''  // imgbb URL atau data:image/png;base64,...
+  // ── 1. Screenshot + kirim WA langsung dari Node.js screenshot service ───────
+  // Node.js bisa kirim binary file ke Whacenter, CF Worker tidak bisa
+  let shotJson: { success: boolean, url?: string, wa?: { status: boolean, message: string }, error?: string }
   try {
     const shotRes = await fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tanggal, origin }),
+      body: JSON.stringify({
+        tanggal,
+        origin,
+        group:   GROUP_NAME,
+        message: `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`
+      }),
       signal: AbortSignal.timeout(90000)
     })
-    const shotJson = await shotRes.json() as { success: boolean, url?: string, error?: string }
-    if (!shotJson.success) return { error: `Screenshot service error: ${shotJson.error}` }
-    rawImg = shotJson.url || ''
+    shotJson = await shotRes.json() as any
   } catch(e: any) {
     return { error: `Gagal ambil screenshot HOP BBM: ${e.message}` }
   }
-  if (!rawImg) return { error: 'Screenshot service tidak mengembalikan URL/data gambar' }
+  if (!shotJson.success) return { error: `Screenshot service error: ${shotJson.error}` }
 
-  // ── 2. Resolve ke imgbb URL (Whacenter butuh URL publik, bukan Blob/base64) ─
-  let imgbbUrl = rawImg
-  if (rawImg.startsWith('data:image/')) {
-    // imgbb gagal di screenshot service → upload lagi dari CF Worker
-    const b64 = rawImg.replace(/^data:image\/png;base64,/, '')
-    const upForm = new URLSearchParams()
-    upForm.append('key', 'bb2f97ad9b31b5ae4967eeead61e03de')
-    upForm.append('image', b64)
-    upForm.append('name', `HOP_BBM_${tanggal}`)
-    try {
-      const upRes  = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: upForm })
-      const upJson = await upRes.json() as any
-      if (upJson.success && upJson.data?.url) imgbbUrl = upJson.data.url
-    } catch { /* pakai base64 tetap gagal, lanjut */ }
-  }
-  if (!imgbbUrl || imgbbUrl.startsWith('data:')) return { error: 'Gagal mendapatkan URL publik gambar HOP BBM' }
-
-  // ── 3. Kirim ke WA Grup AMC UID KASELTENG — pakai image_url (bukan file Blob) ─
-  const waForm = new FormData()
-  waForm.append('device_id',  DEVICE_ID)
-  waForm.append('group',      GROUP_NAME)
-  waForm.append('message',    `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`)
-  waForm.append('image_url',  imgbbUrl)
-  const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method: 'POST', body: waForm })
-  const waJson = await waRes.json() as { status: boolean, message: string }
-  if (!waJson.status) return { error: `Whacenter sendGroup error: ${waJson.message}` }
+  // Cek hasil kirim WA dari Node.js
+  const waResult = shotJson.wa
+  if (!waResult?.status) return { error: `Whacenter error: ${waResult?.message || 'tidak ada response WA'}` }
 
   // Update KV anti-duplikat
   await kv.put('hop-last-sent-date', tanggal)
@@ -4265,51 +4246,27 @@ app.get('/api/hop-test-kirim', async (c) => {
     const tglFmt = tanggal.split('-').reverse().join('.')
 
     // Ambil screenshot 1 gambar
-    const shotRes = await fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tanggal, origin }),
-      signal: AbortSignal.timeout(90000)
-    })
-    const shotJson = await shotRes.json() as { success: boolean, url?: string, error?: string }
-    if (!shotJson.success) return c.json({ success: false, error: `Screenshot error: ${shotJson.error}` })
-
-    let rawImg = shotJson.url || ''
-    if (!rawImg) return c.json({ success: false, error: 'Screenshot service tidak mengembalikan gambar' })
-
-    // Resolve ke imgbb URL — Whacenter butuh image_url publik, bukan Blob/base64
-    let imgbbUrl = rawImg
-    if (rawImg.startsWith('data:image/')) {
-      const b64 = rawImg.replace(/^data:image\/png;base64,/, '')
-      const upForm = new URLSearchParams()
-      upForm.append('key', 'bb2f97ad9b31b5ae4967eeead61e03de')
-      upForm.append('image', b64)
-      upForm.append('name', `HOP_BBM_${tanggal}`)
-      try {
-        const upRes  = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: upForm })
-        const upJson = await upRes.json() as any
-        if (upJson.success && upJson.data?.url) imgbbUrl = upJson.data.url
-      } catch { /* lanjut */ }
-    }
-    if (!imgbbUrl || imgbbUrl.startsWith('data:')) {
-      return c.json({ success: false, error: 'Gagal mendapatkan URL publik gambar' })
-    }
-
     // Format nomor: pastikan diawali 62
     let nomorFmt = nomor.replace(/\D/g, '')
     if (nomorFmt.startsWith('0')) nomorFmt = '62' + nomorFmt.substring(1)
     if (!nomorFmt.startsWith('62')) nomorFmt = '62' + nomorFmt
 
-    // Kirim ke WA personal — pakai image_url (bukan file Blob)
-    const waForm = new FormData()
-    waForm.append('device_id',  DEVICE_ID)
-    waForm.append('number',     nomorFmt)
-    waForm.append('message',    `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_TEST · AMC UID KASELTENG_`)
-    waForm.append('image_url',  imgbbUrl)
-    const waRes  = await fetch('https://app.whacenter.com/api/send', { method: 'POST', body: waForm })
-    const waJson = await waRes.json() as any
+    // Kirim nomor ke screenshot service → Node.js kirim binary file ke Whacenter
+    const shotRes = await fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tanggal,
+        origin,
+        nomor:   nomorFmt,
+        message: `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_TEST · AMC UID KASELTENG_`
+      }),
+      signal: AbortSignal.timeout(90000)
+    })
+    const shotJson = await shotRes.json() as { success: boolean, url?: string, wa?: any, error?: string }
+    if (!shotJson.success) return c.json({ success: false, error: `Screenshot error: ${shotJson.error}` })
 
-    return c.json({ success: true, tanggal, nomor: nomorFmt, img_url: imgbbUrl, wa_response: waJson })
+    return c.json({ success: true, tanggal, nomor: nomorFmt, img_url: shotJson.url || '', wa_response: shotJson.wa })
   } catch(e:any) { return c.json({ success: false, error: e.message }, 200) }
 })
 
