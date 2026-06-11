@@ -2302,7 +2302,7 @@ app.get('/api/download-neraca-excel', async (c) => {
         'Cache-Control': 'no-cache'
       }
     })
-  } catch(e:any) { return c.json({ error: String(e) }, 500) }
+  } catch(e:any) { return c.json({ error: String(e), stack: (e as any)?.stack?.substring(0,500) }, 500) }
 })
 
 // Endpoint /api/xlsx — serve langsung (tanpa redirect) agar browser langsung download
@@ -2357,7 +2357,36 @@ app.get('/api/xlsx', async (c) => {
         'Cache-Control': 'no-store'
       }
     })
-  } catch(e:any) { return c.json({ error: String(e) }, 500) }
+  } catch(e:any) { return c.json({ error: String(e), stack: (e as any)?.stack?.substring(0,500) }, 500) }
+})
+
+// ===========================================================
+// DIAGNOSTIC: test atob + _zipParse di CF Workers runtime
+// GET /api/xlsx-diag
+// ===========================================================
+app.get('/api/xlsx-diag', async (c) => {
+  try {
+    const steps: string[] = []
+    // Step 1: atob test
+    steps.push(`b64 length: ${NERACA_TEMPLATE_B64.length}`)
+    const tplBytes = b64ToU8(NERACA_TEMPLATE_B64)
+    steps.push(`decoded bytes: ${tplBytes.length}`)
+    steps.push(`zip sig: ${tplBytes[0].toString(16)}${tplBytes[1].toString(16)}${tplBytes[2].toString(16)}${tplBytes[3].toString(16)}`)
+    // Step 2: parse ZIP
+    const parsed = _zipParse(tplBytes)
+    steps.push(`parsed entries: ${parsed.size}`)
+    for (const [k,v] of parsed) steps.push(`  ${k}: ${v.length}b`)
+    // Step 3: decode sheet1
+    const e1 = parsed.get('xl/worksheets/sheet1.xml')
+    if (e1) {
+      const xml = new TextDecoder().decode(e1)
+      steps.push(`sheet1 xml len: ${xml.length}`)
+      steps.push(`sheet1 first 80: ${xml.substring(0,80)}`)
+    } else steps.push('sheet1 NOT FOUND')
+    return c.json({ ok: true, steps })
+  } catch(e:any) {
+    return c.json({ ok: false, error: String(e), stack: (e as any)?.stack?.substring(0,1000) })
+  }
 })
 
 // ===========================================================
@@ -2659,7 +2688,7 @@ app.get('/api/wa-redirect/:id', async (c) => {
 // API: KIRIM WA VIA WHACENTER
 // ============================================================
 const WHACENTER_DEVICE_ID = '550fd04ee9fc7c4b4e057d0bce6270f3'
-const WHACENTER_NUMBER    = '6282252147896'
+const WHACENTER_NUMBER    = '628528559663'
 
 app.post('/api/kirim-wa', async (c) => {
   try {
@@ -4079,18 +4108,19 @@ async function autoKirimNeraca(
 }
 
 // ============================================================
-// HELPER: AUTO-KIRIM HOP BBM (screenshot tabel HOP → WA Grup)
+// HELPER: AUTO-KIRIM HOP BBM (screenshot Playwright → WA Grup)
 // Dipanggil dari cron jam 03:00 UTC = 11:00 WITA
 // Data pakai H-1 (tanggal kemarin)
 // ============================================================
 async function autoKirimHopBbm(
   kv: KVNamespace,
-  origin: string
+  origin: string,
+  db: D1Database
 ): Promise<{ skipped?: boolean, reason?: string, tanggal?: string, error?: string, message?: string }> {
 
-  const SCREENSHOT_SERVICE_URL = 'https://3001-ixws25249u6ccmhjmwoyc-18e660f9.sandbox.novita.ai'
   const DEVICE_ID  = '550fd04ee9fc7c4b4e057d0bce6270f3'
   const GROUP_NAME = 'AMC UID KASELTENG'
+  const SCREENSHOT_SVC = 'https://3001-ixws25249u6ccmhjmwoyc-18e660f9.sandbox.novita.ai'
 
   // Tanggal H-1 WITA
   const nowWita = new Date(new Date().getTime() + 8 * 60 * 60 * 1000)
@@ -4103,24 +4133,37 @@ async function autoKirimHopBbm(
     return { skipped: true, reason: `Sudah dikirim untuk tanggal ${tanggal} (last_sent: ${lastSent})`, tanggal }
   }
 
-  // Screenshot via Playwright service
+  const tglFmt = tanggal.split('-').reverse().join('.')
+
+  // ── 1. Ambil screenshot tabel HOP BBM dari Playwright service ──────────────
   let imgUrl = ''
   try {
-    const ssRes = await fetch(`${SCREENSHOT_SERVICE_URL}/screenshot-hop`, {
+    const shotRes = await fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tanggal }),
-      signal: AbortSignal.timeout(90000)
+      body: JSON.stringify({ tanggal, origin }),
+      signal: AbortSignal.timeout(60000)
     })
-    const ssJson = await ssRes.json() as { success: boolean, url?: string, error?: string }
-    if (ssJson.success && ssJson.url) imgUrl = ssJson.url
-    else return { error: `Screenshot HOP gagal: ${ssJson.error || 'unknown'}` }
+    const shotJson = await shotRes.json() as { success: boolean, url?: string, error?: string }
+    if (!shotJson.success) return { error: `Screenshot service error: ${shotJson.error}` }
+
+    const rawUrl = shotJson.url || ''
+
+    if (rawUrl.startsWith('data:image/')) {
+      // Simpan base64 ke KV dan expose via /api/neraca-png/:key
+      const b64 = rawUrl.replace('data:image/png;base64,', '')
+      const kvKey = `hop-tabel-${tanggal}.png`
+      await kv.put(kvKey, b64, { expirationTtl: 86400 })
+      imgUrl = `${origin}/api/neraca-png/${kvKey}`
+    } else {
+      // URL publik langsung dari imgbb
+      imgUrl = rawUrl
+    }
   } catch(e: any) {
-    return { error: `Screenshot service tidak tersedia: ${e.message}` }
+    return { error: `Gagal ambil screenshot HOP BBM: ${e.message}` }
   }
 
-  // Kirim ke WA Grup AMC UID KASELTENG
-  const tglFmt = tanggal.split('-').reverse().join('.')
+  // ── 2. Kirim ke WA Grup AMC UID KASELTENG ─────────────────────────────────
   const waForm = new FormData()
   waForm.append('device_id', DEVICE_ID)
   waForm.append('group',     GROUP_NAME)
@@ -4141,7 +4184,7 @@ async function autoKirimHopBbm(
 
   return {
     tanggal,
-    message: `Screenshot HOP BBM dikirim ke grup WA ${GROUP_NAME} (${tglFmt})`
+    message: `Tabel HOP BBM (screenshot) dikirim ke grup WA ${GROUP_NAME} (${tglFmt})`
   }
 }
 
@@ -4151,10 +4194,82 @@ async function autoKirimHopBbm(
 app.get('/api/hop-auto-kirim', async (c) => {
   try {
     const origin = new URL(c.req.url).origin
-    const result = await autoKirimHopBbm(c.env.FILES, origin)
+    const result = await autoKirimHopBbm(c.env.FILES, origin, c.env.DB)
     if (result.error)   return c.json({ success: false, error: result.error }, 200)
     if (result.skipped) return c.json({ success: true, skipped: true, reason: result.reason, tanggal: result.tanggal })
     return c.json({ success: true, tanggal: result.tanggal, message: result.message })
+  } catch(e:any) { return c.json({ success: false, error: e.message }, 200) }
+})
+
+// ============================================================
+// ENDPOINT: /api/hop-test-kirim (GET) — test kirim ke nomor personal
+// Query: ?nomor=085388709607&tanggal=2026-06-10&force=1
+// ============================================================
+app.get('/api/hop-test-kirim', async (c) => {
+  try {
+    const origin = new URL(c.req.url).origin
+    const nomor  = c.req.query('nomor') || '085388709607'
+    const tanggalParam = c.req.query('tanggal')
+    const force  = c.req.query('force') === '1'
+
+    const DEVICE_ID = '550fd04ee9fc7c4b4e057d0bce6270f3'
+    const SCREENSHOT_SVC = 'https://3001-ixws25249u6ccmhjmwoyc-18e660f9.sandbox.novita.ai'
+
+    // Tentukan tanggal: pakai ?tanggal jika ada, else H-1 WITA
+    let tanggal = tanggalParam
+    if (!tanggal) {
+      const nowWita = new Date(new Date().getTime() + 8 * 60 * 60 * 1000)
+      nowWita.setDate(nowWita.getDate() - 1)
+      tanggal = nowWita.toISOString().split('T')[0]
+    }
+    const tglFmt = tanggal.split('-').reverse().join('.')
+
+    // Ambil screenshot
+    let imgUrl = ''
+    const shotRes = await fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tanggal, origin }),
+      signal: AbortSignal.timeout(60000)
+    })
+    const shotJson = await shotRes.json() as { success: boolean, url?: string, error?: string }
+    if (!shotJson.success) return c.json({ success: false, error: `Screenshot error: ${shotJson.error}` })
+
+    const rawUrl = shotJson.url || ''
+    if (rawUrl.startsWith('data:image/')) {
+      const b64 = rawUrl.replace('data:image/png;base64,', '')
+      const kvKey = `hop-test-${tanggal}.png`
+      await c.env.FILES.put(kvKey, b64, { expirationTtl: 3600 })
+      imgUrl = `${origin}/api/neraca-png/${kvKey}`
+    } else {
+      imgUrl = rawUrl
+    }
+
+    // Format nomor: pastikan diawali 62
+    let nomorFmt = nomor.replace(/\D/g, '')
+    if (nomorFmt.startsWith('0')) nomorFmt = '62' + nomorFmt.substring(1)
+    if (!nomorFmt.startsWith('62')) nomorFmt = '62' + nomorFmt
+
+    // Kirim via whacenter sendMessage (personal, bukan grup)
+    const waForm = new FormData()
+    waForm.append('device_id', DEVICE_ID)
+    waForm.append('number',    nomorFmt)
+    waForm.append('message',   `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_TEST — AMC UID KASELTENG_`)
+    waForm.append('file',      imgUrl)
+
+    const waRes = await fetch('https://app.whacenter.com/api/send', {
+      method: 'POST',
+      body: waForm
+    })
+    const waJson = await waRes.json() as any
+
+    return c.json({
+      success: true,
+      tanggal,
+      nomor: nomorFmt,
+      img_url: imgUrl,
+      wa_response: waJson
+    })
   } catch(e:any) { return c.json({ success: false, error: e.message }, 200) }
 })
 
@@ -4204,8 +4319,8 @@ async function handleScheduled(
 
     } else if (cronExpr === '0 3 * * *') {
       // 03:00 UTC = 11:00 WITA — screenshot HOP BBM H-1 → AMC UID KASELTENG
-      console.log(`[cron ${cronExpr}] Mulai screenshot HOP BBM H-1...`)
-      const result = await autoKirimHopBbm(env.FILES, 'https://mesin-monitor.pages.dev')
+      console.log(`[cron ${cronExpr}] Mulai kirim tabel HOP BBM H-1...`)
+      const result = await autoKirimHopBbm(env.FILES, 'https://mesin-monitor.pages.dev', env.DB)
       if (result.skipped) {
         console.log(`[cron ${cronExpr}] Skipped: ${result.reason}`)
       } else if (result.error) {
