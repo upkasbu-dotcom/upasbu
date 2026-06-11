@@ -2545,17 +2545,20 @@ app.post('/api/kirim-wa-screenshot', async (c) => {
 
     const imgUrl = imgJson.data?.url || ''
 
-    // 2. Kirim ke WA Group via Whacenter
+    // 2. Kirim ke WA Group via Whacenter — kirim sebagai binary Blob
     const DEVICE_ID  = '550fd04ee9fc7c4b4e057d0bce6270f3'
     const GROUP_NAME = 'AMC UID KASELTENG'
     const tglFmt    = tanggal.split('-').reverse().join('.')  // DD.MM.YYYY
     const message   = `📊 *Neraca Daya ${tglFmt}*\nRingkasan neraca daya harian seluruh ULD.`
 
+    const imgBlob2 = await fetchImgBlob(imgUrl)
+    if (!imgBlob2) return c.json({ success: false, error: 'Gagal fetch PNG dari imgbb' }, 500)
+
     const waForm = new FormData()
     waForm.append('device_id', DEVICE_ID)
     waForm.append('group',     GROUP_NAME)
     waForm.append('message',   message)
-    waForm.append('file',      imgUrl)
+    waForm.append('file',      imgBlob2, `Neraca_Daya_${tglFmt}.png`)
 
     const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method: 'POST', body: waForm })
     const waJson = await waRes.json() as { status: boolean, message: string }
@@ -4057,11 +4060,16 @@ async function autoKirimNeraca(
   }
 
   // ── 4. Kirim screenshot ke WA Grup AMC UID KASELTENG ─────────────────────
+  // Fetch PNG sebagai Blob binary agar Whacenter kirim sebagai gambar
+  const imgBlob = await fetchImgBlob(imgUrl)
+  if (!imgBlob) {
+    return { error: 'Gagal fetch PNG untuk dikirim ke WA (neraca daya)' }
+  }
   const waForm = new FormData()
   waForm.append('device_id', DEVICE_ID)
   waForm.append('group',     GROUP_NAME)
   waForm.append('message',   `📊 *Neraca Daya ${tglFmt}*\nTabel Neraca Daya seluruh ULD (No s/d Status)`)
-  waForm.append('file',      imgUrl)
+  waForm.append('file',      imgBlob, `Neraca_Daya_${tglFmt}.png`)
   const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waForm })
   const waJson = await waRes.json() as { status:boolean, message:string }
   if (!waJson.status) {
@@ -4122,6 +4130,29 @@ async function resolveImgUrl(
   return raw  // imgbb URL langsung
 }
 
+// HELPER: fetchImgBlob — ambil PNG sebagai Blob binary
+// Mendukung: imgbb URL, data:image/png;base64,..., atau CF KV URL
+// Mengembalikan Blob PNG siap dikirim ke Whacenter sebagai file attachment
+// ============================================================
+async function fetchImgBlob(raw: string): Promise<Blob | null> {
+  if (!raw) return null
+  try {
+    if (raw.startsWith('data:image/')) {
+      // base64 inline → decode jadi binary
+      const b64 = raw.replace(/^data:image\/png;base64,/, '')
+      const binary = atob(b64)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      return new Blob([bytes], { type: 'image/png' })
+    }
+    // URL (imgbb atau CF KV) → fetch binary
+    const r = await fetch(raw, { signal: AbortSignal.timeout(30000) })
+    if (!r.ok) return null
+    const buf = await r.arrayBuffer()
+    return new Blob([buf], { type: 'image/png' })
+  } catch { return null }
+}
+
 // ============================================================
 // HELPER: AUTO-KIRIM HOP BBM (screenshot Playwright 1 gambar → WA Grup)
 // Dipanggil dari cron jam 03:00 UTC = 11:00 WITA
@@ -4167,11 +4198,15 @@ async function autoKirimHopBbm(
   }
 
   // ── 2. Kirim ke WA Grup AMC UID KASELTENG ─────────────────────────────────
+  // Fetch PNG sebagai Blob binary agar Whacenter menerima sebagai gambar
+  const imgBlob = await fetchImgBlob(imgUrl)
+  if (!imgBlob) return { error: 'Gagal fetch PNG untuk dikirim ke WA' }
+
   const waForm = new FormData()
   waForm.append('device_id', DEVICE_ID)
   waForm.append('group',     GROUP_NAME)
   waForm.append('message',   `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`)
-  waForm.append('file',      imgUrl)
+  waForm.append('file',      imgBlob, `HOP_BBM_${tglFmt}.png`)
   const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method: 'POST', body: waForm })
   const waJson = await waRes.json() as { status: boolean, message: string }
   if (!waJson.status) return { error: `Whacenter sendGroup error: ${waJson.message}` }
@@ -4233,16 +4268,21 @@ app.get('/api/hop-test-kirim', async (c) => {
 
     const imgUrl = await resolveImgUrl(shotJson.url || '', c.env.FILES, `hop-test-${tanggal}.png`, origin, 3600)
 
+    // Fetch PNG sebagai Blob binary agar Whacenter kirim sebagai gambar (bukan URL teks)
+    const imgBlob = await fetchImgBlob(imgUrl)
+    if (!imgBlob) return c.json({ success: false, error: 'Gagal fetch PNG untuk dikirim ke WA' })
+
     // Format nomor: pastikan diawali 62
     let nomorFmt = nomor.replace(/\D/g, '')
     if (nomorFmt.startsWith('0')) nomorFmt = '62' + nomorFmt.substring(1)
     if (!nomorFmt.startsWith('62')) nomorFmt = '62' + nomorFmt
 
+    const tglFmtFile = tglFmt.replace(/\./g, '-')
     const waForm = new FormData()
     waForm.append('device_id', DEVICE_ID)
     waForm.append('number',    nomorFmt)
     waForm.append('message',   `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_TEST · AMC UID KASELTENG_`)
-    waForm.append('file',      imgUrl)
+    waForm.append('file',      imgBlob, `HOP_BBM_${tglFmtFile}.png`)
     const waRes  = await fetch('https://app.whacenter.com/api/send', { method: 'POST', body: waForm })
     const waJson = await waRes.json() as any
 
