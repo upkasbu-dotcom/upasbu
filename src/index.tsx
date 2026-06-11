@@ -4123,7 +4123,7 @@ async function resolveImgUrl(
 }
 
 // ============================================================
-// HELPER: AUTO-KIRIM HOP BBM (screenshot Playwright 2-bagian → WA Grup)
+// HELPER: AUTO-KIRIM HOP BBM (screenshot Playwright 1 gambar → WA Grup)
 // Dipanggil dari cron jam 03:00 UTC = 11:00 WITA
 // Data pakai H-1 (tanggal kemarin)
 // ============================================================
@@ -4150,8 +4150,8 @@ async function autoKirimHopBbm(
 
   const tglFmt = tanggal.split('-').reverse().join('.')
 
-  // ── 1. Ambil screenshot 2-bagian dari Playwright service ──────────────────
-  let imgLeft = '', imgRight = ''
+  // ── 1. Ambil screenshot 1 gambar dari Playwright service ──────────────────
+  let imgUrl = ''
   try {
     const shotRes = await fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
       method: 'POST',
@@ -4159,49 +4159,29 @@ async function autoKirimHopBbm(
       body: JSON.stringify({ tanggal, origin }),
       signal: AbortSignal.timeout(90000)
     })
-    const shotJson = await shotRes.json() as { success: boolean, left?: string, right?: string, error?: string }
+    const shotJson = await shotRes.json() as { success: boolean, url?: string, error?: string }
     if (!shotJson.success) return { error: `Screenshot service error: ${shotJson.error}` }
-
-    imgLeft  = await resolveImgUrl(shotJson.left  || '', kv, `hop-left-${tanggal}.png`,  origin)
-    imgRight = await resolveImgUrl(shotJson.right || '', kv, `hop-right-${tanggal}.png`, origin)
+    imgUrl = await resolveImgUrl(shotJson.url || '', kv, `hop-tabel-${tanggal}.png`, origin)
   } catch(e: any) {
     return { error: `Gagal ambil screenshot HOP BBM: ${e.message}` }
   }
 
-  // ── 2. Kirim 2 pesan ke WA Grup AMC UID KASELTENG ─────────────────────────
-  async function sendGroup(msg: string, file: string) {
-    const f = new FormData()
-    f.append('device_id', DEVICE_ID)
-    f.append('group',     GROUP_NAME)
-    f.append('message',   msg)
-    f.append('file',      file)
-    const r = await fetch('https://app.whacenter.com/api/sendGroup', { method: 'POST', body: f })
-    return await r.json() as { status: boolean, message: string }
-  }
-
-  // Pesan 1: bagian kiri (header + stok)
-  const wa1 = await sendGroup(
-    `📊 *HOP BBM KALSELTENG — ${tglFmt}*\n*Bagian 1/2: Stok & Pemakaian*\n_Data H-1 · AMC UID KASELTENG_`,
-    imgLeft
-  )
-  if (!wa1.status) return { error: `WA bagian 1 error: ${wa1.message}` }
-
-  // Tunggu 2 detik agar urutan pesan benar
-  await new Promise(r => setTimeout(r, 2000))
-
-  // Pesan 2: bagian kanan (safety stock, kondisi, HOP)
-  const wa2 = await sendGroup(
-    `📊 *HOP BBM KALSELTENG — ${tglFmt}*\n*Bagian 2/2: BBM Siap Kirim, Safety Stock & Kondisi*\n_Data H-1 · AMC UID KASELTENG_`,
-    imgRight
-  )
-  if (!wa2.status) return { error: `WA bagian 2 error: ${wa2.message}` }
+  // ── 2. Kirim ke WA Grup AMC UID KASELTENG ─────────────────────────────────
+  const waForm = new FormData()
+  waForm.append('device_id', DEVICE_ID)
+  waForm.append('group',     GROUP_NAME)
+  waForm.append('message',   `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`)
+  waForm.append('file',      imgUrl)
+  const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method: 'POST', body: waForm })
+  const waJson = await waRes.json() as { status: boolean, message: string }
+  if (!waJson.status) return { error: `Whacenter sendGroup error: ${waJson.message}` }
 
   // Update KV anti-duplikat
   await kv.put('hop-last-sent-date', tanggal)
 
   return {
     tanggal,
-    message: `Tabel HOP BBM (2 bagian) dikirim ke grup WA ${GROUP_NAME} (${tglFmt})`
+    message: `Tabel HOP BBM dikirim ke grup WA ${GROUP_NAME} (${tglFmt})`
   }
 }
 
@@ -4241,53 +4221,32 @@ app.get('/api/hop-test-kirim', async (c) => {
     }
     const tglFmt = tanggal.split('-').reverse().join('.')
 
-    // Ambil screenshot 2-bagian
+    // Ambil screenshot 1 gambar
     const shotRes = await fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tanggal, origin }),
       signal: AbortSignal.timeout(90000)
     })
-    const shotJson = await shotRes.json() as { success: boolean, left?: string, right?: string, error?: string }
+    const shotJson = await shotRes.json() as { success: boolean, url?: string, error?: string }
     if (!shotJson.success) return c.json({ success: false, error: `Screenshot error: ${shotJson.error}` })
 
-    const imgLeft  = await resolveImgUrl(shotJson.left  || '', c.env.FILES, `hop-test-left-${tanggal}.png`,  origin, 3600)
-    const imgRight = await resolveImgUrl(shotJson.right || '', c.env.FILES, `hop-test-right-${tanggal}.png`, origin, 3600)
+    const imgUrl = await resolveImgUrl(shotJson.url || '', c.env.FILES, `hop-test-${tanggal}.png`, origin, 3600)
 
     // Format nomor: pastikan diawali 62
     let nomorFmt = nomor.replace(/\D/g, '')
     if (nomorFmt.startsWith('0')) nomorFmt = '62' + nomorFmt.substring(1)
     if (!nomorFmt.startsWith('62')) nomorFmt = '62' + nomorFmt
 
-    async function sendMsg(msg: string, file: string) {
-      const f = new FormData()
-      f.append('device_id', DEVICE_ID)
-      f.append('number',    nomorFmt)
-      f.append('message',   msg)
-      f.append('file',      file)
-      const r = await fetch('https://app.whacenter.com/api/send', { method: 'POST', body: f })
-      return await r.json() as any
-    }
+    const waForm = new FormData()
+    waForm.append('device_id', DEVICE_ID)
+    waForm.append('number',    nomorFmt)
+    waForm.append('message',   `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_TEST · AMC UID KASELTENG_`)
+    waForm.append('file',      imgUrl)
+    const waRes  = await fetch('https://app.whacenter.com/api/send', { method: 'POST', body: waForm })
+    const waJson = await waRes.json() as any
 
-    const wa1 = await sendMsg(
-      `📊 *HOP BBM KALSELTENG — ${tglFmt}*\n*Bagian 1/2: Stok & Pemakaian*\n_TEST · AMC UID KASELTENG_`,
-      imgLeft
-    )
-    await new Promise(r => setTimeout(r, 2000))
-    const wa2 = await sendMsg(
-      `📊 *HOP BBM KALSELTENG — ${tglFmt}*\n*Bagian 2/2: BBM Siap Kirim, Safety Stock & Kondisi*\n_TEST · AMC UID KASELTENG_`,
-      imgRight
-    )
-
-    return c.json({
-      success: true,
-      tanggal,
-      nomor: nomorFmt,
-      img_left: imgLeft,
-      img_right: imgRight,
-      wa1,
-      wa2
-    })
+    return c.json({ success: true, tanggal, nomor: nomorFmt, img_url: imgUrl, wa_response: waJson })
   } catch(e:any) { return c.json({ success: false, error: e.message }, 200) }
 })
 
