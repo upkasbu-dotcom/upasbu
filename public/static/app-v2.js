@@ -1618,7 +1618,8 @@ async function saveAllData() {
         var m = mesinList.find(function(x) { return x.id_mesin == r.mesin_id }) || {}
         return Object.assign({}, r, { nama_mesin: m.mesin || m.nama_mesin || '' })
       })
-      await fetch('/api/monitoring/sync-sheets', {
+      // fire-and-forget — tidak await, Apps Script lambat (~60 detik), jangan block UI
+      fetch('/api/monitoring/sync-sheets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1626,7 +1627,7 @@ async function saveAllData() {
           kode_unit: monSelectedUnit, nama_unit: namaUnit,
           records: recordsWithNama
         })
-      })
+      }).catch(function() {})
     } catch(se) { /* abaikan error sheets, tidak blocking simpan utama */ }
 
     // Jika unit 366/372/373/375/376/382/385/390/391/395/399/910/911/913/915/917/918/919/920, baca jadwal dari spreadsheet dan simpan ke D1

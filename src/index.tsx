@@ -626,15 +626,19 @@ app.post('/api/monitoring/sync-sheets', async (c) => {
     if (!tanggal || !records || !Array.isArray(records))
       return c.json({ success: false, error: 'tanggal dan records wajib' }, 400)
 
-    // Kirim ke Apps Script (tidak perlu auth, sudah public)
-    const resp = await fetch(LOGSHEET_APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' }, // Apps Script butuh text/plain untuk avoid CORS preflight
-      body: JSON.stringify({ tanggal, periode, kode_unit, nama_unit, records })
-    })
-    const json: any = await resp.json()
-    if (!json.success) throw new Error(json.error || 'Apps Script error')
-    return c.json({ success: true, appended: json.appended })
+    // Jalankan di background via waitUntil — response langsung ke client tanpa nunggu Apps Script
+    const payload = JSON.stringify({ tanggal, periode, kode_unit, nama_unit, records })
+    c.executionCtx.waitUntil(
+      fetch(LOGSHEET_APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: payload,
+        signal: AbortSignal.timeout(25000) // max 25 detik di background, tidak block user
+      }).catch(() => { /* abaikan error background */ })
+    )
+
+    // Langsung return ke client — Apps Script jalan di background
+    return c.json({ success: true, queued: true })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
