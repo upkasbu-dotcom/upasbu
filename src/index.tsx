@@ -4154,7 +4154,7 @@ async function fetchImgBlob(raw: string): Promise<Blob | null> {
 // ============================================================
 // HELPER: AUTO-KIRIM HOP BBM (screenshot Playwright 1 gambar → WA Grup)
 // Dipanggil dari cron jam 03:00 UTC = 11:00 WITA
-// Data pakai H-1 (tanggal kemarin)
+// Kirim saat data lap_operasional paling terakhir sudah lengkap semua unit
 // ============================================================
 async function autoKirimHopBbm(
   kv: KVNamespace,
@@ -4162,16 +4162,35 @@ async function autoKirimHopBbm(
   db: D1Database
 ): Promise<{ skipped?: boolean, reason?: string, tanggal?: string, error?: string, message?: string }> {
 
-  const DEVICE_ID  = '550fd04ee9fc7c4b4e057d0bce6270f3'
-  const GROUP_NAME = 'AMC UID KASELTENG'
+  const GROUP_NAME    = 'AMC UID KASELTENG'
   const SCREENSHOT_SVC = 'https://3001-ixws25249u6ccmhjmwoyc-18e660f9.sandbox.novita.ai'
+  const TOTAL_UNITS   = 19  // total ULD yang harus lengkap
 
-  // Tanggal H-1 WITA
+  // ── 1. Cari tanggal paling terakhir yang data lap_operasional-nya LENGKAP ──
+  // Lengkap = semua TOTAL_UNITS unit sudah punya saldo_akhir IS NOT NULL
+  // Batasi pencarian 7 hari ke belakang dari hari ini WITA
   const nowWita = new Date(new Date().getTime() + 8 * 60 * 60 * 1000)
-  nowWita.setDate(nowWita.getDate() - 1)
-  const tanggal = nowWita.toISOString().split('T')[0]  // YYYY-MM-DD H-1
+  const hariIni = nowWita.toISOString().split('T')[0]
 
-  // Anti-duplikat: cek KV
+  // Ambil tanggal-tanggal yang punya data, cukup banyak unit, 7 hari terakhir
+  const kandidat = await db.prepare(`
+    SELECT tanggal, COUNT(*) as jumlah_unit
+    FROM lap_operasional
+    WHERE tanggal <= ? AND tanggal >= date(?, '-7 days')
+      AND saldo_akhir IS NOT NULL
+    GROUP BY tanggal
+    HAVING COUNT(*) >= ?
+    ORDER BY tanggal DESC
+    LIMIT 1
+  `).bind(hariIni, hariIni, TOTAL_UNITS).first<{ tanggal: string, jumlah_unit: number }>()
+
+  if (!kandidat) {
+    return { skipped: true, reason: `Belum ada tanggal dengan data lengkap ${TOTAL_UNITS} unit (7 hari terakhir)` }
+  }
+
+  const tanggal = kandidat.tanggal
+
+  // ── 2. Anti-duplikat: cek KV — skip kalau tanggal ini sudah pernah dikirim ──
   const lastSent = await kv.get('hop-last-sent-date')
   if (lastSent && tanggal <= lastSent) {
     return { skipped: true, reason: `Sudah dikirim untuk tanggal ${tanggal} (last_sent: ${lastSent})`, tanggal }
@@ -4179,8 +4198,7 @@ async function autoKirimHopBbm(
 
   const tglFmt = tanggal.split('-').reverse().join('.')
 
-  // ── 1. Screenshot + kirim WA langsung dari Node.js screenshot service ───────
-  // Node.js bisa kirim binary file ke Whacenter, CF Worker tidak bisa
+  // ── 3. Screenshot + kirim WA dari Node.js screenshot service ────────────────
   let shotJson: { success: boolean, url?: string, wa?: { status: boolean, message: string }, error?: string }
   try {
     const shotRes = await fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
@@ -4204,12 +4222,12 @@ async function autoKirimHopBbm(
   const waResult = shotJson.wa
   if (!waResult?.status) return { error: `Whacenter error: ${waResult?.message || 'tidak ada response WA'}` }
 
-  // Update KV anti-duplikat
+  // ── 4. Update KV anti-duplikat ───────────────────────────────────────────────
   await kv.put('hop-last-sent-date', tanggal)
 
   return {
     tanggal,
-    message: `Tabel HOP BBM dikirim ke grup WA ${GROUP_NAME} (${tglFmt})`
+    message: `Tabel HOP BBM dikirim ke grup WA ${GROUP_NAME} (${tglFmt}) — ${kandidat.jumlah_unit} unit lengkap`
   }
 }
 
