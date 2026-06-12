@@ -4198,8 +4198,10 @@ async function autoKirimHopBbm(
 
   const tglFmt = tanggal.split('-').reverse().join('.')
 
-  // ── 3. Screenshot + kirim WA dari Node.js screenshot service ────────────────
-  let shotJson: { success: boolean, url?: string, wa?: { status: boolean, message: string }, error?: string }
+  // ── 3. Trigger screenshot service — fire-and-forget (hindari CF 524 timeout) ─
+  // Screenshot service akan kirim WA sendiri + callback ke /api/hop-kirim-callback
+  // untuk update KV setelah WA berhasil
+  const callbackUrl = `${origin}/api/hop-kirim-callback`
   try {
     const shotRes = await fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
       method: 'POST',
@@ -4207,29 +4209,40 @@ async function autoKirimHopBbm(
       body: JSON.stringify({
         tanggal,
         origin,
-        group:   GROUP_NAME,
-        message: `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`
+        group:       GROUP_NAME,
+        message:     `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`,
+        callbackUrl  // screenshot service callback sini setelah WA terkirim
       }),
-      signal: AbortSignal.timeout(90000)
+      signal: AbortSignal.timeout(30000)  // cukup 30 detik untuk trigger saja
     })
-    shotJson = await shotRes.json() as any
+    const shotJson = await shotRes.json() as any
+    if (!shotJson.success) return { error: `Screenshot service error: ${shotJson.error}` }
   } catch(e: any) {
-    return { error: `Gagal ambil screenshot HOP BBM: ${e.message}` }
+    return { error: `Gagal trigger screenshot service: ${e.message}` }
   }
-  if (!shotJson.success) return { error: `Screenshot service error: ${shotJson.error}` }
 
-  // Cek hasil kirim WA dari Node.js
-  const waResult = shotJson.wa
-  if (!waResult?.status) return { error: `Whacenter error: ${waResult?.message || 'tidak ada response WA'}` }
-
-  // ── 4. Update KV anti-duplikat ───────────────────────────────────────────────
+  // Update KV sekarang juga sebagai "in-progress" — callback akan confirm
   await kv.put('hop-last-sent-date', tanggal)
 
   return {
     tanggal,
-    message: `Tabel HOP BBM dikirim ke grup WA ${GROUP_NAME} (${tglFmt}) — ${kandidat.jumlah_unit} unit lengkap`
+    message: `Screenshot HOP BBM ${tglFmt} sedang dikirim ke grup WA ${GROUP_NAME} — ${kandidat.jumlah_unit} unit lengkap`
   }
 }
+
+// ============================================================
+// ENDPOINT: /api/hop-kirim-callback — dipanggil screenshot service setelah WA terkirim
+// ============================================================
+app.post('/api/hop-kirim-callback', async (c) => {
+  try {
+    const { tanggal, status } = await c.req.json() as { tanggal: string, status: string }
+    if (status === 'sent' && tanggal) {
+      await c.env.FILES.put('hop-last-sent-date', tanggal)
+      console.log(`[hop-callback] KV updated: hop-last-sent-date = ${tanggal}`)
+    }
+    return c.json({ success: true })
+  } catch(e: any) { return c.json({ success: false, error: e.message }) }
+})
 
 // ============================================================
 // ENDPOINT: /api/hop-auto-kirim (GET) — trigger manual / test
@@ -4283,7 +4296,7 @@ app.get('/api/hop-test-kirim', async (c) => {
         nomor:   nomorFmt,
         message: `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_TEST · AMC UID KASELTENG_`
       }),
-      signal: AbortSignal.timeout(90000)
+      signal: AbortSignal.timeout(150000)
     })
     const shotJson = await shotRes.json() as { success: boolean, url?: string, wa?: any, error?: string }
     if (!shotJson.success) return c.json({ success: false, error: `Screenshot error: ${shotJson.error}` })
