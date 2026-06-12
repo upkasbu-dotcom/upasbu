@@ -4339,27 +4339,25 @@ async function handleScheduled(
 
   try {
     if (cronExpr === '* * * * *') {
-      // Setiap menit — keep-alive ping agar sandbox tidak sleep
+      // Setiap menit — keep-alive ping + cek data HOP BBM lengkap → kirim ke grup
       try {
         await fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/health`, { signal: AbortSignal.timeout(5000) })
       } catch(_) { /* sandbox sedang sleep, tidak apa-apa */ }
+
+      // Cek data lengkap → kirim ke grup AMC UID KASELTENG
+      const hopResult = await autoKirimHopBbm(env.FILES, 'https://mesin-monitor.pages.dev', env.DB)
+      if (hopResult.skipped) {
+        console.log(`[cron ${cronExpr}] HOP skip: ${hopResult.reason}`)
+      } else if (hopResult.error) {
+        console.error(`[cron ${cronExpr}] HOP error: ${hopResult.error}`)
+      } else {
+        console.log(`[cron ${cronExpr}] HOP berhasil: ${hopResult.message}`)
+      }
 
     } else if (cronExpr === '0 2 * * *') {
       // 02:00 UTC = 10:00 WITA — notif HOP BBM teks ke AMC PRINDAVAN
       const { pesan, mentions } = await notifHopBBM(db)
       await kirimPesanGrup(pesan, mentions)
-
-    } else if (cronExpr === '0 3 * * *') {
-      // 03:00 UTC = 11:00 WITA — screenshot HOP BBM H-1 → AMC UID KASELTENG
-      console.log(`[cron ${cronExpr}] Mulai kirim tabel HOP BBM H-1...`)
-      const result = await autoKirimHopBbm(env.FILES, 'https://mesin-monitor.pages.dev', env.DB)
-      if (result.skipped) {
-        console.log(`[cron ${cronExpr}] Skipped: ${result.reason}`)
-      } else if (result.error) {
-        console.error(`[cron ${cronExpr}] Error: ${result.error}`)
-      } else {
-        console.log(`[cron ${cronExpr}] Berhasil: ${result.message}`)
-      }
 
     } else if (MALAM_CRONS.includes(cronExpr)) {
       // 18:00–23:00 WITA — cek malam 19/19 → screenshot + excel ke AMC UID KASELTENG
