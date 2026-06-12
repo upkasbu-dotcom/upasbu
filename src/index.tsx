@@ -4190,10 +4190,15 @@ async function autoKirimHopBbm(
 
   const tanggal = kandidat.tanggal
 
-  // ── 2. Anti-duplikat: cek KV — skip kalau tanggal ini sudah pernah dikirim ──
+  // ── 2. Anti-duplikat: cek KV — skip kalau tanggal ini sudah pernah dikirim / sedang proses ──
   const lastSent = await kv.get('hop-last-sent-date')
   if (lastSent && tanggal <= lastSent) {
     return { skipped: true, reason: `Sudah dikirim untuk tanggal ${tanggal} (last_sent: ${lastSent})`, tanggal }
+  }
+  // Cek juga flag "sedang proses" — hindari double-trigger antar menit
+  const pending = await kv.get('hop-pending-tanggal')
+  if (pending === tanggal) {
+    return { skipped: true, reason: `Sedang diproses untuk tanggal ${tanggal}, tunggu callback`, tanggal }
   }
 
   const tglFmt = tanggal.split('-').reverse().join('.')
@@ -4211,9 +4216,9 @@ async function autoKirimHopBbm(
         origin,
         group:       GROUP_NAME,
         message:     `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`,
-        callbackUrl  // screenshot service callback sini setelah WA terkirim
+        callbackUrl  // screenshot service callback ke sini setelah WA sukses → update KV
       }),
-      signal: AbortSignal.timeout(30000)  // cukup 30 detik untuk trigger saja
+      signal: AbortSignal.timeout(30000)
     })
     const shotJson = await shotRes.json() as any
     if (!shotJson.success) return { error: `Screenshot service error: ${shotJson.error}` }
@@ -4221,8 +4226,9 @@ async function autoKirimHopBbm(
     return { error: `Gagal trigger screenshot service: ${e.message}` }
   }
 
-  // Update KV sekarang juga sebagai "in-progress" — callback akan confirm
-  await kv.put('hop-last-sent-date', tanggal)
+  // Set flag "sedang diproses" — cron menit berikutnya tidak double-trigger
+  // TTL 5 menit: kalau callback tidak datang dalam 5 menit → dianggap gagal → retry otomatis
+  await kv.put('hop-pending-tanggal', tanggal, { expirationTtl: 300 })
 
   return {
     tanggal,
@@ -4238,6 +4244,7 @@ app.post('/api/hop-kirim-callback', async (c) => {
     const { tanggal, status } = await c.req.json() as { tanggal: string, status: string }
     if (status === 'sent' && tanggal) {
       await c.env.FILES.put('hop-last-sent-date', tanggal)
+      await c.env.FILES.delete('hop-pending-tanggal')  // hapus flag pending
       console.log(`[hop-callback] KV updated: hop-last-sent-date = ${tanggal}`)
     }
     return c.json({ success: true })
