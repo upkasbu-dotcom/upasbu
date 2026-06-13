@@ -4062,13 +4062,17 @@ async function autoKirimNeraca(
   }
 
   // ── 4. Kirim screenshot ke WA Grup AMC UID KASELTENG ─────────────────────
-  // Pakai image_url (Whacenter download langsung dari imgbb — bukan Blob upload)
-  const waForm = new FormData()
-  waForm.append('device_id',  DEVICE_ID)
-  waForm.append('group',      GROUP_NAME)
-  waForm.append('message',    `📊 *Neraca Daya ${tglFmt}*\nTabel Neraca Daya seluruh ULD (No s/d Status)`)
-  waForm.append('image_url',  imgUrl)
-  const waRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waForm })
+  // Kirim via JSON body {file: imgbbUrl} — metode yang terbukti bekerja
+  const waRes = await fetch('https://app.whacenter.com/api/sendGroup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      device_id: DEVICE_ID,
+      group:     GROUP_NAME,
+      message:   `⚡ *NERACA DAYA KALSELTENG — ${tglFmt}*\nData beban puncak malam seluruh ULD\n_AMC UID KASELTENG_`,
+      file:      imgUrl
+    })
+  })
   const waJson = await waRes.json() as { status:boolean, message:string }
   if (!waJson.status) {
     return { error: `Screenshot WA gagal: ${waJson.message}` }
@@ -4079,11 +4083,11 @@ async function autoKirimNeraca(
   try {
     const excelUrl  = `${origin}/api/xlsx?tanggal=${tanggalKirim}`
     const excelMsg  = `📥 *Download Excel Neraca Daya ${tglFmt}*\nUID KSKT ${tglFmt}.xlsx\n\n${excelUrl}`
-    const waExcelForm = new FormData()
-    waExcelForm.append('device_id', DEVICE_ID)
-    waExcelForm.append('group',     GROUP_NAME)
-    waExcelForm.append('message',   excelMsg)
-    const waExcelRes  = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waExcelForm })
+    const waExcelRes  = await fetch('https://app.whacenter.com/api/sendGroup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: DEVICE_ID, group: GROUP_NAME, message: excelMsg })
+    })
     const waExcelJson = await waExcelRes.json() as { status:boolean, message:string }
     excelSent = waExcelJson.status
   } catch(_) { /* tidak blocking */ }
@@ -4095,11 +4099,11 @@ async function autoKirimNeraca(
       `✅ *Neraca Daya ${tglFmt}*\n` +
       `Data malam seluruh *19 ULD* sudah lengkap.\n` +
       `Laporan telah dikirim ke grup AMC UID KALSELTENG.`
-    const waPrindavan = new FormData()
-    waPrindavan.append('device_id', DEVICE_ID)
-    waPrindavan.append('group',     'AMC PRINDAVAN')
-    waPrindavan.append('message',   msgPrindavan)
-    const resPrindavan = await fetch('https://app.whacenter.com/api/sendGroup', { method:'POST', body:waPrindavan })
+    const resPrindavan = await fetch('https://app.whacenter.com/api/sendGroup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: DEVICE_ID, group: 'AMC PRINDAVAN', message: msgPrindavan })
+    })
     const jsonPrindavan = await resPrindavan.json() as { status:boolean, message:string }
     prindavanSent = jsonPrindavan.status
   } catch(_) { /* tidak blocking */ }
