@@ -3996,7 +3996,7 @@ async function autoKirimNeraca(
   const REQUIRED_COUNT = NERACA_ORDER.length  // 19
   const DEVICE_ID      = '550fd04ee9fc7c4b4e057d0bce6270f3'
   const GROUP_NAME     = 'AMC UID KASELTENG'
-  const SCREENSHOT_SERVICE_URL = 'https://screenshot-service-io91.onrender.com'
+  const SCREENSHOT_SERVICE_URL = 'https://3001-ixws25249u6ccmhjmwoyc-18e660f9.sandbox.novita.ai'
 
   // ── 1. Cari tanggal_lengkap: 19/19 ULD punya record MALAM ────────────────
   const candidates = await db.prepare(`
@@ -4043,39 +4043,25 @@ async function autoKirimNeraca(
   const tanggalKirim = tanggalLengkap
   const tglFmt = tanggalKirim.split('-').reverse().join('.')
 
-  // ── 3. Screenshot via Playwright service ─────────────────────────────────
-  let imgUrl = ''
+  // ── 3+4. Screenshot + Kirim ke WA Grup via screenshot service ──────────────
+  // screenshot service: build HTML → Playwright → imgbb → JSON {file:url} ke Whacenter
   try {
     const ssRes = await fetch(`${SCREENSHOT_SERVICE_URL}/screenshot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tanggal: tanggalKirim }),
+      body: JSON.stringify({
+        tanggal: tanggalKirim,
+        origin,
+        group:   GROUP_NAME,
+        message: `⚡ *NERACA DAYA KALSELTENG — ${tglFmt}*\nData beban puncak malam seluruh ULD\n_AMC UID KASELTENG_`
+      }),
       signal: AbortSignal.timeout(60000)
     })
-    const ssJson = await ssRes.json() as { success: boolean, url?: string, error?: string }
-    if (ssJson.success && ssJson.url) imgUrl = ssJson.url
+    const ssJson = await ssRes.json() as { success: boolean, url?: string, wa?: any, error?: string }
+    if (!ssJson.success) return { error: `Screenshot/WA gagal: ${ssJson.error}` }
+    if (!ssJson.wa?.status) return { error: `WA gagal: ${ssJson.wa?.message || 'no response'}` }
   } catch(e: any) {
-    console.error('[autoKirimNeraca] Screenshot service error:', e.message)
-  }
-  if (!imgUrl) {
-    return { error: 'Screenshot service tidak tersedia. Pastikan sandbox aktif.' }
-  }
-
-  // ── 4. Kirim screenshot ke WA Grup AMC UID KASELTENG ─────────────────────
-  // Kirim via JSON body {file: imgbbUrl} — metode yang terbukti bekerja
-  const waRes = await fetch('https://app.whacenter.com/api/sendGroup', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      device_id: DEVICE_ID,
-      group:     GROUP_NAME,
-      message:   `⚡ *NERACA DAYA KALSELTENG — ${tglFmt}*\nData beban puncak malam seluruh ULD\n_AMC UID KASELTENG_`,
-      file:      imgUrl
-    })
-  })
-  const waJson = await waRes.json() as { status:boolean, message:string }
-  if (!waJson.status) {
-    return { error: `Screenshot WA gagal: ${waJson.message}` }
+    return { error: `Screenshot service error: ${e.message}` }
   }
 
   // ── 5. Kirim URL Excel ke grup ────────────────────────────────────────────
@@ -4167,7 +4153,7 @@ async function autoKirimHopBbm(
 ): Promise<{ skipped?: boolean, reason?: string, tanggal?: string, error?: string, message?: string }> {
 
   const GROUP_NAME    = 'AMC UID KASELTENG'
-  const SCREENSHOT_SVC = 'https://screenshot-service-io91.onrender.com'
+  const SCREENSHOT_SVC = 'https://3001-ixws25249u6ccmhjmwoyc-18e660f9.sandbox.novita.ai'
   const TOTAL_UNITS   = 19  // total ULD yang harus lengkap
 
   // ── 1. Cari tanggal paling terakhir yang data lap_operasional-nya LENGKAP ──
@@ -4280,7 +4266,7 @@ app.get('/api/hop-test-kirim', async (c) => {
     const force  = c.req.query('force') === '1'
 
     const DEVICE_ID = '550fd04ee9fc7c4b4e057d0bce6270f3'
-    const SCREENSHOT_SVC = 'https://screenshot-service-io91.onrender.com'
+    const SCREENSHOT_SVC = 'https://3001-ixws25249u6ccmhjmwoyc-18e660f9.sandbox.novita.ai'
 
     // Tentukan tanggal: pakai ?tanggal jika ada, else H-1 WITA
     let tanggal = tanggalParam
@@ -4338,7 +4324,7 @@ app.post('/api/hop-last-sent-date', async (c) => {
 // Cron 4-9: "0 10-15 * * *" → 18:00–23:00 WITA (auto-kirim neraca screenshot+excel ke AMC UID KASELTENG)
 // ============================================================
 const MALAM_CRONS = ['0 10 * * *','0 11 * * *','0 12 * * *','0 13 * * *','0 14 * * *','0 15 * * *']
-const SCREENSHOT_SERVICE_KEEPALIVE = 'https://screenshot-service-io91.onrender.com'
+const SCREENSHOT_SERVICE_KEEPALIVE = 'https://3001-ixws25249u6ccmhjmwoyc-18e660f9.sandbox.novita.ai'
 
 async function handleScheduled(
   event: ScheduledEvent,
