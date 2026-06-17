@@ -184,6 +184,18 @@ async function initDB(db: D1Database) {
   )`).run()
   await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_jadwal_wa_unique ON jadwal_wa(kode_unit, tanggal, jam)`).run()
 
+  // Tabel log pengiriman WA auto — track per tanggal & jenis agar tidak double-kirim
+  // jenis: 'hop_screenshot' | 'neraca_screenshot' | 'neraca_tabel'
+  await db.prepare(`CREATE TABLE IF NOT EXISTS wa_kirim_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    tanggal    TEXT NOT NULL,
+    jenis      TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'sent',
+    info       TEXT,
+    sent_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`).run()
+  await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_wa_kirim_log_unique ON wa_kirim_log(tanggal, jenis)`).run()
+
   // MIGRASI: hapus FOREIGN KEY di data_monitoring (referensi ke tabel mesin yg salah)
   // Cek apakah tabel masih punya FK dengan melihat sql-nya
   try {
@@ -3982,6 +3994,198 @@ app.get('/api/cron-test', async (c) => {
 })
 
 // ============================================================
+// HELPER: wa_kirim_log — cek & catat pengiriman WA
+// Untuk anti-duplikat per (tanggal, jenis) di DB
+// ============================================================
+async function sudahDikirim(db: D1Database, tanggal: string, jenis: string): Promise<boolean> {
+  try {
+    const row = await db.prepare(
+      `SELECT id FROM wa_kirim_log WHERE tanggal = ? AND jenis = ? LIMIT 1`
+    ).bind(tanggal, jenis).first()
+    return row != null
+  } catch { return false }
+}
+
+async function catatKirim(db: D1Database, tanggal: string, jenis: string, info = ''): Promise<void> {
+  try {
+    await db.prepare(
+      `INSERT OR IGNORE INTO wa_kirim_log (tanggal, jenis, status, info) VALUES (?, ?, 'sent', ?)`
+    ).bind(tanggal, jenis, info).run()
+  } catch(e: any) {
+    console.error(`[wa_kirim_log] Gagal catat ${jenis}/${tanggal}: ${e.message}`)
+  }
+}
+
+// ============================================================
+// HELPER: AUTO-KIRIM TABEL NERACA DAYA (pesan teks WA)
+// Kirim ringkasan neraca daya dalam format teks ke grup
+// Data: BP Siang + BP Malam per ULD dari data_monitoring
+// Anti-duplikat: cek wa_kirim_log(tanggal, 'neraca_tabel')
+// ============================================================
+async function autoKirimTabelNeraca(
+  db: D1Database,
+  kv: KVNamespace,
+  origin: string
+): Promise<{ skipped?: boolean, reason?: string, tanggal?: string, error?: string, message?: string }> {
+
+  const NERACA_ORDER   = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
+  const REQUIRED_COUNT = NERACA_ORDER.length  // 19
+  const DEVICE_ID      = '550fd04ee9fc7c4b4e057d0bce6270f3'
+
+  // Baca penerima dari KV (sama dengan neraca screenshot)
+  type Penerima = { type: 'nomor' | 'grup', target: string }
+  let penerima: Penerima[] = [{ type: 'grup', target: 'AMC UID KASELTENG' }]
+  try {
+    const raw = await kv.get('wa-penerima-neraca')
+    if (raw) penerima = JSON.parse(raw)
+  } catch(_) {}
+
+  // ── 1. Cari tanggal terbaru dengan data malam LENGKAP 19/19 ──────────────
+  const nowWita = new Date(new Date().getTime() + 8 * 60 * 60 * 1000)
+  const hariIni = nowWita.toISOString().split('T')[0]
+  const batas7  = (() => { const d = new Date(nowWita); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0] })()
+
+  const tanggalRow = await db.prepare(`
+    SELECT dm.tanggal,
+      COUNT(DISTINCT CASE
+        WHEN CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5
+        THEN mc.kode_unit END) as cnt_malam
+    FROM data_monitoring dm
+    JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+    WHERE mc.kode_unit IN (${NERACA_ORDER.join(',')})
+      AND dm.tanggal >= ? AND dm.tanggal <= ?
+    GROUP BY dm.tanggal
+    HAVING cnt_malam >= ?
+    ORDER BY dm.tanggal DESC
+    LIMIT 1
+  `).bind(batas7, hariIni, REQUIRED_COUNT).first<{ tanggal: string, cnt_malam: number }>()
+
+  if (!tanggalRow) {
+    return { skipped: true, reason: `Belum ada tanggal dengan data malam lengkap 19/19 (7 hari terakhir)` }
+  }
+
+  const tanggal = tanggalRow.tanggal
+
+  // ── 2. Anti-duplikat: cek wa_kirim_log ──────────────────────────────────
+  if (await sudahDikirim(db, tanggal, 'neraca_tabel')) {
+    return { skipped: true, reason: `Tabel neraca ${tanggal} sudah pernah dikirim`, tanggal }
+  }
+
+  // ── 3. Ambil data neraca: BP Siang + BP Malam per ULD ───────────────────
+  const dataRows = await db.prepare(`
+    SELECT
+      mc.kode_unit,
+      mc.nama_unit,
+      SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 6 AND CAST(dm.jam AS INTEGER) <= 17)
+               AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as bp_siang,
+      SUM(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+               AND dm.status_mesin = 'Operasi' THEN COALESCE(dm.beban,0) ELSE 0 END) as bp_malam,
+      SUM(CASE WHEN dm.status_mesin IN ('Operasi','Standby')
+               AND (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+               THEN COALESCE(dm.daya_mampu,0) ELSE 0 END) as dm_pasok,
+      COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+                 AND dm.status_mesin = 'Operasi' THEN 1 END) as jml_ops,
+      COUNT(CASE WHEN (CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5)
+                 AND dm.status_mesin = 'Gangguan' THEN 1 END) as jml_gng
+    FROM data_monitoring dm
+    JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+    WHERE dm.tanggal = ?
+      AND mc.kode_unit IN (${NERACA_ORDER.join(',')})
+    GROUP BY mc.kode_unit, mc.nama_unit
+  `).bind(tanggal).all<{
+    kode_unit: number, nama_unit: string,
+    bp_siang: number, bp_malam: number, dm_pasok: number,
+    jml_ops: number, jml_gng: number
+  }>()
+
+  // Map hasil query
+  const dataMap: Record<number, { nama: string, bp_siang: number, bp_malam: number, dm_pasok: number, jml_ops: number, jml_gng: number }> = {}
+  for (const r of dataRows.results) {
+    dataMap[r.kode_unit] = {
+      nama: r.nama_unit.replace(/^ULD\s+/i, ''),  // singkat: hilangkan prefix "ULD "
+      bp_siang: Math.round(r.bp_siang || 0),
+      bp_malam: Math.round(r.bp_malam || 0),
+      dm_pasok:  Math.round(r.dm_pasok  || 0),
+      jml_ops:   r.jml_ops || 0,
+      jml_gng:   r.jml_gng || 0
+    }
+  }
+
+  // ── 4. Format pesan teks tabel ───────────────────────────────────────────
+  const tglFmt = tanggal.split('-').reverse().join('.')
+  let totalBpSiang = 0, totalBpMalam = 0
+
+  // Header
+  let msg = `⚡ *NERACA DAYA KALSELTENG*\n`
+  msg += `📅 ${tglFmt} | Data Malam\n`
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━\n`
+  msg += `*No  ULD            Siang  Malam*\n`
+  msg += `──────────────────────────────\n`
+
+  NERACA_ORDER.forEach((ku, idx) => {
+    const d = dataMap[ku]
+    if (!d) return
+    const no    = String(idx + 1).padStart(2, ' ')
+    // Singkat nama max 13 char
+    const nama  = d.nama.length > 13 ? d.nama.substring(0, 13) : d.nama.padEnd(13, ' ')
+    const siang = String(d.bp_siang).padStart(5, ' ')
+    const malam = String(d.bp_malam).padStart(5, ' ')
+    const gng   = d.jml_gng > 0 ? ' ⚠️' : ''
+    msg += `${no}. ${nama} ${siang}  ${malam}${gng}\n`
+    totalBpSiang += d.bp_siang
+    totalBpMalam += d.bp_malam
+  })
+
+  msg += `──────────────────────────────\n`
+  msg += `*TOTAL         ${String(totalBpSiang).padStart(5,' ')}  ${String(totalBpMalam).padStart(5,' ')}*\n`
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━\n`
+  msg += `_Satuan: MW · Data beban puncak malam_\n`
+  msg += `_AMC UID KASELTENG_`
+
+  // ── 5. Kirim ke semua penerima ───────────────────────────────────────────
+  const penerimaDesc = penerima.map(p => `${p.type}:${p.target}`).join(', ')
+  let adaYangBerhasil = false
+
+  for (const p of penerima) {
+    try {
+      const payload: Record<string, string> = {
+        device_id: DEVICE_ID,
+        message: msg,
+        ...(p.type === 'nomor' ? { number: p.target } : { group: p.target })
+      }
+      const endpoint = p.type === 'nomor'
+        ? 'https://app.whacenter.com/api/send'
+        : 'https://app.whacenter.com/api/sendGroup'
+      const res  = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15000)
+      })
+      const json = await res.json() as any
+      if (json.status) {
+        adaYangBerhasil = true
+        console.log(`[tabel-neraca] OK → ${p.type} ${p.target}`)
+      } else {
+        console.error(`[tabel-neraca] FAIL → ${p.type} ${p.target}: ${json.message}`)
+      }
+    } catch(e: any) {
+      console.error(`[tabel-neraca] Error → ${p.type} ${p.target}: ${e.message}`)
+    }
+  }
+
+  // ── 6. Catat ke wa_kirim_log ─────────────────────────────────────────────
+  if (adaYangBerhasil) {
+    await catatKirim(db, tanggal, 'neraca_tabel', penerimaDesc)
+  }
+
+  return {
+    tanggal,
+    message: `Tabel Neraca Daya ${tglFmt} dikirim ke: ${penerimaDesc} (${adaYangBerhasil ? 'berhasil' : 'gagal semua'})`
+  }
+}
+
+// ============================================================
 // HELPER: AUTO-KIRIM NERACA DAYA (screenshot + excel ke WA Grup)
 // Dipanggil dari cron malam DAN dari endpoint /api/neraca-auto-kirim
 // Parameter origin: base URL Pages (untuk membentuk excel URL)
@@ -4005,17 +4209,10 @@ async function autoKirimNeraca(
     if (raw) penerimaneraca = JSON.parse(raw)
   } catch(_) {}
 
-  // ── 1. Anti-duplikat: baca KV dulu sebelum query DB ─────────────────────
-  const lastSentDate = await kv.get('neraca-last-sent-date')
-
-  // ── 2. Cari tanggal BARU yang belum pernah dikirim dan data malam lengkap 19/19
-  // Satu query langsung: GROUP BY tanggal, filter jam malam, HAVING COUNT >= 19
-  // Juga filter: hanya tanggal > lastSentDate (kalau ada), maks 7 hari terakhir
+  // ── 1. Cari tanggal terbaru dengan data malam LENGKAP 19/19 (7 hari terakhir)
   const nowWita = new Date(new Date().getTime() + 8 * 60 * 60 * 1000)
   const hariIni  = nowWita.toISOString().split('T')[0]
-  const batasAwal = lastSentDate
-    ? lastSentDate  // hanya cari tanggal > yang sudah dikirim
-    : (() => { const d = new Date(nowWita); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0] })()
+  const batas7   = (() => { const d = new Date(nowWita); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0] })()
 
   const tanggalRow = await db.prepare(`
     SELECT dm.tanggal,
@@ -4025,27 +4222,27 @@ async function autoKirimNeraca(
     FROM data_monitoring dm
     JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
     WHERE mc.kode_unit IN (${NERACA_ORDER.join(',')})
-      AND dm.tanggal > ?
+      AND dm.tanggal >= ?
       AND dm.tanggal <= ?
     GROUP BY dm.tanggal
     HAVING cnt_malam >= ?
     ORDER BY dm.tanggal DESC
     LIMIT 1
-  `).bind(batasAwal, hariIni, REQUIRED_COUNT).first<{ tanggal: string, cnt_malam: number }>()
+  `).bind(batas7, hariIni, REQUIRED_COUNT).first<{ tanggal: string, cnt_malam: number }>()
 
   if (!tanggalRow) {
-    return {
-      skipped: true,
-      reason: `Belum ada tanggal baru dengan data malam lengkap 19/19 (last_sent: ${lastSentDate || 'belum pernah'})`
-    }
+    return { skipped: true, reason: `Belum ada tanggal dengan data malam lengkap 19/19 (7 hari terakhir)` }
   }
 
-  const tanggalLengkap = tanggalRow.tanggal
-
-  const tanggalKirim = tanggalLengkap
+  const tanggalKirim = tanggalRow.tanggal
   const tglFmt = tanggalKirim.split('-').reverse().join('.')
 
-  // ── 3. Anti double-trigger: cek pending flag ──────────────────────────────
+  // ── 2. Anti-duplikat: cek wa_kirim_log (DB) — lebih reliable dari KV ────
+  if (await sudahDikirim(db, tanggalKirim, 'neraca_screenshot')) {
+    return { skipped: true, reason: `Screenshot neraca ${tanggalKirim} sudah pernah dikirim`, tanggal: tanggalKirim }
+  }
+
+  // ── 3. Anti double-trigger: cek KV pending flag ───────────────────────────
   const pendingNeraca = await kv.get('neraca-pending-tanggal')
   if (pendingNeraca === tanggalKirim) {
     return { skipped: true, reason: `Sedang diproses untuk tanggal ${tanggalKirim}, tunggu callback`, tanggal: tanggalKirim }
@@ -4055,7 +4252,7 @@ async function autoKirimNeraca(
   const callbackUrl = `${origin}/api/neraca-kirim-callback`
   const penerimaDesc = penerimaneraca.map(p => `${p.type}:${p.target}`).join(', ')
 
-  // Set pending flag dulu
+  // Set pending flag (TTL 5 menit — kalau callback tidak datang akan retry otomatis)
   await kv.put('neraca-pending-tanggal', tanggalKirim, { expirationTtl: 300 })
 
   for (const penerima of penerimaneraca) {
@@ -4183,10 +4380,9 @@ async function autoKirimHopBbm(
 
   const tanggal = kandidat.tanggal
 
-  // ── 2. Anti-duplikat: cek KV — skip kalau tanggal ini sudah pernah dikirim / sedang proses ──
-  const lastSent = await kv.get('hop-last-sent-date')
-  if (lastSent && tanggal <= lastSent) {
-    return { skipped: true, reason: `Sudah dikirim untuk tanggal ${tanggal} (last_sent: ${lastSent})`, tanggal }
+  // ── 2. Anti-duplikat: cek wa_kirim_log (DB) — lebih reliable dari KV ────
+  if (await sudahDikirim(db, tanggal, 'hop_screenshot')) {
+    return { skipped: true, reason: `Screenshot HOP ${tanggal} sudah pernah dikirim`, tanggal }
   }
   // Cek juga flag "sedang proses" — hindari double-trigger antar menit
   const pending = await kv.get('hop-pending-tanggal')
@@ -4249,9 +4445,12 @@ app.post('/api/hop-kirim-callback', async (c) => {
   try {
     const { tanggal, status } = await c.req.json() as { tanggal: string, status: string }
     if (status === 'sent' && tanggal) {
+      // Catat ke wa_kirim_log (anti-duplikat permanen di DB)
+      await catatKirim(c.env.DB, tanggal, 'hop_screenshot', 'callback-ok')
+      // Update KV juga (backward compat)
       await c.env.FILES.put('hop-last-sent-date', tanggal)
-      await c.env.FILES.delete('hop-pending-tanggal')  // hapus flag pending
-      console.log(`[hop-callback] KV updated: hop-last-sent-date = ${tanggal}`)
+      await c.env.FILES.delete('hop-pending-tanggal')
+      console.log(`[hop-callback] Tercatat: hop_screenshot/${tanggal}`)
     }
     return c.json({ success: true })
   } catch(e: any) { return c.json({ success: false, error: e.message }) }
@@ -4264,9 +4463,12 @@ app.post('/api/neraca-kirim-callback', async (c) => {
   try {
     const { tanggal, status } = await c.req.json() as { tanggal: string, status: string }
     if (status === 'sent' && tanggal) {
+      // Catat ke wa_kirim_log (anti-duplikat permanen di DB)
+      await catatKirim(c.env.DB, tanggal, 'neraca_screenshot', 'callback-ok')
+      // Update KV juga (backward compat)
       await c.env.FILES.put('neraca-last-sent-date', tanggal)
-      await c.env.FILES.delete('neraca-pending-tanggal')  // hapus flag pending
-      console.log(`[neraca-callback] KV updated: neraca-last-sent-date = ${tanggal}`)
+      await c.env.FILES.delete('neraca-pending-tanggal')
+      console.log(`[neraca-callback] Tercatat: neraca_screenshot/${tanggal}`)
 
       // Kirim Excel + notif PRINDAVAN di background setelah WA screenshot berhasil
       const origin = new URL(c.req.url).origin
@@ -4312,6 +4514,48 @@ app.get('/api/hop-auto-kirim', async (c) => {
     if (result.skipped) return c.json({ success: true, skipped: true, reason: result.reason, tanggal: result.tanggal })
     return c.json({ success: true, tanggal: result.tanggal, message: result.message })
   } catch(e:any) { return c.json({ success: false, error: e.message }, 200) }
+})
+
+// ============================================================
+// ENDPOINT: /api/neraca-tabel-kirim (GET) — trigger manual tabel neraca teks
+// ============================================================
+app.get('/api/neraca-tabel-kirim', async (c) => {
+  try {
+    const origin = new URL(c.req.url).origin
+    const result = await autoKirimTabelNeraca(c.env.DB, c.env.FILES, origin)
+    if (result.error)   return c.json({ success: false, error: result.error }, 200)
+    if (result.skipped) return c.json({ success: true, skipped: true, reason: result.reason, tanggal: result.tanggal })
+    return c.json({ success: true, tanggal: result.tanggal, message: result.message })
+  } catch(e:any) { return c.json({ success: false, error: e.message }, 200) }
+})
+
+// ============================================================
+// ENDPOINT: /api/wa-kirim-log (GET) — lihat log pengiriman WA
+// Query: ?limit=20&jenis=hop_screenshot|neraca_screenshot|neraca_tabel
+// DELETE /api/wa-kirim-log?tanggal=YYYY-MM-DD&jenis=hop_screenshot → hapus entry (untuk force re-send)
+// ============================================================
+app.get('/api/wa-kirim-log', async (c) => {
+  try {
+    const limit  = Math.min(parseInt(c.req.query('limit') || '30'), 100)
+    const jenis  = c.req.query('jenis') || ''
+    let query = `SELECT tanggal, jenis, status, info, sent_at FROM wa_kirim_log`
+    const params: any[] = []
+    if (jenis) { query += ` WHERE jenis = ?`; params.push(jenis) }
+    query += ` ORDER BY sent_at DESC LIMIT ?`
+    params.push(limit)
+    const rows = await c.env.DB.prepare(query).bind(...params).all()
+    return c.json({ success: true, count: rows.results.length, rows: rows.results })
+  } catch(e:any) { return c.json({ success: false, error: e.message }, 500) }
+})
+
+app.delete('/api/wa-kirim-log', async (c) => {
+  try {
+    const tanggal = c.req.query('tanggal')
+    const jenis   = c.req.query('jenis')
+    if (!tanggal || !jenis) return c.json({ success: false, error: 'Butuh ?tanggal=YYYY-MM-DD&jenis=...' }, 400)
+    await c.env.DB.prepare(`DELETE FROM wa_kirim_log WHERE tanggal = ? AND jenis = ?`).bind(tanggal, jenis).run()
+    return c.json({ success: true, message: `Log ${jenis}/${tanggal} dihapus — akan di-retry saat cron berikutnya` })
+  } catch(e:any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
 // ============================================================
@@ -4445,10 +4689,15 @@ app.delete('/api/wa-penerima', async (c) => {
 // Cron 1: "0 2 * * *"   → 02:00 UTC = 10:00 WITA (notif HOP BBM teks)
 // Cron 2: "0 3 * * *"   → 03:00 UTC = 11:00 WITA (screenshot HOP BBM → AMC UID KASELTENG)
 // Cron 3: "0 12 * * *"  → 12:00 UTC = 20:00 WITA (notif neraca teks ke AMC PRINDAVAN)
-// Cron 4-9: "0 10-15 * * *" → 18:00–23:00 WITA (auto-kirim neraca screenshot+excel ke AMC UID KASELTENG)
+// Cron 4-9: "0 10-15 * * *" → 18:00–23:00 WITA
+//   → auto-kirim 3 laporan (jika data lengkap & belum pernah dikirim):
+//     1. Screenshot HOP BBM (cron setiap menit + MALAM_CRONS)
+//     2. Screenshot Neraca Daya (MALAM_CRONS)
+//     3. Tabel Neraca Daya teks WA (MALAM_CRONS)
 // ============================================================
 const MALAM_CRONS = ['0 10 * * *','0 11 * * *','0 12 * * *','0 13 * * *','0 14 * * *','0 15 * * *']
 const SCREENSHOT_SERVICE_KEEPALIVE = 'https://screenshot-service-i6l2.onrender.com'
+const ORIGIN_PROD = 'https://mesin-monitor.pages.dev'
 
 async function handleScheduled(
   event: ScheduledEvent,
@@ -4460,19 +4709,18 @@ async function handleScheduled(
 
   try {
     if (cronExpr === '* * * * *') {
-      // Setiap menit — keep-alive ping + cek data HOP BBM lengkap → kirim ke grup
+      // Setiap menit — keep-alive ping + cek HOP BBM → screenshot + kirim
       try {
         await fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/health`, { signal: AbortSignal.timeout(5000) })
-      } catch(_) { /* Render free tier: spin-down normal, tidak apa-apa */ }
+      } catch(_) { /* Render free tier: spin-down normal */ }
 
-      // Cek data lengkap → kirim ke grup AMC UID KASELTENG
-      const hopResult = await autoKirimHopBbm(env.FILES, 'https://mesin-monitor.pages.dev', env.DB)
+      const hopResult = await autoKirimHopBbm(env.FILES, ORIGIN_PROD, db)
       if (hopResult.skipped) {
-        console.log(`[cron ${cronExpr}] HOP skip: ${hopResult.reason}`)
+        console.log(`[cron HOP] skip: ${hopResult.reason}`)
       } else if (hopResult.error) {
-        console.error(`[cron ${cronExpr}] HOP error: ${hopResult.error}`)
+        console.error(`[cron HOP] error: ${hopResult.error}`)
       } else {
-        console.log(`[cron ${cronExpr}] HOP berhasil: ${hopResult.message}`)
+        console.log(`[cron HOP] berhasil: ${hopResult.message}`)
       }
 
     } else if (cronExpr === '0 2 * * *') {
@@ -4481,18 +4729,30 @@ async function handleScheduled(
       await kirimPesanGrup(pesan, mentions)
 
     } else if (MALAM_CRONS.includes(cronExpr)) {
-      // 18:00–23:00 WITA — cek malam 19/19 → screenshot + excel ke AMC UID KASELTENG
-      console.log(`[cron ${cronExpr}] Mulai cek neraca malam WITA...`)
-      const result = await autoKirimNeraca(db, env.FILES, 'https://mesin-monitor.pages.dev')
-      if (result.skipped) {
-        console.log(`[cron ${cronExpr}] Skipped: ${result.reason}`)
-      } else if (result.error) {
-        console.error(`[cron ${cronExpr}] Error: ${result.error}`)
+      // 18:00–23:00 WITA — cek neraca malam 19/19 → kirim 3 laporan
+      console.log(`[cron ${cronExpr}] Mulai cek 3 laporan malam WITA...`)
+
+      // 1. Screenshot Neraca Daya (jika belum pernah dikirim untuk tanggal ini)
+      const ssResult = await autoKirimNeraca(db, env.FILES, ORIGIN_PROD)
+      if (ssResult.skipped) {
+        console.log(`[cron neraca-screenshot] skip: ${ssResult.reason}`)
+      } else if (ssResult.error) {
+        console.error(`[cron neraca-screenshot] error: ${ssResult.error}`)
       } else {
-        console.log(`[cron ${cronExpr}] Berhasil: ${result.message}`)
+        console.log(`[cron neraca-screenshot] berhasil: ${ssResult.message}`)
       }
 
-      // Notif teks neraca daya ke AMC PRINDAVAN (hanya jam 20:00 WITA = 12:00 UTC)
+      // 2. Tabel Neraca Daya teks WA (jika belum pernah dikirim untuk tanggal ini)
+      const tblResult = await autoKirimTabelNeraca(db, env.FILES, ORIGIN_PROD)
+      if (tblResult.skipped) {
+        console.log(`[cron neraca-tabel] skip: ${tblResult.reason}`)
+      } else if (tblResult.error) {
+        console.error(`[cron neraca-tabel] error: ${tblResult.error}`)
+      } else {
+        console.log(`[cron neraca-tabel] berhasil: ${tblResult.message}`)
+      }
+
+      // 3. Notif teks status neraca daya ke AMC PRINDAVAN (hanya jam 20:00 WITA = 12:00 UTC)
       if (cronExpr === '0 12 * * *') {
         const { pesan, mentions } = await notifNeracaDaya(db)
         await kirimPesanGrup(pesan, mentions)
