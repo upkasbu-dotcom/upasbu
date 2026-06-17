@@ -2,7 +2,6 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 type Bindings = {
   DB: D1Database
-  FILES: KVNamespace
   ASSETS: Fetcher
 }
 
@@ -196,6 +195,15 @@ async function initDB(db: D1Database) {
   )`).run()
   await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_wa_kirim_log_unique ON wa_kirim_log(tanggal, jenis)`).run()
 
+  // Tabel kv_store — pengganti Cloudflare KV (karena KV tidak tersedia di Genspark Hosted Deploy)
+  // Menyimpan key-value dengan TTL opsional (Unix timestamp detik, NULL = tidak expire)
+  await db.prepare(`CREATE TABLE IF NOT EXISTS kv_store (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    expires_at INTEGER,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`).run()
+
   // MIGRASI: hapus FOREIGN KEY di data_monitoring (referensi ke tabel mesin yg salah)
   // Cek apakah tabel masih punya FK dengan melihat sql-nya
   try {
@@ -235,6 +243,40 @@ async function initDB(db: D1Database) {
       ])
     }
   } catch(_) {}
+}
+
+// ============================================================
+// KV STORE HELPERS — D1-backed pengganti Cloudflare KV binding
+// ============================================================
+async function kvGet(db: D1Database, key: string): Promise<string | null> {
+  try {
+    const row = await db.prepare(
+      `SELECT value, expires_at FROM kv_store WHERE key = ?`
+    ).bind(key).first<{ value: string, expires_at: number | null }>()
+    if (!row) return null
+    // Cek TTL
+    if (row.expires_at !== null && row.expires_at < Math.floor(Date.now() / 1000)) {
+      // Sudah expire — hapus dan return null
+      await db.prepare(`DELETE FROM kv_store WHERE key = ?`).bind(key).run()
+      return null
+    }
+    return row.value
+  } catch(_) { return null }
+}
+
+async function kvPut(db: D1Database, key: string, value: string, options?: { expirationTtl?: number }): Promise<void> {
+  const expiresAt = options?.expirationTtl
+    ? Math.floor(Date.now() / 1000) + options.expirationTtl
+    : null
+  await db.prepare(
+    `INSERT INTO kv_store(key, value, expires_at, updated_at)
+     VALUES(?, ?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at, updated_at=CURRENT_TIMESTAMP`
+  ).bind(key, value, expiresAt).run()
+}
+
+async function kvDelete(db: D1Database, key: string): Promise<void> {
+  await db.prepare(`DELETE FROM kv_store WHERE key = ?`).bind(key).run()
 }
 
 // ============================================================
@@ -2417,8 +2459,8 @@ app.post('/api/neraca-excel-upload', async (c) => {
     // agar URL yang dikirim ke WA mengandung nama file yang benar
     // URL encode spasi → %20 saat disusun, tapi key di KV tetap pakai spasi
     const key = filename  // e.g. "UID KSKT 31.05.2026.xlsx"
-    // Simpan base64 ke KV dengan TTL 24 jam
-    await c.env.FILES.put(key, data, { expirationTtl: 86400, metadata: { filename } })
+    // Simpan base64 ke D1 kv_store dengan TTL 24 jam
+    await kvPut(c.env.DB, key, data, { expirationTtl: 86400 })
     const baseUrl = new URL(c.req.url).origin
     // Encode spasi di URL → %20 agar URL valid
     const encodedKey = encodeURIComponent(key)
@@ -2430,9 +2472,9 @@ app.post('/api/neraca-excel-upload', async (c) => {
 app.get('/api/neraca-excel-file/:key{.+}', async (c) => {
   try {
     const key = decodeURIComponent(c.req.param('key'))
-    const { value, metadata } = await c.env.FILES.getWithMetadata<{ filename: string }>(key)
+    const value = await kvGet(c.env.DB, key)
     if (!value) return c.json({ error: 'File tidak ditemukan atau sudah kedaluwarsa' }, 404)
-    const filename = metadata?.filename || 'neraca.xlsx'
+    const filename = key
     // Decode base64 → binary dengan cara aman (handle byte > 127)
     const binaryStr = atob(value)
     const bytes = new Uint8Array(binaryStr.length)
@@ -2454,7 +2496,7 @@ app.get('/api/neraca-excel-file/:key{.+}', async (c) => {
 app.get('/api/neraca-svg/:key{.+}', async (c) => {
   try {
     const key = c.req.param('key')
-    const svg = await c.env.FILES.get(key)
+    const svg = await kvGet(c.env.DB, key)
     if (!svg) return c.json({ error: 'SVG tidak ditemukan atau sudah kedaluwarsa' }, 404)
     return new Response(svg, {
       headers: {
@@ -2473,7 +2515,7 @@ app.get('/api/neraca-svg/:key{.+}', async (c) => {
 app.get('/api/neraca-png/:key{.+}', async (c) => {
   try {
     const key = c.req.param('key')
-    const b64 = await c.env.FILES.get(key)
+    const b64 = await kvGet(c.env.DB, key)
     if (!b64) return c.json({ error: 'PNG tidak ditemukan atau sudah kedaluwarsa' }, 404)
     // Decode base64 → binary
     const bin = atob(b64)
@@ -2496,7 +2538,7 @@ app.get('/api/neraca-png/:key{.+}', async (c) => {
 // ===========================================================
 app.get('/api/neraca-last-sent-date', async (c) => {
   try {
-    const val = await c.env.FILES.get('neraca-last-sent-date')
+    const val = await kvGet(c.env.DB, 'neraca-last-sent-date')
     return c.json({ success: true, tanggal: val || null })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
@@ -2506,7 +2548,7 @@ app.post('/api/neraca-last-sent-date', async (c) => {
     const { tanggal } = await c.req.json<{ tanggal: string }>()
     if (!tanggal || !/^\d{4}-\d{2}-\d{2}$/.test(tanggal))
       return c.json({ success: false, error: 'tanggal wajib format YYYY-MM-DD' }, 400)
-    await c.env.FILES.put('neraca-last-sent-date', tanggal)
+    await kvPut(c.env.DB, 'neraca-last-sent-date', tanggal)
     return c.json({ success: true, tanggal, message: `neraca-last-sent-date di-set ke ${tanggal}` })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
@@ -2521,7 +2563,7 @@ app.post('/api/neraca-last-sent-date', async (c) => {
 app.get('/api/neraca-auto-kirim', async (c) => {
   try {
     const origin = new URL(c.req.url).origin
-    const result = await autoKirimNeraca(c.env.DB, c.env.FILES, origin)
+    const result = await autoKirimNeraca(c.env.DB, origin)
 
     if (result.error) {
       return c.json({ success: false, error: result.error }, 200)
@@ -4024,7 +4066,6 @@ async function catatKirim(db: D1Database, tanggal: string, jenis: string, info =
 // ============================================================
 async function autoKirimTabelNeraca(
   db: D1Database,
-  kv: KVNamespace,
   origin: string
 ): Promise<{ skipped?: boolean, reason?: string, tanggal?: string, error?: string, message?: string }> {
 
@@ -4032,11 +4073,11 @@ async function autoKirimTabelNeraca(
   const REQUIRED_COUNT = NERACA_ORDER.length  // 19
   const DEVICE_ID      = '550fd04ee9fc7c4b4e057d0bce6270f3'
 
-  // Baca penerima dari KV (sama dengan neraca screenshot)
+  // Baca penerima dari D1 kv_store (sama dengan neraca screenshot)
   type Penerima = { type: 'nomor' | 'grup', target: string }
   let penerima: Penerima[] = [{ type: 'grup', target: 'AMC UID KASELTENG' }]
   try {
-    const raw = await kv.get('wa-penerima-neraca')
+    const raw = await kvGet(db, 'wa-penerima-neraca')
     if (raw) penerima = JSON.parse(raw)
   } catch(_) {}
 
@@ -4192,7 +4233,6 @@ async function autoKirimTabelNeraca(
 // ============================================================
 async function autoKirimNeraca(
   db: D1Database,
-  kv: KVNamespace,
   origin: string   // mis. "https://mesin-monitor.pages.dev"
 ): Promise<{ skipped?: boolean, reason?: string, tanggal?: string, error?: string, message?: string }> {
 
@@ -4201,11 +4241,11 @@ async function autoKirimNeraca(
   const DEVICE_ID      = '550fd04ee9fc7c4b4e057d0bce6270f3'
   const SCREENSHOT_SERVICE_URL = 'https://screenshot-service-i6l2.onrender.com'
 
-  // Baca penerima dari KV — bisa nomor personal atau grup, bisa lebih dari satu
+  // Baca penerima dari D1 kv_store — bisa nomor personal atau grup, bisa lebih dari satu
   type Penerima = { type: 'nomor' | 'grup', target: string }
   let penerimaneraca: Penerima[] = [{ type: 'grup', target: 'AMC UID KASELTENG' }]  // default
   try {
-    const raw = await kv.get('wa-penerima-neraca')
+    const raw = await kvGet(db, 'wa-penerima-neraca')
     if (raw) penerimaneraca = JSON.parse(raw)
   } catch(_) {}
 
@@ -4242,8 +4282,8 @@ async function autoKirimNeraca(
     return { skipped: true, reason: `Screenshot neraca ${tanggalKirim} sudah pernah dikirim`, tanggal: tanggalKirim }
   }
 
-  // ── 3. Anti double-trigger: cek KV pending flag ───────────────────────────
-  const pendingNeraca = await kv.get('neraca-pending-tanggal')
+  // ── 3. Anti double-trigger: cek D1 kv_store pending flag ─────────────────
+  const pendingNeraca = await kvGet(db, 'neraca-pending-tanggal')
   if (pendingNeraca === tanggalKirim) {
     return { skipped: true, reason: `Sedang diproses untuk tanggal ${tanggalKirim}, tunggu callback`, tanggal: tanggalKirim }
   }
@@ -4253,7 +4293,7 @@ async function autoKirimNeraca(
   const penerimaDesc = penerimaneraca.map(p => `${p.type}:${p.target}`).join(', ')
 
   // Set pending flag (TTL 5 menit — kalau callback tidak datang akan retry otomatis)
-  await kv.put('neraca-pending-tanggal', tanggalKirim, { expirationTtl: 300 })
+  await kvPut(db, 'neraca-pending-tanggal', tanggalKirim, { expirationTtl: 300 })
 
   for (const penerima of penerimaneraca) {
     try {
@@ -4298,15 +4338,15 @@ async function autoKirimNeraca(
 // HELPER: resolveImgUrl — simpan base64 ke KV jika perlu, return public URL
 // ============================================================
 async function resolveImgUrl(
-  raw: string, kv: KVNamespace, kvKey: string, origin: string, ttl = 86400
+  raw: string, db: D1Database, kvKey: string, origin: string, ttl = 86400
 ): Promise<string> {
   if (!raw) return ''
   if (raw.startsWith('data:image/')) {
     const b64 = raw.replace('data:image/png;base64,', '')
-    await kv.put(kvKey, b64, { expirationTtl: ttl })
+    await kvPut(db, kvKey, b64, { expirationTtl: ttl })
     return `${origin}/api/neraca-png/${kvKey}`
   }
-  return raw  // imgbb URL langsung
+  return raw  // URL langsung (litterbox/imgbb)
 }
 
 // HELPER: fetchImgBlob — ambil PNG sebagai Blob binary
@@ -4340,19 +4380,18 @@ async function fetchImgBlob(raw: string): Promise<Blob | null> {
 // Default (jika KV kosong): [{"type":"grup","target":"AMC UID KASELTENG"}]
 // ============================================================
 async function autoKirimHopBbm(
-  kv: KVNamespace,
-  origin: string,
-  db: D1Database
+  db: D1Database,
+  origin: string
 ): Promise<{ skipped?: boolean, reason?: string, tanggal?: string, error?: string, message?: string }> {
 
   const SCREENSHOT_SVC = 'https://screenshot-service-i6l2.onrender.com'
   const TOTAL_UNITS   = 19  // total ULD yang harus lengkap
 
-  // Baca penerima dari KV — bisa nomor personal atau grup, bisa lebih dari satu
+  // Baca penerima dari D1 kv_store — bisa nomor personal atau grup, bisa lebih dari satu
   type Penerima = { type: 'nomor' | 'grup', target: string }
   let penerimaHop: Penerima[] = [{ type: 'grup', target: 'AMC UID KASELTENG' }]  // default
   try {
-    const raw = await kv.get('wa-penerima-hop')
+    const raw = await kvGet(db, 'wa-penerima-hop')
     if (raw) penerimaHop = JSON.parse(raw)
   } catch(_) {}
 
@@ -4385,7 +4424,7 @@ async function autoKirimHopBbm(
     return { skipped: true, reason: `Screenshot HOP ${tanggal} sudah pernah dikirim`, tanggal }
   }
   // Cek juga flag "sedang proses" — hindari double-trigger antar menit
-  const pending = await kv.get('hop-pending-tanggal')
+  const pending = await kvGet(db, 'hop-pending-tanggal')
   if (pending === tanggal) {
     return { skipped: true, reason: `Sedang diproses untuk tanggal ${tanggal}, tunggu callback`, tanggal }
   }
@@ -4398,7 +4437,7 @@ async function autoKirimHopBbm(
 
   // Set flag "sedang diproses" dulu — cron menit berikutnya tidak double-trigger
   // TTL 5 menit: kalau callback tidak datang → dianggap gagal → retry otomatis
-  await kv.put('hop-pending-tanggal', tanggal, { expirationTtl: 300 })
+  await kvPut(db, 'hop-pending-tanggal', tanggal, { expirationTtl: 300 })
 
   for (const penerima of penerimaHop) {
     try {
@@ -4447,9 +4486,9 @@ app.post('/api/hop-kirim-callback', async (c) => {
     if (status === 'sent' && tanggal) {
       // Catat ke wa_kirim_log (anti-duplikat permanen di DB)
       await catatKirim(c.env.DB, tanggal, 'hop_screenshot', 'callback-ok')
-      // Update KV juga (backward compat)
-      await c.env.FILES.put('hop-last-sent-date', tanggal)
-      await c.env.FILES.delete('hop-pending-tanggal')
+      // Update kv_store
+      await kvPut(c.env.DB, 'hop-last-sent-date', tanggal)
+      await kvDelete(c.env.DB, 'hop-pending-tanggal')
       console.log(`[hop-callback] Tercatat: hop_screenshot/${tanggal}`)
     }
     return c.json({ success: true })
@@ -4465,9 +4504,9 @@ app.post('/api/neraca-kirim-callback', async (c) => {
     if (status === 'sent' && tanggal) {
       // Catat ke wa_kirim_log (anti-duplikat permanen di DB)
       await catatKirim(c.env.DB, tanggal, 'neraca_screenshot', 'callback-ok')
-      // Update KV juga (backward compat)
-      await c.env.FILES.put('neraca-last-sent-date', tanggal)
-      await c.env.FILES.delete('neraca-pending-tanggal')
+      // Update kv_store
+      await kvPut(c.env.DB, 'neraca-last-sent-date', tanggal)
+      await kvDelete(c.env.DB, 'neraca-pending-tanggal')
       console.log(`[neraca-callback] Tercatat: neraca_screenshot/${tanggal}`)
 
       // Kirim Excel + notif PRINDAVAN di background setelah WA screenshot berhasil
@@ -4509,7 +4548,7 @@ app.post('/api/neraca-kirim-callback', async (c) => {
 app.get('/api/hop-auto-kirim', async (c) => {
   try {
     const origin = new URL(c.req.url).origin
-    const result = await autoKirimHopBbm(c.env.FILES, origin, c.env.DB)
+    const result = await autoKirimHopBbm(c.env.DB, origin)
     if (result.error)   return c.json({ success: false, error: result.error }, 200)
     if (result.skipped) return c.json({ success: true, skipped: true, reason: result.reason, tanggal: result.tanggal })
     return c.json({ success: true, tanggal: result.tanggal, message: result.message })
@@ -4522,7 +4561,7 @@ app.get('/api/hop-auto-kirim', async (c) => {
 app.get('/api/neraca-tabel-kirim', async (c) => {
   try {
     const origin = new URL(c.req.url).origin
-    const result = await autoKirimTabelNeraca(c.env.DB, c.env.FILES, origin)
+    const result = await autoKirimTabelNeraca(c.env.DB, origin)
     if (result.error)   return c.json({ success: false, error: result.error }, 200)
     if (result.skipped) return c.json({ success: true, skipped: true, reason: result.reason, tanggal: result.tanggal })
     return c.json({ success: true, tanggal: result.tanggal, message: result.message })
@@ -4618,12 +4657,12 @@ app.get('/api/hop-test-kirim', async (c) => {
 // ENDPOINT: /api/hop-last-sent-date (GET/POST) — baca/set KV
 // ============================================================
 app.get('/api/hop-last-sent-date', async (c) => {
-  const val = await c.env.FILES.get('hop-last-sent-date')
+  const val = await kvGet(c.env.DB, 'hop-last-sent-date')
   return c.json({ success: true, date: val || null })
 })
 app.post('/api/hop-last-sent-date', async (c) => {
   const body = await c.req.json() as any
-  if (body?.date) await c.env.FILES.put('hop-last-sent-date', body.date)
+  if (body?.date) await kvPut(c.env.DB, 'hop-last-sent-date', body.date)
   return c.json({ success: true })
 })
 
@@ -4639,8 +4678,8 @@ app.post('/api/hop-last-sent-date', async (c) => {
 // Contoh kirim ke keduanya: {"jenis":"hop","penerima":[{"type":"nomor","target":"6285388709607"},{"type":"grup","target":"AMC UID KASELTENG"}]}
 app.get('/api/wa-penerima', async (c) => {
   const jenis = c.req.query('jenis') || 'semua'
-  const hopRaw    = await c.env.FILES.get('wa-penerima-hop')
-  const neracaRaw = await c.env.FILES.get('wa-penerima-neraca')
+  const hopRaw    = await kvGet(c.env.DB, 'wa-penerima-hop')
+  const neracaRaw = await kvGet(c.env.DB, 'wa-penerima-neraca')
   const defaultHop    = [{ type: 'grup', target: 'AMC UID KASELTENG' }]
   const defaultNeraca = [{ type: 'grup', target: 'AMC UID KASELTENG' }]
   const hop    = hopRaw    ? JSON.parse(hopRaw)    : defaultHop
@@ -4670,7 +4709,7 @@ app.post('/api/wa-penerima', async (c) => {
     }
     const kvKey = jenis === 'hop' ? 'wa-penerima-hop' : jenis === 'neraca' ? 'wa-penerima-neraca' : null
     if (!kvKey) return c.json({ success: false, error: 'jenis harus "hop" atau "neraca"' }, 400)
-    await c.env.FILES.put(kvKey, JSON.stringify(penerima))
+    await kvPut(c.env.DB, kvKey, JSON.stringify(penerima))
     return c.json({ success: true, jenis, penerima, message: `Penerima ${jenis} berhasil disimpan` })
   } catch(e:any) { return c.json({ success: false, error: e.message }, 400) }
 })
@@ -4678,8 +4717,8 @@ app.post('/api/wa-penerima', async (c) => {
 // Reset ke default grup
 app.delete('/api/wa-penerima', async (c) => {
   const jenis = c.req.query('jenis') || 'semua'
-  if (jenis === 'hop' || jenis === 'semua') await c.env.FILES.delete('wa-penerima-hop')
-  if (jenis === 'neraca' || jenis === 'semua') await c.env.FILES.delete('wa-penerima-neraca')
+  if (jenis === 'hop' || jenis === 'semua') await kvDelete(c.env.DB, 'wa-penerima-hop')
+  if (jenis === 'neraca' || jenis === 'semua') await kvDelete(c.env.DB, 'wa-penerima-neraca')
   return c.json({ success: true, message: `Penerima ${jenis} di-reset ke default (grup AMC UID KASELTENG)` })
 })
 
@@ -4701,7 +4740,7 @@ const ORIGIN_PROD = 'https://mesin-monitor.pages.dev'
 
 async function handleScheduled(
   event: ScheduledEvent,
-  env: { DB: D1Database, FILES: KVNamespace },
+  env: { DB: D1Database },
   _ctx: ExecutionContext
 ): Promise<void> {
   const db       = env.DB
@@ -4714,7 +4753,7 @@ async function handleScheduled(
         await fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/health`, { signal: AbortSignal.timeout(5000) })
       } catch(_) { /* Render free tier: spin-down normal */ }
 
-      const hopResult = await autoKirimHopBbm(env.FILES, ORIGIN_PROD, db)
+      const hopResult = await autoKirimHopBbm(db, ORIGIN_PROD)
       if (hopResult.skipped) {
         console.log(`[cron HOP] skip: ${hopResult.reason}`)
       } else if (hopResult.error) {
@@ -4733,7 +4772,7 @@ async function handleScheduled(
       console.log(`[cron ${cronExpr}] Mulai cek 3 laporan malam WITA...`)
 
       // 1. Screenshot Neraca Daya (jika belum pernah dikirim untuk tanggal ini)
-      const ssResult = await autoKirimNeraca(db, env.FILES, ORIGIN_PROD)
+      const ssResult = await autoKirimNeraca(db, ORIGIN_PROD)
       if (ssResult.skipped) {
         console.log(`[cron neraca-screenshot] skip: ${ssResult.reason}`)
       } else if (ssResult.error) {
@@ -4743,7 +4782,7 @@ async function handleScheduled(
       }
 
       // 2. Tabel Neraca Daya teks WA (jika belum pernah dikirim untuk tanggal ini)
-      const tblResult = await autoKirimTabelNeraca(db, env.FILES, ORIGIN_PROD)
+      const tblResult = await autoKirimTabelNeraca(db, ORIGIN_PROD)
       if (tblResult.skipped) {
         console.log(`[cron neraca-tabel] skip: ${tblResult.reason}`)
       } else if (tblResult.error) {
