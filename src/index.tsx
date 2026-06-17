@@ -3996,110 +3996,92 @@ async function autoKirimNeraca(
   const REQUIRED_COUNT = NERACA_ORDER.length  // 19
   const DEVICE_ID      = '550fd04ee9fc7c4b4e057d0bce6270f3'
   const GROUP_NAME     = 'AMC UID KASELTENG'
-  const SCREENSHOT_SERVICE_URL = 'https://screenshot-service-io91.onrender.com'
+  const SCREENSHOT_SERVICE_URL = 'https://screenshot-service-i6l2.onrender.com'
 
-  // ── 1. Cari tanggal_lengkap: 19/19 ULD punya record MALAM ────────────────
-  const candidates = await db.prepare(`
-    SELECT DISTINCT dm.tanggal
+  // ── 1. Anti-duplikat: baca KV dulu sebelum query DB ─────────────────────
+  const lastSentDate = await kv.get('neraca-last-sent-date')
+
+  // ── 2. Cari tanggal BARU yang belum pernah dikirim dan data malam lengkap 19/19
+  // Satu query langsung: GROUP BY tanggal, filter jam malam, HAVING COUNT >= 19
+  // Juga filter: hanya tanggal > lastSentDate (kalau ada), maks 7 hari terakhir
+  const nowWita = new Date(new Date().getTime() + 8 * 60 * 60 * 1000)
+  const hariIni  = nowWita.toISOString().split('T')[0]
+  const batasAwal = lastSentDate
+    ? lastSentDate  // hanya cari tanggal > yang sudah dikirim
+    : (() => { const d = new Date(nowWita); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0] })()
+
+  const tanggalRow = await db.prepare(`
+    SELECT dm.tanggal,
+      COUNT(DISTINCT CASE
+        WHEN CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5
+        THEN mc.kode_unit END) as cnt_malam
     FROM data_monitoring dm
     JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
     WHERE mc.kode_unit IN (${NERACA_ORDER.join(',')})
+      AND dm.tanggal > ?
+      AND dm.tanggal <= ?
+    GROUP BY dm.tanggal
+    HAVING cnt_malam >= ?
     ORDER BY dm.tanggal DESC
-    LIMIT 30
-  `).all<{ tanggal: string }>()
+    LIMIT 1
+  `).bind(batasAwal, hariIni, REQUIRED_COUNT).first<{ tanggal: string, cnt_malam: number }>()
 
-  let tanggalLengkap: string | null = null
-  for (const row of candidates.results) {
-    const check = await db.prepare(`
-      SELECT
-        COUNT(DISTINCT CASE
-          WHEN CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5
-          THEN mc.kode_unit END) as cnt_malam
-      FROM data_monitoring dm
-      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
-      WHERE dm.tanggal = ?
-        AND mc.kode_unit IN (${NERACA_ORDER.join(',')})
-    `).bind(row.tanggal).first<{ cnt_malam: number }>()
-    if ((check?.cnt_malam ?? 0) >= REQUIRED_COUNT) {
-      tanggalLengkap = row.tanggal
-      break
-    }
-  }
-
-  if (!tanggalLengkap) {
-    return { skipped: true, reason: 'Belum ada data beban puncak malam lengkap 19/19 dalam 30 hari terakhir' }
-  }
-
-  // ── 2. Anti-duplikat: cek KV ─────────────────────────────────────────────
-  const lastSentDate = await kv.get('neraca-last-sent-date')
-  if (lastSentDate && tanggalLengkap <= lastSentDate) {
+  if (!tanggalRow) {
     return {
       skipped: true,
-      reason: `Sudah dikirim untuk tanggal ${tanggalLengkap} (last_sent: ${lastSentDate})`,
-      tanggal: tanggalLengkap
+      reason: `Belum ada tanggal baru dengan data malam lengkap 19/19 (last_sent: ${lastSentDate || 'belum pernah'})`
     }
   }
+
+  const tanggalLengkap = tanggalRow.tanggal
 
   const tanggalKirim = tanggalLengkap
   const tglFmt = tanggalKirim.split('-').reverse().join('.')
 
-  // ── 3+4. Screenshot + Kirim ke WA Grup via screenshot service ──────────────
-  // screenshot service: build HTML → Playwright → imgbb → JSON {file:url} ke Whacenter
+  // ── 3. Anti double-trigger: cek pending flag ──────────────────────────────
+  const pendingNeraca = await kv.get('neraca-pending-tanggal')
+  if (pendingNeraca === tanggalKirim) {
+    return { skipped: true, reason: `Sedang diproses untuk tanggal ${tanggalKirim}, tunggu callback`, tanggal: tanggalKirim }
+  }
+
+  // ── 4. Trigger screenshot service — FIRE-AND-FORGET (sama seperti HOP) ────
+  // CF scheduled handler max ~30 detik wall-clock — jangan tunggu Render selesai
+  // Screenshot service akan kirim WA + callback sendiri setelah selesai
+  const callbackUrl = `${origin}/api/neraca-kirim-callback`
   try {
-    const ssRes = await fetch(`${SCREENSHOT_SERVICE_URL}/screenshot`, {
+    const doNeracaShot = async () => fetch(`${SCREENSHOT_SERVICE_URL}/screenshot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tanggal: tanggalKirim,
         origin,
-        group:   GROUP_NAME,
-        message: `⚡ *NERACA DAYA KALSELTENG — ${tglFmt}*\nData beban puncak malam seluruh ULD\n_AMC UID KASELTENG_`
+        group:       GROUP_NAME,
+        message:     `⚡ *NERACA DAYA KALSELTENG — ${tglFmt}*\nData beban puncak malam seluruh ULD\n_AMC UID KASELTENG_`,
+        excelUrl:    `${origin}/api/xlsx?tanggal=${tanggalKirim}`,
+        callbackUrl  // screenshot service callback ke sini setelah WA sukses → update KV
       }),
-      signal: AbortSignal.timeout(60000)
+      signal: AbortSignal.timeout(30000)  // cukup untuk Render menerima request & balas queued:true
     })
-    const ssJson = await ssRes.json() as { success: boolean, url?: string, wa?: any, error?: string }
-    if (!ssJson.success) return { error: `Screenshot/WA gagal: ${ssJson.error}` }
-    if (!ssJson.wa?.status) return { error: `WA gagal: ${ssJson.wa?.message || 'no response'}` }
+    let ssRes = await doNeracaShot()
+    let ssJson = await ssRes.json() as any
+    // Retry sekali jika browser crash (stale browser / --single-process race)
+    if (!ssJson.success && ssJson.error && (ssJson.error.includes('closed') || ssJson.error.includes('crashed') || ssJson.error.includes('Target'))) {
+      await new Promise(r => setTimeout(r, 3000))
+      ssRes = await doNeracaShot()
+      ssJson = await ssRes.json() as any
+    }
+    if (!ssJson.success) return { error: `Screenshot service error: ${ssJson.error}` }
   } catch(e: any) {
-    return { error: `Screenshot service error: ${e.message}` }
+    return { error: `Gagal trigger screenshot service neraca: ${e.message}` }
   }
 
-  // ── 5. Kirim URL Excel ke grup ────────────────────────────────────────────
-  let excelSent = false
-  try {
-    const excelUrl  = `${origin}/api/xlsx?tanggal=${tanggalKirim}`
-    const excelMsg  = `📥 *Download Excel Neraca Daya ${tglFmt}*\nUID KSKT ${tglFmt}.xlsx\n\n${excelUrl}`
-    const waExcelRes  = await fetch('https://app.whacenter.com/api/sendGroup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device_id: DEVICE_ID, group: GROUP_NAME, message: excelMsg })
-    })
-    const waExcelJson = await waExcelRes.json() as { status:boolean, message:string }
-    excelSent = waExcelJson.status
-  } catch(_) { /* tidak blocking */ }
-
-  // ── 6. Notif ke AMC PRINDAVAN ─────────────────────────────────────────────
-  let prindavanSent = false
-  try {
-    const msgPrindavan =
-      `✅ *Neraca Daya ${tglFmt}*\n` +
-      `Data malam seluruh *19 ULD* sudah lengkap.\n` +
-      `Laporan telah dikirim ke grup AMC UID KALSELTENG.`
-    const resPrindavan = await fetch('https://app.whacenter.com/api/sendGroup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device_id: DEVICE_ID, group: 'AMC PRINDAVAN', message: msgPrindavan })
-    })
-    const jsonPrindavan = await resPrindavan.json() as { status:boolean, message:string }
-    prindavanSent = jsonPrindavan.status
-  } catch(_) { /* tidak blocking */ }
-
-  // ── 7. Update KV last-sent-date ───────────────────────────────────────────
-  await kv.put('neraca-last-sent-date', tanggalKirim)
+  // ── 5. Set pending flag — cron berikutnya tidak double-trigger ─────────────
+  // TTL 5 menit: kalau callback tidak datang dalam 5 menit → retry otomatis
+  await kv.put('neraca-pending-tanggal', tanggalKirim, { expirationTtl: 300 })
 
   return {
     tanggal: tanggalKirim,
-    message: `Screenshot${excelSent ? ' + Excel' : ''} dikirim ke grup WA AMC UID KASELTENG (${tglFmt})${prindavanSent ? ' + notif ke AMC PRINDAVAN' : ''}`
+    message: `Screenshot Neraca Daya ${tglFmt} sedang dikirim ke grup WA ${GROUP_NAME} (fire-and-forget)`
   }
 }
 
@@ -4153,7 +4135,7 @@ async function autoKirimHopBbm(
 ): Promise<{ skipped?: boolean, reason?: string, tanggal?: string, error?: string, message?: string }> {
 
   const GROUP_NAME    = 'AMC UID KASELTENG'
-  const SCREENSHOT_SVC = 'https://screenshot-service-io91.onrender.com'
+  const SCREENSHOT_SVC = 'https://screenshot-service-i6l2.onrender.com'
   const TOTAL_UNITS   = 19  // total ULD yang harus lengkap
 
   // ── 1. Cari tanggal paling terakhir yang data lap_operasional-nya LENGKAP ──
@@ -4198,7 +4180,7 @@ async function autoKirimHopBbm(
   // untuk update KV setelah WA berhasil
   const callbackUrl = `${origin}/api/hop-kirim-callback`
   try {
-    const shotRes = await fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
+    const doHopShot = async () => fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -4210,7 +4192,14 @@ async function autoKirimHopBbm(
       }),
       signal: AbortSignal.timeout(30000)
     })
-    const shotJson = await shotRes.json() as any
+    let shotRes = await doHopShot()
+    let shotJson = await shotRes.json() as any
+    // Retry sekali jika browser crash (stale browser / --single-process race)
+    if (!shotJson.success && shotJson.error && (shotJson.error.includes('closed') || shotJson.error.includes('crashed') || shotJson.error.includes('Target'))) {
+      await new Promise(r => setTimeout(r, 3000))
+      shotRes = await doHopShot()
+      shotJson = await shotRes.json() as any
+    }
     if (!shotJson.success) return { error: `Screenshot service error: ${shotJson.error}` }
   } catch(e: any) {
     return { error: `Gagal trigger screenshot service: ${e.message}` }
@@ -4242,6 +4231,50 @@ app.post('/api/hop-kirim-callback', async (c) => {
 })
 
 // ============================================================
+// ENDPOINT: /api/neraca-kirim-callback — dipanggil screenshot service setelah WA neraca terkirim
+// ============================================================
+app.post('/api/neraca-kirim-callback', async (c) => {
+  try {
+    const { tanggal, status } = await c.req.json() as { tanggal: string, status: string }
+    if (status === 'sent' && tanggal) {
+      await c.env.FILES.put('neraca-last-sent-date', tanggal)
+      await c.env.FILES.delete('neraca-pending-tanggal')  // hapus flag pending
+      console.log(`[neraca-callback] KV updated: neraca-last-sent-date = ${tanggal}`)
+
+      // Kirim Excel + notif PRINDAVAN di background setelah WA screenshot berhasil
+      const origin = new URL(c.req.url).origin
+      const tglFmt = tanggal.split('-').reverse().join('.')
+      const DEVICE_ID = '550fd04ee9fc7c4b4e057d0bce6270f3'
+      c.executionCtx.waitUntil((async () => {
+        // Kirim link Excel ke grup
+        try {
+          const excelUrl = `${origin}/api/xlsx?tanggal=${tanggal}`
+          const excelMsg = `📥 *Download Excel Neraca Daya ${tglFmt}*\nUID KSKT ${tglFmt}.xlsx\n\n${excelUrl}`
+          await fetch('https://app.whacenter.com/api/sendGroup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: DEVICE_ID, group: 'AMC UID KASELTENG', message: excelMsg })
+          })
+        } catch(_) {}
+        // Notif ke AMC PRINDAVAN
+        try {
+          const msgPrindavan =
+            `✅ *Neraca Daya ${tglFmt}*\n` +
+            `Data malam seluruh *19 ULD* sudah lengkap.\n` +
+            `Laporan telah dikirim ke grup AMC UID KALSELTENG.`
+          await fetch('https://app.whacenter.com/api/sendGroup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: DEVICE_ID, group: 'AMC PRINDAVAN', message: msgPrindavan })
+          })
+        } catch(_) {}
+      })())
+    }
+    return c.json({ success: true })
+  } catch(e: any) { return c.json({ success: false, error: e.message }) }
+})
+
+// ============================================================
 // ENDPOINT: /api/hop-auto-kirim (GET) — trigger manual / test
 // ============================================================
 app.get('/api/hop-auto-kirim', async (c) => {
@@ -4266,7 +4299,7 @@ app.get('/api/hop-test-kirim', async (c) => {
     const force  = c.req.query('force') === '1'
 
     const DEVICE_ID = '550fd04ee9fc7c4b4e057d0bce6270f3'
-    const SCREENSHOT_SVC = 'https://screenshot-service-io91.onrender.com'
+    const SCREENSHOT_SVC = 'https://screenshot-service-i6l2.onrender.com'
 
     // Tentukan tanggal: pakai ?tanggal jika ada, else H-1 WITA
     let tanggal = tanggalParam
@@ -4284,7 +4317,8 @@ app.get('/api/hop-test-kirim', async (c) => {
     if (!nomorFmt.startsWith('62')) nomorFmt = '62' + nomorFmt
 
     // Kirim nomor ke screenshot service → Node.js kirim binary file ke Whacenter
-    const shotRes = await fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
+    // Auto-retry sekali jika browser crash (error mengandung "closed" / "crashed")
+    const doShot = async () => fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -4295,7 +4329,14 @@ app.get('/api/hop-test-kirim', async (c) => {
       }),
       signal: AbortSignal.timeout(150000)
     })
-    const shotJson = await shotRes.json() as { success: boolean, url?: string, wa?: any, error?: string }
+    let shotRes = await doShot()
+    let shotJson = await shotRes.json() as { success: boolean, url?: string, wa?: any, error?: string, queued?: boolean }
+    // Jika browser crash (--single-process race condition), tunggu 3 detik dan retry
+    if (!shotJson.success && shotJson.error && (shotJson.error.includes('closed') || shotJson.error.includes('crashed') || shotJson.error.includes('Target'))) {
+      await new Promise(r => setTimeout(r, 3000))
+      shotRes = await doShot()
+      shotJson = await shotRes.json() as { success: boolean, url?: string, wa?: any, error?: string, queued?: boolean }
+    }
     if (!shotJson.success) return c.json({ success: false, error: `Screenshot error: ${shotJson.error}` })
 
     return c.json({ success: true, tanggal, nomor: nomorFmt, img_url: shotJson.url || '', wa_response: shotJson.wa })
@@ -4324,7 +4365,7 @@ app.post('/api/hop-last-sent-date', async (c) => {
 // Cron 4-9: "0 10-15 * * *" → 18:00–23:00 WITA (auto-kirim neraca screenshot+excel ke AMC UID KASELTENG)
 // ============================================================
 const MALAM_CRONS = ['0 10 * * *','0 11 * * *','0 12 * * *','0 13 * * *','0 14 * * *','0 15 * * *']
-const SCREENSHOT_SERVICE_KEEPALIVE = 'https://screenshot-service-io91.onrender.com'
+const SCREENSHOT_SERVICE_KEEPALIVE = 'https://screenshot-service-i6l2.onrender.com'
 
 async function handleScheduled(
   event: ScheduledEvent,
