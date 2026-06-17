@@ -3997,6 +3997,14 @@ async function autoKirimNeraca(
   const DEVICE_ID      = '550fd04ee9fc7c4b4e057d0bce6270f3'
   const SCREENSHOT_SERVICE_URL = 'https://screenshot-service-i6l2.onrender.com'
 
+  // Baca penerima dari KV — bisa nomor personal atau grup, bisa lebih dari satu
+  type Penerima = { type: 'nomor' | 'grup', target: string }
+  let penerimaneraca: Penerima[] = [{ type: 'grup', target: 'AMC UID KASELTENG' }]  // default
+  try {
+    const raw = await kv.get('wa-penerima-neraca')
+    if (raw) penerimaneraca = JSON.parse(raw)
+  } catch(_) {}
+
   // ── 1. Anti-duplikat: baca KV dulu sebelum query DB ─────────────────────
   const lastSentDate = await kv.get('neraca-last-sent-date')
 
