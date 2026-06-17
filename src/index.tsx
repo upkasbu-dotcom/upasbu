@@ -3995,7 +3995,6 @@ async function autoKirimNeraca(
   const NERACA_ORDER   = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
   const REQUIRED_COUNT = NERACA_ORDER.length  // 19
   const DEVICE_ID      = '550fd04ee9fc7c4b4e057d0bce6270f3'
-  const GROUP_NAME     = 'AMC UID KASELTENG'
   const SCREENSHOT_SERVICE_URL = 'https://screenshot-service-i6l2.onrender.com'
 
   // ── 1. Anti-duplikat: baca KV dulu sebelum query DB ─────────────────────
@@ -4044,44 +4043,49 @@ async function autoKirimNeraca(
     return { skipped: true, reason: `Sedang diproses untuk tanggal ${tanggalKirim}, tunggu callback`, tanggal: tanggalKirim }
   }
 
-  // ── 4. Trigger screenshot service — FIRE-AND-FORGET (sama seperti HOP) ────
-  // CF scheduled handler max ~30 detik wall-clock — jangan tunggu Render selesai
-  // Screenshot service akan kirim WA + callback sendiri setelah selesai
+  // ── 4. Trigger screenshot untuk setiap penerima — FIRE-AND-FORGET ────────
   const callbackUrl = `${origin}/api/neraca-kirim-callback`
-  try {
-    const doNeracaShot = async () => fetch(`${SCREENSHOT_SERVICE_URL}/screenshot`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tanggal: tanggalKirim,
-        origin,
-        group:       GROUP_NAME,
-        message:     `⚡ *NERACA DAYA KALSELTENG — ${tglFmt}*\nData beban puncak malam seluruh ULD\n_AMC UID KASELTENG_`,
-        excelUrl:    `${origin}/api/xlsx?tanggal=${tanggalKirim}`,
-        callbackUrl  // screenshot service callback ke sini setelah WA sukses → update KV
-      }),
-      signal: AbortSignal.timeout(30000)  // cukup untuk Render menerima request & balas queued:true
-    })
-    let ssRes = await doNeracaShot()
-    let ssJson = await ssRes.json() as any
-    // Retry sekali jika browser crash (stale browser / --single-process race)
-    if (!ssJson.success && ssJson.error && (ssJson.error.includes('closed') || ssJson.error.includes('crashed') || ssJson.error.includes('Target'))) {
-      await new Promise(r => setTimeout(r, 3000))
-      ssRes = await doNeracaShot()
-      ssJson = await ssRes.json() as any
-    }
-    if (!ssJson.success) return { error: `Screenshot service error: ${ssJson.error}` }
-  } catch(e: any) {
-    return { error: `Gagal trigger screenshot service neraca: ${e.message}` }
-  }
+  const penerimaDesc = penerimaneraca.map(p => `${p.type}:${p.target}`).join(', ')
 
-  // ── 5. Set pending flag — cron berikutnya tidak double-trigger ─────────────
-  // TTL 5 menit: kalau callback tidak datang dalam 5 menit → retry otomatis
+  // Set pending flag dulu
   await kv.put('neraca-pending-tanggal', tanggalKirim, { expirationTtl: 300 })
+
+  for (const penerima of penerimaneraca) {
+    try {
+      const doNeracaShot = async () => fetch(`${SCREENSHOT_SERVICE_URL}/screenshot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tanggal: tanggalKirim,
+          origin,
+          // kirim ke nomor personal ATAU grup sesuai konfigurasi
+          ...(penerima.type === 'nomor'
+            ? { nomor: penerima.target }
+            : { group: penerima.target }),
+          message:     `⚡ *NERACA DAYA KALSELTENG — ${tglFmt}*\nData beban puncak malam seluruh ULD\n_AMC UID KASELTENG_`,
+          excelUrl:    `${origin}/api/xlsx?tanggal=${tanggalKirim}`,
+          callbackUrl
+        }),
+        signal: AbortSignal.timeout(30000)
+      })
+      let ssRes = await doNeracaShot()
+      let ssJson = await ssRes.json() as any
+      // Retry sekali jika browser crash
+      if (!ssJson.success && ssJson.error && (ssJson.error.includes('closed') || ssJson.error.includes('crashed') || ssJson.error.includes('Target'))) {
+        await new Promise(r => setTimeout(r, 3000))
+        ssRes = await doNeracaShot()
+        ssJson = await ssRes.json() as any
+      }
+      if (!ssJson.success) console.error(`[neraca] Gagal kirim ke ${penerima.target}: ${ssJson.error}`)
+      else console.log(`[neraca] Queued ke ${penerima.type} ${penerima.target}`)
+    } catch(e: any) {
+      console.error(`[neraca] Error kirim ke ${penerima.target}: ${e.message}`)
+    }
+  }
 
   return {
     tanggal: tanggalKirim,
-    message: `Screenshot Neraca Daya ${tglFmt} sedang dikirim ke grup WA ${GROUP_NAME} (fire-and-forget)`
+    message: `Screenshot Neraca Daya ${tglFmt} dikirim ke: ${penerimaDesc} (fire-and-forget)`
   }
 }
 
@@ -4124,9 +4128,11 @@ async function fetchImgBlob(raw: string): Promise<Blob | null> {
 }
 
 // ============================================================
-// HELPER: AUTO-KIRIM HOP BBM (screenshot Playwright 1 gambar → WA Grup)
-// Dipanggil dari cron jam 03:00 UTC = 11:00 WITA
-// Kirim saat data lap_operasional paling terakhir sudah lengkap semua unit
+// HELPER: AUTO-KIRIM HOP BBM (screenshot Playwright 1 gambar → WA)
+// Dipanggil dari cron setiap menit — kirim saat data lap_operasional LENGKAP
+// Penerima: baca dari KV 'wa-penerima-hop' (JSON array of {type,target})
+// Contoh KV: [{"type":"nomor","target":"6285388709607"},{"type":"grup","target":"AMC UID KASELTENG"}]
+// Default (jika KV kosong): [{"type":"grup","target":"AMC UID KASELTENG"}]
 // ============================================================
 async function autoKirimHopBbm(
   kv: KVNamespace,
@@ -4134,9 +4140,16 @@ async function autoKirimHopBbm(
   db: D1Database
 ): Promise<{ skipped?: boolean, reason?: string, tanggal?: string, error?: string, message?: string }> {
 
-  const GROUP_NAME    = 'AMC UID KASELTENG'
   const SCREENSHOT_SVC = 'https://screenshot-service-i6l2.onrender.com'
   const TOTAL_UNITS   = 19  // total ULD yang harus lengkap
+
+  // Baca penerima dari KV — bisa nomor personal atau grup, bisa lebih dari satu
+  type Penerima = { type: 'nomor' | 'grup', target: string }
+  let penerimaHop: Penerima[] = [{ type: 'grup', target: 'AMC UID KASELTENG' }]  // default
+  try {
+    const raw = await kv.get('wa-penerima-hop')
+    if (raw) penerimaHop = JSON.parse(raw)
+  } catch(_) {}
 
   // ── 1. Cari tanggal paling terakhir yang data lap_operasional-nya LENGKAP ──
   // Lengkap = semua TOTAL_UNITS unit sudah punya saldo_akhir IS NOT NULL
@@ -4175,43 +4188,49 @@ async function autoKirimHopBbm(
 
   const tglFmt = tanggal.split('-').reverse().join('.')
 
-  // ── 3. Trigger screenshot service — fire-and-forget (hindari CF 524 timeout) ─
-  // Screenshot service akan kirim WA sendiri + callback ke /api/hop-kirim-callback
-  // untuk update KV setelah WA berhasil
+  // ── 3. Trigger screenshot service untuk setiap penerima — fire-and-forget ──
   const callbackUrl = `${origin}/api/hop-kirim-callback`
-  try {
-    const doHopShot = async () => fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tanggal,
-        origin,
-        group:       GROUP_NAME,
-        message:     `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`,
-        callbackUrl  // screenshot service callback ke sini setelah WA sukses → update KV
-      }),
-      signal: AbortSignal.timeout(30000)
-    })
-    let shotRes = await doHopShot()
-    let shotJson = await shotRes.json() as any
-    // Retry sekali jika browser crash (stale browser / --single-process race)
-    if (!shotJson.success && shotJson.error && (shotJson.error.includes('closed') || shotJson.error.includes('crashed') || shotJson.error.includes('Target'))) {
-      await new Promise(r => setTimeout(r, 3000))
-      shotRes = await doHopShot()
-      shotJson = await shotRes.json() as any
-    }
-    if (!shotJson.success) return { error: `Screenshot service error: ${shotJson.error}` }
-  } catch(e: any) {
-    return { error: `Gagal trigger screenshot service: ${e.message}` }
-  }
+  const penerimaDesc = penerimaHop.map(p => `${p.type}:${p.target}`).join(', ')
 
-  // Set flag "sedang diproses" — cron menit berikutnya tidak double-trigger
-  // TTL 5 menit: kalau callback tidak datang dalam 5 menit → dianggap gagal → retry otomatis
+  // Set flag "sedang diproses" dulu — cron menit berikutnya tidak double-trigger
+  // TTL 5 menit: kalau callback tidak datang → dianggap gagal → retry otomatis
   await kv.put('hop-pending-tanggal', tanggal, { expirationTtl: 300 })
+
+  for (const penerima of penerimaHop) {
+    try {
+      const doHopShot = async () => fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tanggal,
+          origin,
+          // kirim ke nomor personal ATAU grup sesuai konfigurasi
+          ...(penerima.type === 'nomor'
+            ? { nomor: penerima.target }
+            : { group: penerima.target }),
+          message:     `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`,
+          callbackUrl  // hanya penerima terakhir yang trigger callback (atau semua, idempotent)
+        }),
+        signal: AbortSignal.timeout(30000)
+      })
+      let shotRes = await doHopShot()
+      let shotJson = await shotRes.json() as any
+      // Retry sekali jika browser crash
+      if (!shotJson.success && shotJson.error && (shotJson.error.includes('closed') || shotJson.error.includes('crashed') || shotJson.error.includes('Target'))) {
+        await new Promise(r => setTimeout(r, 3000))
+        shotRes = await doHopShot()
+        shotJson = await shotRes.json() as any
+      }
+      if (!shotJson.success) console.error(`[hop] Gagal kirim ke ${penerima.target}: ${shotJson.error}`)
+      else console.log(`[hop] Queued ke ${penerima.type} ${penerima.target}`)
+    } catch(e: any) {
+      console.error(`[hop] Error kirim ke ${penerima.target}: ${e.message}`)
+    }
+  }
 
   return {
     tanggal,
-    message: `Screenshot HOP BBM ${tglFmt} sedang dikirim ke grup WA ${GROUP_NAME} — ${kandidat.jumlah_unit} unit lengkap`
+    message: `Screenshot HOP BBM ${tglFmt} dikirim ke: ${penerimaDesc} — ${kandidat.jumlah_unit} unit lengkap`
   }
 }
 
@@ -4354,6 +4373,62 @@ app.post('/api/hop-last-sent-date', async (c) => {
   const body = await c.req.json() as any
   if (body?.date) await c.env.FILES.put('hop-last-sent-date', body.date)
   return c.json({ success: true })
+})
+
+// ============================================================
+// ENDPOINT: /api/wa-penerima — GET/POST konfigurasi penerima WA auto-kirim
+// ============================================================
+// GET  /api/wa-penerima?jenis=hop|neraca  → baca penerima saat ini
+// POST /api/wa-penerima
+//   body: { jenis: "hop"|"neraca", penerima: [{type:"nomor",target:"628xxx"},{type:"grup",target:"AMC UID KASELTENG"}] }
+// Format nomor: awali dengan 62 (tanpa +, tanpa 0)
+// Contoh set nomor personal: {"jenis":"hop","penerima":[{"type":"nomor","target":"6285388709607"}]}
+// Contoh set grup: {"jenis":"neraca","penerima":[{"type":"grup","target":"AMC UID KASELTENG"}]}
+// Contoh kirim ke keduanya: {"jenis":"hop","penerima":[{"type":"nomor","target":"6285388709607"},{"type":"grup","target":"AMC UID KASELTENG"}]}
+app.get('/api/wa-penerima', async (c) => {
+  const jenis = c.req.query('jenis') || 'semua'
+  const hopRaw    = await c.env.FILES.get('wa-penerima-hop')
+  const neracaRaw = await c.env.FILES.get('wa-penerima-neraca')
+  const defaultHop    = [{ type: 'grup', target: 'AMC UID KASELTENG' }]
+  const defaultNeraca = [{ type: 'grup', target: 'AMC UID KASELTENG' }]
+  const hop    = hopRaw    ? JSON.parse(hopRaw)    : defaultHop
+  const neraca = neracaRaw ? JSON.parse(neracaRaw) : defaultNeraca
+  if (jenis === 'hop')    return c.json({ success: true, jenis: 'hop',    penerima: hop,    sumber: hopRaw ? 'kv' : 'default' })
+  if (jenis === 'neraca') return c.json({ success: true, jenis: 'neraca', penerima: neraca, sumber: neracaRaw ? 'kv' : 'default' })
+  return c.json({ success: true, hop: { penerima: hop, sumber: hopRaw ? 'kv' : 'default' }, neraca: { penerima: neraca, sumber: neracaRaw ? 'kv' : 'default' } })
+})
+
+app.post('/api/wa-penerima', async (c) => {
+  try {
+    const body = await c.req.json() as any
+    const { jenis, penerima } = body
+    if (!jenis || !Array.isArray(penerima) || penerima.length === 0) {
+      return c.json({ success: false, error: 'Butuh jenis (hop|neraca) dan penerima (array)' }, 400)
+    }
+    // Validasi format: setiap item harus punya type & target
+    for (const p of penerima) {
+      if (!p.type || !p.target) return c.json({ success: false, error: `Item penerima tidak valid: ${JSON.stringify(p)}` }, 400)
+      if (!['nomor','grup'].includes(p.type)) return c.json({ success: false, error: `type harus "nomor" atau "grup", bukan "${p.type}"` }, 400)
+      // Normalisasi nomor: pastikan awali 62
+      if (p.type === 'nomor') {
+        p.target = p.target.replace(/\D/g, '')
+        if (p.target.startsWith('0')) p.target = '62' + p.target.substring(1)
+        if (!p.target.startsWith('62')) p.target = '62' + p.target
+      }
+    }
+    const kvKey = jenis === 'hop' ? 'wa-penerima-hop' : jenis === 'neraca' ? 'wa-penerima-neraca' : null
+    if (!kvKey) return c.json({ success: false, error: 'jenis harus "hop" atau "neraca"' }, 400)
+    await c.env.FILES.put(kvKey, JSON.stringify(penerima))
+    return c.json({ success: true, jenis, penerima, message: `Penerima ${jenis} berhasil disimpan` })
+  } catch(e:any) { return c.json({ success: false, error: e.message }, 400) }
+})
+
+// Reset ke default grup
+app.delete('/api/wa-penerima', async (c) => {
+  const jenis = c.req.query('jenis') || 'semua'
+  if (jenis === 'hop' || jenis === 'semua') await c.env.FILES.delete('wa-penerima-hop')
+  if (jenis === 'neraca' || jenis === 'semua') await c.env.FILES.delete('wa-penerima-neraca')
+  return c.json({ success: true, message: `Penerima ${jenis} di-reset ke default (grup AMC UID KASELTENG)` })
 })
 
 // ============================================================
