@@ -1,22 +1,44 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mesin-monitor",
-  "pages_build_output_dir": "./dist",
+  "main": "dist/index.js",
   "compatibility_date": "2026-04-13",
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  // Cron Triggers (UTC — WITA = UTC+8)
+  // * * * * *  → setiap menit: keep-alive + cek data HOP BBM lengkap → kirim ke grup
+  // 02:00 UTC = 10:00 WITA  → notif HOP BBM teks ke AMC PRINDAVAN
+  // 12:00 UTC = 20:00 WITA  → notif neraca daya (teks) ke AMC PRINDAVAN
+  // 10:00–15:00 UTC = 18:00–23:00 WITA → cek & auto-kirim neraca daya (screenshot+excel) ke AMC UID KASELTENG
+  "triggers": {
+    "crons": [
+      "* * * * *",
+      "0 2 * * *",
+      "0 10 * * *",
+      "0 11 * * *",
+      "0 12 * * *",
+      "0 13 * * *",
+      "0 14 * * *",
+      "0 15 * * *"
+    ]
+  },
+  // Static assets (js, css, gambar dari public/)
+  "assets": {
+    "directory": "./dist/static",
+    "binding": "ASSETS"
+  },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "mesin-monitor-production",
-      "database_id": "2af3a886-509c-4133-a390-351259e9474b"
+      "database_id": "cb755a53-9a4c-4b5d-8976-88608d54c81c"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "FILES",
-      "id": "b68842119a064bafa4813e70fe945dc6"
+      "id": "eeb599303e7b44f7abd9428f9bc61b2c"
     }
   ]
 }
