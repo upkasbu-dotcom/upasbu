@@ -6,7 +6,6 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
-  // Cron Triggers (UTC — WITA = UTC+8)
   "triggers": {
     "crons": [
       "* * * * *",
@@ -19,7 +18,6 @@
       "0 15 * * *"
     ]
   },
-  // Static assets
   "assets": {
     "directory": "./dist/static",
     "binding": "ASSETS"
@@ -30,6 +28,5 @@
       "database_name": "mesin-monitor-production",
       "database_id": "cb755a53-9a4c-4b5d-8976-88608d54c81c"
     }
-  ],
-  // kv_namespaces dihapus sementara — akan ditambah kembali setelah dapat KV ID baru dari gsk hosted list
+  ]
 }
