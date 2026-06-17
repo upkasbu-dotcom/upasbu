@@ -18,15 +18,12 @@
       "0 15 * * *"
     ]
   },
-  "assets": {
-    "directory": "./dist/static",
-    "binding": "ASSETS"
-  },
+  "pages_build_output_dir": "./dist",
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "491399ab-724a-430e-a062-c202b52da30e-db",
-      "database_id": "0496b904-ab00-417a-a4fd-d3149c5935cd"
+      "database_name": "mesin-monitor-production",
+      "database_id": "96225b98-85ef-4b78-9230-74905db4ab2e"
     }
   ]
 }
