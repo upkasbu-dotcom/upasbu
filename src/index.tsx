@@ -3143,13 +3143,16 @@ app.get('/', (c) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>DILAN [DIGITALISASI LAPORAN]</title>
   <meta name="theme-color" content="#1e3a5f"/>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+  <meta http-equiv="Pragma" content="no-cache"/>
+  <meta http-equiv="Expires" content="0"/>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico"/>
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png"/>
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png"/>
-  <link rel="preload" href="/static/style.css?v=20260516k" as="style"/>
-  <link rel="preload" href="/static/app-v2.js" as="script"/>
-  <link href="/static/style.css?v=20260516k" rel="stylesheet"/>
+  <link rel="preload" href="/static/style.css?v=20260618b" as="style"/>
+  <link rel="preload" href="/static/app-v2.js?v=20260618b" as="script"/>
+  <link href="/static/style.css?v=20260618b" rel="stylesheet"/>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
@@ -3671,7 +3674,7 @@ app.get('/', (c) => {
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="/static/app-v2.js"></script>
+<script src="/static/app-v2.js?v=20260618b"></script>
 </body>
 </html>`
   const resp = c.html(html)
