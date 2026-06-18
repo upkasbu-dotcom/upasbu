@@ -19,28 +19,34 @@ app.use('/api/*', async (c, next) => {
 
 const JSON_URL = 'https://script.google.com/macros/s/AKfycbyox_Dfb7q6ONciCIGF7yYTP1DyGFWL_LdYwIlMpQavaqzWMyTQZ6vod7ckOryOAWUv/exec'
 
-// Mapping nama ULD (dari JSON baru) → { kode_unit, nama_unit, up3 }
-// JSON baru menggunakan field: "ULD", "ID Mesin", "Nama Mesin", "Mesin", "Tipe", "Nomor Seri", "DM (kW)"
+// Mapping nama ULD (dari JSON mesin) → { kode_unit, nama_unit, up3 }
+// kode_unit diambil dari: https://script.google.com/macros/s/AKfycbzEmypIh9NVDMY8mlsprlljxBoMhEOaDiVKI5xbfbWWQufOpYvEeBLJUxPaEkmS-jLE/exec
+// JSON mesin menggunakan field: "ULD", "ID Mesin", "Nama Mesin", "Mesin", "Tipe", "Nomor Seri", "DM (kW)"
 const ULD_MAP: Record<string, { kode_unit: number, nama_unit: string, up3: string }> = {
-  'AYANGAN':     { kode_unit: 801, nama_unit: 'ULD AYANGAN',     up3: 'ACEH' },
-  'COT ABEUK':   { kode_unit: 802, nama_unit: 'ULD COT ABEUK',   up3: 'ACEH' },
-  'DEUDAP':      { kode_unit: 803, nama_unit: 'ULD DEUDAP',      up3: 'ACEH' },
-  'HALOBAN':     { kode_unit: 804, nama_unit: 'ULD HALOBAN',     up3: 'ACEH' },
-  'KAMPUNG AIE': { kode_unit: 805, nama_unit: 'ULD KAMPUNG AIE', up3: 'ACEH' },
-  'KOTA FAJAR':  { kode_unit: 806, nama_unit: 'ULD KOTA FAJAR',  up3: 'ACEH' },
-  'KUNING':      { kode_unit: 807, nama_unit: 'ULD KUNING',      up3: 'ACEH' },
-  'LASIKIN':     { kode_unit: 808, nama_unit: 'ULD LASIKIN',     up3: 'ACEH' },
-  'PULO BALAI':  { kode_unit: 809, nama_unit: 'ULD PULO BALAI',  up3: 'ACEH' },
-  'PUSONG':      { kode_unit: 810, nama_unit: 'ULD PUSONG',      up3: 'ACEH' },
-  'REMA':        { kode_unit: 811, nama_unit: 'ULD REMA',        up3: 'ACEH' },
-  'SABANG':      { kode_unit: 812, nama_unit: 'ULD SABANG',      up3: 'ACEH' },
-  'SETIA':       { kode_unit: 813, nama_unit: 'ULD SETIA',       up3: 'ACEH' },
-  'SEUNEBOK':    { kode_unit: 814, nama_unit: 'ULD SEUNEBOK',    up3: 'ACEH' },
-  'SEURAPUNG':   { kode_unit: 815, nama_unit: 'ULD SEURAPUNG',   up3: 'ACEH' },
-  'SIBIGO':      { kode_unit: 816, nama_unit: 'ULD SIBIGO',      up3: 'ACEH' },
-  'SIUMAT':      { kode_unit: 817, nama_unit: 'ULD SIUMAT',      up3: 'ACEH' },
-  'TAPAK TUAN':  { kode_unit: 818, nama_unit: 'ULD TAPAK TUAN',  up3: 'ACEH' },
-  'TEUPAH':      { kode_unit: 819, nama_unit: 'ULD TEUPAH',      up3: 'ACEH' },
+  // UL BANDA ACEH
+  'COT ABEUK':   { kode_unit: 937, nama_unit: 'ULD COT ABEUK',   up3: 'BANDA ACEH' },
+  'DEUDAP':      { kode_unit: 938, nama_unit: 'ULD DEUDAP',      up3: 'BANDA ACEH' },
+  'SEURAPUNG':   { kode_unit: 939, nama_unit: 'ULD SEURAPUNG',   up3: 'BANDA ACEH' },
+  // UL LANGSA
+  'AYANGAN':     { kode_unit: 940, nama_unit: 'ULD AYANGAN',     up3: 'LANGSA' },
+  'PUSONG':      { kode_unit: 942, nama_unit: 'ULD PUSONG',      up3: 'LANGSA' },
+  'KUNING':      { kode_unit: 943, nama_unit: 'ULD KUNING',      up3: 'LANGSA' },
+  'REMA':        { kode_unit: 945, nama_unit: 'ULD REMA',        up3: 'LANGSA' },
+  // UL MEULABOH
+  'SEUNEBOK':    { kode_unit: 947, nama_unit: 'ULD SEUNEBOK',    up3: 'MEULABOH' },
+  'LASIKIN':     { kode_unit: 952, nama_unit: 'ULD LASIKIN',     up3: 'MEULABOH' },
+  'KAMPUNG AIE': { kode_unit: 953, nama_unit: 'ULD KAMPUNG AIE', up3: 'MEULABOH' },
+  'SIBIGO':      { kode_unit: 954, nama_unit: 'ULD SIBIGO',      up3: 'MEULABOH' },
+  'TEUPAH':      { kode_unit: 955, nama_unit: 'ULD TEUPAH',      up3: 'MEULABOH' },
+  'SIUMAT':      { kode_unit: 956, nama_unit: 'ULD SIUMAT',      up3: 'MEULABOH' },
+  // UL SUBULUSSALAM
+  'SETIA':       { kode_unit: 957, nama_unit: 'ULD SETIA',       up3: 'SUBULUSSALAM' },
+  'TAPAK TUAN':  { kode_unit: 958, nama_unit: 'ULD TAPAK TUAN',  up3: 'SUBULUSSALAM' },
+  'KOTA FAJAR':  { kode_unit: 959, nama_unit: 'ULD KOTA FAJAR',  up3: 'SUBULUSSALAM' },
+  'PULO BALAI':  { kode_unit: 961, nama_unit: 'ULD PULO BALAI',  up3: 'SUBULUSSALAM' },
+  'HALOBAN':     { kode_unit: 963, nama_unit: 'ULD HALOBAN',     up3: 'SUBULUSSALAM' },
+  // SABANG: tidak ada di referensi kode_unit, gunakan kode sementara
+  'SABANG':      { kode_unit: 936, nama_unit: 'ULD SABANG',      up3: 'BANDA ACEH' },
 }
 
 // ============================================================
