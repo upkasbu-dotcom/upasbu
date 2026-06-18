@@ -3,7 +3,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && cp dist/index.js dist/_worker.js && mkdir -p dist/static && cp -r public/static/. dist/static/",
+    "build": "vite build && cp dist/index.js dist/_worker.js && mkdir -p dist/static && cp -r public/static/. dist/static/ && echo '{\"version\":1,\"include\":[\"/*\"],\"exclude\":[\"/static/*\"]}' > dist/_routes.json",
     "preview": "wrangler dev",
     "deploy": "npm run build && wrangler deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings"
