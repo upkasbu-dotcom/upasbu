@@ -3565,13 +3565,13 @@ app.get('/', (c) => {
           <colgroup>
             <col style="width:3%;"/>        <!-- No -->
             <col style="width:10%;"/>       <!-- ULD -->
-            <col style="width:17%;"/>       <!-- Nama Mesin -->
-            <col style="width:17%;"/>       <!-- Mesin -->
+            <col style="width:15%;"/>       <!-- Nama Mesin -->
+            <col style="width:15%;"/>       <!-- Mesin -->
             <col style="width:9%;"/>        <!-- Tipe -->
             <col style="width:9%;"/>        <!-- S/N -->
-            <col style="width:7%;"/>        <!-- DM (kW) -->
-            <col style="width:7%;"/>        <!-- Source -->
-            <col style="width:14%;"/>       <!-- Aksi -->
+            <col style="width:6%;"/>        <!-- DM (kW) -->
+            <col style="width:6%;"/>        <!-- Source -->
+            <col style="width:17%;"/>       <!-- Aksi -->
           </colgroup>
           <thead id="peng-table-head"></thead>
           <tbody id="peng-table-body"></tbody>
