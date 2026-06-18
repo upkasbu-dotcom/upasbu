@@ -4339,8 +4339,8 @@ async function autoKirimNeraca(
   const callbackUrl = `${origin}/api/neraca-kirim-callback`
   const penerimaDesc = penerimaneraca.map(p => `${p.type}:${p.target}`).join(', ')
 
-  // Set pending flag (TTL 5 menit — kalau callback tidak datang akan retry otomatis)
-  await kvPut(db, 'neraca-pending-tanggal', tanggalKirim, { expirationTtl: 300 })
+  // Set pending flag (TTL 2 menit — jika timeout/error, retry lebih cepat)
+  await kvPut(db, 'neraca-pending-tanggal', tanggalKirim, { expirationTtl: 120 })
 
   for (const penerima of penerimaneraca) {
     try {
@@ -4358,7 +4358,7 @@ async function autoKirimNeraca(
           excelUrl:    `${origin}/api/xlsx?tanggal=${tanggalKirim}`,
           callbackUrl
         }),
-        signal: AbortSignal.timeout(30000)
+        signal: AbortSignal.timeout(58000)  // 58s — Render cold start bisa 30-60s
       })
       let ssRes = await doNeracaShot()
       let ssJson = await ssRes.json() as any
@@ -4368,10 +4368,17 @@ async function autoKirimNeraca(
         ssRes = await doNeracaShot()
         ssJson = await ssRes.json() as any
       }
-      if (!ssJson.success) console.error(`[neraca] Gagal kirim ke ${penerima.target}: ${ssJson.error}`)
-      else console.log(`[neraca] Queued ke ${penerima.type} ${penerima.target}`)
+      if (!ssJson.success) {
+        console.error(`[neraca] Gagal kirim ke ${penerima.target}: ${ssJson.error}`)
+        // Hapus pending flag agar cron berikutnya bisa retry segera
+        await kvDelete(db, 'neraca-pending-tanggal')
+      } else {
+        console.log(`[neraca] Queued ke ${penerima.type} ${penerima.target}`)
+      }
     } catch(e: any) {
-      console.error(`[neraca] Error kirim ke ${penerima.target}: ${e.message}`)
+      console.error(`[neraca] Error/timeout kirim ke ${penerima.target}: ${e.message}`)
+      // Hapus pending flag agar cron berikutnya bisa retry segera
+      await kvDelete(db, 'neraca-pending-tanggal')
     }
   }
 
@@ -4483,9 +4490,10 @@ async function autoKirimHopBbm(
   const penerimaDesc = penerimaHop.map(p => `${p.type}:${p.target}`).join(', ')
 
   // Set flag "sedang diproses" dulu — cron menit berikutnya tidak double-trigger
-  // TTL 5 menit: kalau callback tidak datang → dianggap gagal → retry otomatis
-  await kvPut(db, 'hop-pending-tanggal', tanggal, { expirationTtl: 300 })
+  // TTL 2 menit: jika Render cold start / timeout, retry lebih cepat
+  await kvPut(db, 'hop-pending-tanggal', tanggal, { expirationTtl: 120 })
 
+  let adaYangBerhasilHop = false
   for (const penerima of penerimaHop) {
     try {
       const doHopShot = async () => fetch(`${SCREENSHOT_SVC}/screenshot-hop`, {
@@ -4499,9 +4507,9 @@ async function autoKirimHopBbm(
             ? { nomor: penerima.target }
             : { group: penerima.target }),
           message:     `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`,
-          callbackUrl  // hanya penerima terakhir yang trigger callback (atau semua, idempotent)
+          callbackUrl
         }),
-        signal: AbortSignal.timeout(30000)
+        signal: AbortSignal.timeout(58000)  // 58s — Render cold start bisa 30-60s
       })
       let shotRes = await doHopShot()
       let shotJson = await shotRes.json() as any
@@ -4511,10 +4519,18 @@ async function autoKirimHopBbm(
         shotRes = await doHopShot()
         shotJson = await shotRes.json() as any
       }
-      if (!shotJson.success) console.error(`[hop] Gagal kirim ke ${penerima.target}: ${shotJson.error}`)
-      else console.log(`[hop] Queued ke ${penerima.type} ${penerima.target}`)
+      if (!shotJson.success) {
+        console.error(`[hop] Gagal kirim ke ${penerima.target}: ${shotJson.error}`)
+        // Hapus pending flag agar cron berikutnya bisa retry segera
+        await kvDelete(db, 'hop-pending-tanggal')
+      } else {
+        adaYangBerhasilHop = true
+        console.log(`[hop] Queued ke ${penerima.type} ${penerima.target}`)
+      }
     } catch(e: any) {
-      console.error(`[hop] Error kirim ke ${penerima.target}: ${e.message}`)
+      console.error(`[hop] Error/timeout kirim ke ${penerima.target}: ${e.message}`)
+      // Hapus pending flag agar cron berikutnya bisa retry segera
+      await kvDelete(db, 'hop-pending-tanggal')
     }
   }
 
