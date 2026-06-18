@@ -17,7 +17,31 @@ app.use('/api/*', async (c, next) => {
   return next()
 })
 
-const JSON_URL = 'https://script.google.com/macros/s/AKfycbyGPqAcIBVFFzHuu5ZxtQWHGOmM8ragfZspoiF72NyvdLXc1qW0TWBeovokFJlVEDEI/exec'
+const JSON_URL = 'https://script.google.com/macros/s/AKfycbyox_Dfb7q6ONciCIGF7yYTP1DyGFWL_LdYwIlMpQavaqzWMyTQZ6vod7ckOryOAWUv/exec'
+
+// Mapping nama ULD (dari JSON baru) → { kode_unit, nama_unit, up3 }
+// JSON baru menggunakan field: "ULD", "ID Mesin", "Nama Mesin", "Mesin", "Tipe", "Nomor Seri", "DM (kW)"
+const ULD_MAP: Record<string, { kode_unit: number, nama_unit: string, up3: string }> = {
+  'AYANGAN':     { kode_unit: 801, nama_unit: 'ULD AYANGAN',     up3: 'ACEH' },
+  'COT ABEUK':   { kode_unit: 802, nama_unit: 'ULD COT ABEUK',   up3: 'ACEH' },
+  'DEUDAP':      { kode_unit: 803, nama_unit: 'ULD DEUDAP',      up3: 'ACEH' },
+  'HALOBAN':     { kode_unit: 804, nama_unit: 'ULD HALOBAN',     up3: 'ACEH' },
+  'KAMPUNG AIE': { kode_unit: 805, nama_unit: 'ULD KAMPUNG AIE', up3: 'ACEH' },
+  'KOTA FAJAR':  { kode_unit: 806, nama_unit: 'ULD KOTA FAJAR',  up3: 'ACEH' },
+  'KUNING':      { kode_unit: 807, nama_unit: 'ULD KUNING',      up3: 'ACEH' },
+  'LASIKIN':     { kode_unit: 808, nama_unit: 'ULD LASIKIN',     up3: 'ACEH' },
+  'PULO BALAI':  { kode_unit: 809, nama_unit: 'ULD PULO BALAI',  up3: 'ACEH' },
+  'PUSONG':      { kode_unit: 810, nama_unit: 'ULD PUSONG',      up3: 'ACEH' },
+  'REMA':        { kode_unit: 811, nama_unit: 'ULD REMA',        up3: 'ACEH' },
+  'SABANG':      { kode_unit: 812, nama_unit: 'ULD SABANG',      up3: 'ACEH' },
+  'SETIA':       { kode_unit: 813, nama_unit: 'ULD SETIA',       up3: 'ACEH' },
+  'SEUNEBOK':    { kode_unit: 814, nama_unit: 'ULD SEUNEBOK',    up3: 'ACEH' },
+  'SEURAPUNG':   { kode_unit: 815, nama_unit: 'ULD SEURAPUNG',   up3: 'ACEH' },
+  'SIBIGO':      { kode_unit: 816, nama_unit: 'ULD SIBIGO',      up3: 'ACEH' },
+  'SIUMAT':      { kode_unit: 817, nama_unit: 'ULD SIUMAT',      up3: 'ACEH' },
+  'TAPAK TUAN':  { kode_unit: 818, nama_unit: 'ULD TAPAK TUAN',  up3: 'ACEH' },
+  'TEUPAH':      { kode_unit: 819, nama_unit: 'ULD TEUPAH',      up3: 'ACEH' },
+}
 
 // ============================================================
 // INIT DATABASE
@@ -282,16 +306,40 @@ async function syncMesinIfNeeded(db: D1Database): Promise<{ synced: boolean, cou
     return { synced: false, count: lastSync.record_count }
   }
 
-  // Fetch dari Google Script
+  // Fetch dari Google Apps Script
   const res = await fetch(JSON_URL)
   if (!res.ok) throw new Error('Gagal fetch data mesin dari sumber')
 
   const data: any[] = await res.json()
   if (!Array.isArray(data) || data.length === 0) throw new Error('Data mesin kosong')
 
-  // Filter data valid (skip yang nama_mesinnya #N/A atau null)
-  const valid = data.filter((r: any) =>
-    r.id_mesin && r.kode_unit && r.nama_unit && r.mesin &&
+  // Normalisasi field: JSON baru pakai "ID Mesin", "ULD", "Nama Mesin", "Tipe", "Nomor Seri", "DM (kW)"
+  const normalized = data
+    .map((r: any) => {
+      const uldKey = String(r['ULD'] || '').trim()
+      const unitInfo = ULD_MAP[uldKey] || { kode_unit: 0, nama_unit: 'ULD ' + uldKey, up3: '' }
+      const idMesin  = parseInt(String(r['ID Mesin'] || '0').trim(), 10)
+      const namaM    = String(r['Nama Mesin'] || r['Mesin'] || '').trim()
+      const mesin    = String(r['Mesin'] || '').trim()
+      const tipe     = r['Tipe'] != null ? String(r['Tipe']).trim() : null
+      const sn       = r['Nomor Seri'] != null ? String(r['Nomor Seri']).trim() : ''
+      const dm       = r['DM (kW)'] != null ? parseFloat(r['DM (kW)']) : null
+      return {
+        id_mesin:   idMesin,
+        up3:        unitInfo.up3,
+        kode_unit:  unitInfo.kode_unit,
+        nama_unit:  unitInfo.nama_unit,
+        mesin:      mesin,
+        type:       tipe,
+        s_n:        sn,
+        nama_mesin: namaM || mesin,
+        terpasang:  isNaN(dm as number) ? null : dm,
+      }
+    })
+
+  // Filter data valid: id_mesin > 0, ada mesin, bukan #N/A
+  const valid = normalized.filter((r: any) =>
+    r.id_mesin > 0 && r.kode_unit > 0 && r.mesin &&
     r.mesin !== '#N/A' && r.nama_mesin !== '#N/A'
   )
 
@@ -312,20 +360,20 @@ async function syncMesinIfNeeded(db: D1Database): Promise<{ synced: boolean, cou
     const chunk = valid.slice(i, i + BATCH)
     const stmts = chunk.map((r: any) => {
       // Prioritaskan terpasang dari DB (input manual), baru dari Google Sheets
-      const terpasang = terpasangMap[r.id_mesin] ?? (r.terpasang != null ? parseFloat(r.terpasang) : null)
+      const terpasang = terpasangMap[r.id_mesin] ?? r.terpasang
       return db.prepare(`
         INSERT OR REPLACE INTO mesin_cache
           (id_mesin, up3, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, terpasang, cached_at)
         VALUES (?,?,?,?,?,?,?,?,?,?)
       `).bind(
         r.id_mesin,
-        r.up3 || '',
+        r.up3,
         r.kode_unit,
         r.nama_unit,
         r.mesin,
         r.type || null,
-        String(r.s_n || ''),
-        r.nama_mesin || r.mesin,
+        r.s_n,
+        r.nama_mesin,
         terpasang,
         today
       )
@@ -337,7 +385,6 @@ async function syncMesinIfNeeded(db: D1Database): Promise<{ synced: boolean, cou
   for (const mr of manualRows) {
     const inValid = valid.some((r: any) => r.id_mesin === mr.id_mesin)
     if (!inValid) {
-      // Mesin manual tidak ada di Google Sheets → pertahankan
       await db.prepare(`
         INSERT OR IGNORE INTO mesin_cache
           (id_mesin, up3, kode_unit, nama_unit, mesin, type, s_n, nama_mesin, terpasang, cached_at, is_manual)
