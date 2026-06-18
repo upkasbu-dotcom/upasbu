@@ -2,22 +2,10 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 type Bindings = {
   DB: D1Database
-  ASSETS: Fetcher
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
 app.use('/api/*', cors())
-// Static files: serve dari ASSETS binding (Cloudflare Workers Assets)
-app.use('/static/*', async (c) => {
-  const url = new URL(c.req.url)
-  // Strip /static prefix → file path di dist/static/
-  const filePath = url.pathname.replace(/^\/static/, '')
-  const assetUrl = new URL(filePath, url.origin)
-  const response = await c.env.ASSETS.fetch(new Request(assetUrl.toString(), c.req.raw))
-  const newRes = new Response(response.body, response)
-  newRes.headers.set('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400')
-  return newRes
-})
 
 // Auto-init DB tables — hanya sekali per Worker instance (in-memory flag)
 let _dbInited = false
