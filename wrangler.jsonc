@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "mesin-monitor",
+  "name": "upasbu",
   "main": "dist/index.js",
   "compatibility_date": "2026-04-13",
   "compatibility_flags": [
@@ -22,8 +22,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "mesin-monitor-production",
-      "database_id": "cb755a53-9a4c-4b5d-8976-88608d54c81c"
+      "database_name": "upasbu-production",
+      "database_id": "331a2d60-21ce-4071-a33d-8c546cf4b1f1"
     }
   ]
 }

@@ -4736,7 +4736,7 @@ app.delete('/api/wa-penerima', async (c) => {
 // ============================================================
 const MALAM_CRONS = ['0 10 * * *','0 11 * * *','0 12 * * *','0 13 * * *','0 14 * * *','0 15 * * *']
 const SCREENSHOT_SERVICE_KEEPALIVE = 'https://screenshot-service-i6l2.onrender.com'
-const ORIGIN_PROD = 'https://mesin-monitor.pages.dev'
+const ORIGIN_PROD = 'https://upasbu.pages.dev'
 
 async function handleScheduled(
   event: ScheduledEvent,
