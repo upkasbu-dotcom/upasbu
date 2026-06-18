@@ -48,25 +48,29 @@ function blockPasteDecimal(e) {
 // DATA UNIT STATIS (fallback / seed awal)
 // =============================================
 var UNIT_DATA = [
-  { kode_unit: 366, nama_unit: "ULD BABAI",            area: "AREA KUALA KAPUAS" },
-  { kode_unit: 372, nama_unit: "ULD GUNUNG PUREI",     area: "AREA KUALA KAPUAS" },
-  { kode_unit: 373, nama_unit: "ULD KENAMBUI",         area: "AREA PANGKALAN BUN" },
-  { kode_unit: 375, nama_unit: "ULD KUDANGAN",         area: "AREA PANGKALAN BUN" },
-  { kode_unit: 376, nama_unit: "ULD MENDAWAI",         area: "AREA PANGKALAN BUN" },
-  { kode_unit: 382, nama_unit: "ULD PAGATAN",          area: "AREA PANGKALAN BUN" },
-  { kode_unit: 385, nama_unit: "ULD RANGGA ILUNG",     area: "AREA KUALA KAPUAS" },
-  { kode_unit: 390, nama_unit: "ULD TELAGA",           area: "AREA PALANGKARAYA" },
-  { kode_unit: 391, nama_unit: "ULD TELAGA PULANG",    area: "AREA PANGKALAN BUN" },
-  { kode_unit: 395, nama_unit: "ULD TUMBANG MANJUL",   area: "AREA PANGKALAN BUN" },
-  { kode_unit: 399, nama_unit: "ULD TUMBANG SENAMANG", area: "AREA PALANGKARAYA" },
-  { kode_unit: 910, nama_unit: "ULD MANGKATIP",        area: "AREA KUALA KAPUAS" },
-  { kode_unit: 911, nama_unit: "ULD TELUK BETUNG",     area: "AREA KUALA KAPUAS" },
-  { kode_unit: 913, nama_unit: "ULD TUMPUNG LAUNG",    area: "AREA KUALA KAPUAS" },
-  { kode_unit: 915, nama_unit: "ULD SUNGAI BALI",      area: "AREA TANAH BUMBU" },
-  { kode_unit: 917, nama_unit: "ULD KERASIAN",         area: "AREA TANAH BUMBU" },
-  { kode_unit: 918, nama_unit: "ULD KERAYAAN",         area: "AREA TANAH BUMBU" },
-  { kode_unit: 919, nama_unit: "ULD KERUMPUTAN",       area: "AREA TANAH BUMBU" },
-  { kode_unit: 920, nama_unit: "ULD MARABATUAN",       area: "AREA TANAH BUMBU" },
+  // UL BANDA ACEH
+  { kode_unit: 936, nama_unit: "ULD SABANG",      ul: "BANDA ACEH" },
+  { kode_unit: 937, nama_unit: "ULD COT ABEUK",   ul: "BANDA ACEH" },
+  { kode_unit: 938, nama_unit: "ULD DEUDAP",      ul: "BANDA ACEH" },
+  { kode_unit: 939, nama_unit: "ULD SEURAPUNG",   ul: "BANDA ACEH" },
+  // UL LANGSA
+  { kode_unit: 940, nama_unit: "ULD AYANGAN",     ul: "LANGSA" },
+  { kode_unit: 942, nama_unit: "ULD PUSONG",      ul: "LANGSA" },
+  { kode_unit: 943, nama_unit: "ULD KUNING",      ul: "LANGSA" },
+  { kode_unit: 945, nama_unit: "ULD REMA",        ul: "LANGSA" },
+  // UL MEULABOH
+  { kode_unit: 947, nama_unit: "ULD SEUNEBOK",    ul: "MEULABOH" },
+  { kode_unit: 952, nama_unit: "ULD LASIKIN",     ul: "MEULABOH" },
+  { kode_unit: 953, nama_unit: "ULD KAMPUNG AIE", ul: "MEULABOH" },
+  { kode_unit: 954, nama_unit: "ULD SIBIGO",      ul: "MEULABOH" },
+  { kode_unit: 955, nama_unit: "ULD TEUPAH",      ul: "MEULABOH" },
+  { kode_unit: 956, nama_unit: "ULD SIUMAT",      ul: "MEULABOH" },
+  // UL SUBULUSSALAM
+  { kode_unit: 957, nama_unit: "ULD SETIA",       ul: "SUBULUSSALAM" },
+  { kode_unit: 958, nama_unit: "ULD TAPAK TUAN",  ul: "SUBULUSSALAM" },
+  { kode_unit: 959, nama_unit: "ULD KOTA FAJAR",  ul: "SUBULUSSALAM" },
+  { kode_unit: 961, nama_unit: "ULD PULO BALAI",  ul: "SUBULUSSALAM" },
+  { kode_unit: 963, nama_unit: "ULD HALOBAN",     ul: "SUBULUSSALAM" },
 ]
 
 // =============================================
