@@ -6505,12 +6505,18 @@ function _renderPengTable(data) {
     var sourceBadge = isManual
       ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:700;">MANUAL</span>'
       : '<span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:700;">SHEETS</span>'
-    var aksiBtn = _pengIsAdmin
-      ? '<button onclick="_pengEditMesin(' + m.id_mesin + ')" title="Edit mesin" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.75rem;cursor:pointer;margin-right:4px;">✏️ Edit</button>' +
-        '<button onclick="_pengHapusMesin(' + m.id_mesin + ')" title="Hapus mesin" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.75rem;cursor:pointer;">🗑️ Hapus</button>'
-      : (isManual
-          ? '<span style="color:#94a3b8;font-size:0.72rem;font-style:italic;">Login admin</span>'
-          : '<span style="color:#94a3b8;font-size:0.75rem;">–</span>')
+    var editBtn  = '<button onclick="_pengEditMesin(' + m.id_mesin + ')" title="Edit mesin" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.75rem;cursor:pointer;margin-right:4px;">✏️ Edit</button>'
+    var hapusBtn = '<button onclick="_pengHapusMesin(' + m.id_mesin + ')" title="Hapus mesin" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.75rem;cursor:pointer;">🗑️ Hapus</button>'
+    var aksiBtn
+    if (isManual) {
+      // Mesin MANUAL — selalu tampilkan tombol (admin sudah otomatis login saat masuk tab DATA)
+      aksiBtn = editBtn + hapusBtn
+    } else if (_pengIsAdmin) {
+      // Mesin SHEETS — hanya saat admin login
+      aksiBtn = editBtn + hapusBtn
+    } else {
+      aksiBtn = '<span style="color:#94a3b8;font-size:0.75rem;">–</span>'
+    }
     var rowBg = i % 2 === 0 ? '#fff' : '#f8fafc'
     return '<tr style="background:' + rowBg + ';font-size:0.8rem;" data-id="' + m.id_mesin + '">' +
       '<td style="padding:6px 2px;text-align:center;color:#64748b;">' + (i+1) + '</td>' +
