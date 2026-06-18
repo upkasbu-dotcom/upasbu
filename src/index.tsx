@@ -24,6 +24,7 @@ const JSON_URL = 'https://script.google.com/macros/s/AKfycbyox_Dfb7q6ONciCIGF7yY
 // JSON mesin menggunakan field: "ULD", "ID Mesin", "Nama Mesin", "Mesin", "Tipe", "Nomor Seri", "DM (kW)"
 const ULD_MAP: Record<string, { kode_unit: number, nama_unit: string, up3: string }> = {
   // UL BANDA ACEH
+  'SABANG':      { kode_unit: 936, nama_unit: 'ULD SABANG',      up3: 'BANDA ACEH' },
   'COT ABEUK':   { kode_unit: 937, nama_unit: 'ULD COT ABEUK',   up3: 'BANDA ACEH' },
   'DEUDAP':      { kode_unit: 938, nama_unit: 'ULD DEUDAP',      up3: 'BANDA ACEH' },
   'SEURAPUNG':   { kode_unit: 939, nama_unit: 'ULD SEURAPUNG',   up3: 'BANDA ACEH' },
@@ -32,21 +33,19 @@ const ULD_MAP: Record<string, { kode_unit: number, nama_unit: string, up3: strin
   'PUSONG':      { kode_unit: 942, nama_unit: 'ULD PUSONG',      up3: 'LANGSA' },
   'KUNING':      { kode_unit: 943, nama_unit: 'ULD KUNING',      up3: 'LANGSA' },
   'REMA':        { kode_unit: 945, nama_unit: 'ULD REMA',        up3: 'LANGSA' },
-  // UL MEULABOH
+  // UL MEULABOH (referensi: "SEUNEUBOK" → di JSON mesin ditulis "SEUNEBOK")
   'SEUNEBOK':    { kode_unit: 947, nama_unit: 'ULD SEUNEBOK',    up3: 'MEULABOH' },
   'LASIKIN':     { kode_unit: 952, nama_unit: 'ULD LASIKIN',     up3: 'MEULABOH' },
   'KAMPUNG AIE': { kode_unit: 953, nama_unit: 'ULD KAMPUNG AIE', up3: 'MEULABOH' },
   'SIBIGO':      { kode_unit: 954, nama_unit: 'ULD SIBIGO',      up3: 'MEULABOH' },
-  'TEUPAH':      { kode_unit: 955, nama_unit: 'ULD TEUPAH',      up3: 'MEULABOH' },
-  'SIUMAT':      { kode_unit: 956, nama_unit: 'ULD SIUMAT',      up3: 'MEULABOH' },
-  // UL SUBULUSSALAM
+  'TEUPAH':      { kode_unit: 955, nama_unit: 'ULD TEUPAH',      up3: 'MEULABOH' },  // referensi: PULAU TEUPAH
+  'SIUMAT':      { kode_unit: 956, nama_unit: 'ULD SIUMAT',      up3: 'MEULABOH' },  // referensi: PULAU SIUMAT
+  // UL SUBULUSSALAM (referensi: "TAPAKTUAN" → di JSON mesin ditulis "TAPAK TUAN")
   'SETIA':       { kode_unit: 957, nama_unit: 'ULD SETIA',       up3: 'SUBULUSSALAM' },
   'TAPAK TUAN':  { kode_unit: 958, nama_unit: 'ULD TAPAK TUAN',  up3: 'SUBULUSSALAM' },
   'KOTA FAJAR':  { kode_unit: 959, nama_unit: 'ULD KOTA FAJAR',  up3: 'SUBULUSSALAM' },
   'PULO BALAI':  { kode_unit: 961, nama_unit: 'ULD PULO BALAI',  up3: 'SUBULUSSALAM' },
   'HALOBAN':     { kode_unit: 963, nama_unit: 'ULD HALOBAN',     up3: 'SUBULUSSALAM' },
-  // SABANG: tidak ada di referensi kode_unit, gunakan kode sementara
-  'SABANG':      { kode_unit: 936, nama_unit: 'ULD SABANG',      up3: 'BANDA ACEH' },
 }
 
 // ============================================================
