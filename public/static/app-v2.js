@@ -6514,8 +6514,8 @@ function _renderPengTable(data) {
     return '<tr style="background:' + rowBg + ';font-size:0.8rem;" data-id="' + m.id_mesin + '">' +
       '<td style="padding:6px 2px;text-align:center;color:#64748b;">' + (i+1) + '</td>' +
       '<td style="padding:6px;text-align:left;white-space:nowrap;">' + (m.nama_unit || '-') + '</td>' +
-      '<td style="padding:6px;text-align:left;">' + (m.nama_mesin || '-') + '</td>' +
-      '<td style="padding:6px;text-align:left;white-space:nowrap;">' + (m.mesin || '-') + '</td>' +
+      '<td style="padding:6px;text-align:left;word-break:break-word;overflow-wrap:break-word;">' + (m.nama_mesin || '-') + '</td>' +
+      '<td style="padding:6px;text-align:left;word-break:break-word;overflow-wrap:break-word;">' + (m.mesin || '-') + '</td>' +
       '<td style="padding:6px;white-space:nowrap;">' + (m.type || '-') + '</td>' +
       '<td style="padding:6px;white-space:nowrap;">' + (m.s_n || '-') + '</td>' +
       '<td style="padding:6px;text-align:center;">' + (m.terpasang !== null && m.terpasang !== undefined ? m.terpasang : '-') + '</td>' +
