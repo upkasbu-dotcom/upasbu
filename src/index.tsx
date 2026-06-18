@@ -493,41 +493,45 @@ app.post('/api/mesin-cache/add', async (c) => {
 app.put('/api/mesin-cache/:id_mesin', async (c) => {
   try {
     const id = Number(c.req.param('id_mesin'))
-    // Cek apakah mesin ini is_manual=1
+    const body = await c.req.json() as {
+      up3?: string, kode_unit?: number, nama_unit?: string,
+      mesin?: string, type?: string, s_n?: string, nama_mesin?: string,
+      terpasang?: number, force?: boolean
+    }
+    // Cek apakah mesin ada
     const check = await c.env.DB.prepare(
       `SELECT is_manual FROM mesin_cache WHERE id_mesin = ?`
     ).bind(id).first() as { is_manual: number } | null
     if (!check) return c.json({ success: false, error: 'Mesin tidak ditemukan' }, 404)
-    if (!check.is_manual) return c.json({ success: false, error: 'Hanya mesin manual yang bisa diedit' }, 403)
-    const body = await c.req.json() as {
-      up3?: string, kode_unit?: number, nama_unit?: string,
-      mesin?: string, type?: string, s_n?: string, nama_mesin?: string, terpasang?: number
-    }
+    // Jika bukan manual & tidak ada flag force → tolak
+    if (!check.is_manual && !body.force) return c.json({ success: false, error: 'Hanya mesin manual yang bisa diedit tanpa flag force' }, 403)
     await c.env.DB.prepare(`
       UPDATE mesin_cache
       SET up3=?, kode_unit=?, nama_unit=?, mesin=?, type=?, s_n=?, nama_mesin=?, terpasang=?
-      WHERE id_mesin = ? AND is_manual = 1
+      WHERE id_mesin = ?
     `).bind(
       body.up3 || '', body.kode_unit || 0, body.nama_unit || '',
       body.mesin || '', body.type || null, body.s_n || null,
-      body.nama_mesin || body.mesin || '', body.terpasang || null, id
+      body.nama_mesin || body.mesin || '', body.terpasang ?? null, id
     ).run()
     return c.json({ success: true, id_mesin: id })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }
 })
 
-// Hapus mesin (hanya is_manual=1)
+// Hapus mesin dari cache (manual: langsung hapus; sheets: hapus dari cache lokal, akan sync ulang besok)
 app.delete('/api/mesin-cache/:id_mesin', async (c) => {
   try {
-    const id = Number(c.req.param('id_mesin'))
-    // Cek apakah mesin ini is_manual=1
+    const id    = Number(c.req.param('id_mesin'))
+    const force = c.req.query('force') === '1'
+    // Cek apakah mesin ada
     const check = await c.env.DB.prepare(
       `SELECT is_manual FROM mesin_cache WHERE id_mesin = ?`
     ).bind(id).first() as { is_manual: number } | null
     if (!check) return c.json({ success: false, error: 'Mesin tidak ditemukan' }, 404)
-    if (!check.is_manual) return c.json({ success: false, error: 'Hanya mesin manual yang bisa dihapus' }, 403)
+    // Jika bukan manual & tidak ada flag force → tolak
+    if (!check.is_manual && !force) return c.json({ success: false, error: 'Gunakan ?force=1 untuk hapus mesin SHEETS dari cache' }, 403)
     const r = await c.env.DB.prepare(
-      `DELETE FROM mesin_cache WHERE id_mesin = ? AND is_manual = 1`
+      `DELETE FROM mesin_cache WHERE id_mesin = ?`
     ).bind(id).run()
     return c.json({ success: true, deleted: r.meta.changes })
   } catch (e: any) { return c.json({ success: false, error: e.message }, 500) }

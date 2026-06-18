@@ -6505,10 +6505,12 @@ function _renderPengTable(data) {
     var sourceBadge = isManual
       ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:700;">MANUAL</span>'
       : '<span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:700;">SHEETS</span>'
-    var aksiBtn = isManual
-      ? '<button onclick="_pengEditMesin(' + m.id_mesin + ')" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.75rem;cursor:pointer;margin-right:4px;">Edit</button>' +
-        '<button onclick="_pengHapusMesin(' + m.id_mesin + ')" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.75rem;cursor:pointer;">Hapus</button>'
-      : '<span style="color:#94a3b8;font-size:0.75rem;">–</span>'
+    var aksiBtn = _pengIsAdmin
+      ? '<button onclick="_pengEditMesin(' + m.id_mesin + ')" title="Edit mesin" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.75rem;cursor:pointer;margin-right:4px;">✏️ Edit</button>' +
+        '<button onclick="_pengHapusMesin(' + m.id_mesin + ')" title="Hapus mesin" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.75rem;cursor:pointer;">🗑️ Hapus</button>'
+      : (isManual
+          ? '<span style="color:#94a3b8;font-size:0.72rem;font-style:italic;">Login admin</span>'
+          : '<span style="color:#94a3b8;font-size:0.75rem;">–</span>')
     var rowBg = i % 2 === 0 ? '#fff' : '#f8fafc'
     return '<tr style="background:' + rowBg + ';font-size:0.8rem;" data-id="' + m.id_mesin + '">' +
       '<td style="padding:6px 2px;text-align:center;color:#64748b;">' + (i+1) + '</td>' +
@@ -6548,25 +6550,30 @@ function showTambahMesinForm() {
   _pengOpenModal(null)
 }
 
-// Edit mesin manual
+// Edit mesin (manual atau SHEETS jika admin)
 function _pengEditMesin(idMesin) {
+  if (!_pengIsAdmin) { showToast('Login admin untuk mengedit mesin', 'error'); return }
   var m = _pengAllMesin.find(function(x) { return x.id_mesin == idMesin })
   if (!m) { showToast('Mesin tidak ditemukan', 'error'); return }
-  if (!m.is_manual) { showToast('Hanya mesin manual yang bisa diedit', 'error'); return }
   _pengOpenModal(m)
 }
 
-// Hapus mesin manual
+// Hapus mesin (manual langsung hapus; SHEETS hapus dari cache lokal saja — akan sync ulang keesokan hari)
 async function _pengHapusMesin(idMesin) {
+  if (!_pengIsAdmin) { showToast('Login admin untuk menghapus mesin', 'error'); return }
   var m = _pengAllMesin.find(function(x) { return x.id_mesin == idMesin })
   if (!m) { showToast('Mesin tidak ditemukan', 'error'); return }
-  if (!m.is_manual) { showToast('Hanya mesin manual yang bisa dihapus', 'error'); return }
-  if (!confirm('Hapus mesin "' + (m.nama_mesin || m.mesin) + '"?\nTindakan ini tidak bisa dibatalkan.')) return
+  var isManual = m.is_manual == 1
+  var pesanKonfirmasi = isManual
+    ? 'Hapus mesin MANUAL "' + (m.nama_mesin || m.mesin) + '"?\n\nMesin ini tidak akan kembali kecuali ditambah ulang secara manual.'
+    : 'Hapus mesin SHEETS "' + (m.nama_mesin || m.mesin) + '" dari cache lokal?\n\n⚠️ Mesin ini akan muncul kembali saat sync otomatis dari Google Sheets (besok).\nGunakan fitur ini hanya untuk membersihkan data sementara.'
+  if (!confirm(pesanKonfirmasi)) return
   try {
-    var res  = await fetch('/api/mesin-cache/' + idMesin, { method: 'DELETE' })
+    var url = '/api/mesin-cache/' + idMesin + (isManual ? '' : '?force=1')
+    var res  = await fetch(url, { method: 'DELETE' })
     var json = await res.json()
     if (!json.success) throw new Error(json.error || 'Gagal hapus')
-    showToast('Mesin berhasil dihapus', 'success')
+    showToast('Mesin "' + (m.nama_mesin || m.mesin) + '" berhasil dihapus dari cache', 'success')
     _allUnitMesin = []  // reset cache picker
     loadPengaturanMesin(_pengCurrentFilter)
   } catch(e) {
@@ -6580,8 +6587,11 @@ function _pengShowMesinModal(mesin) {
   var old = document.getElementById('_peng-mesin-modal')
   if (old) old.remove()
 
-  var isEdit = !!mesin
-  var title  = isEdit ? 'Edit Mesin Manual' : 'Tambah Mesin Baru'
+  var isEdit   = !!mesin
+  var isSheets = isEdit && mesin.is_manual == 0
+  var title    = isEdit
+    ? (isSheets ? '✏️ Edit Mesin SHEETS' : '✏️ Edit Mesin Manual')
+    : '➕ Tambah Mesin Baru'
 
   // Hitung id_mesin default (max + 1)
   var maxId = 0
@@ -6600,16 +6610,26 @@ function _pengShowMesinModal(mesin) {
     return '<option value="' + u.kode_unit + '" data-nama="' + u.nama_unit + '"' + sel + '>' + u.nama_unit + '</option>'
   }).join('')
 
+  // Banner peringatan khusus mesin SHEETS
+  var sheetsBanner = isSheets
+    ? '<div style="padding:10px 14px;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;font-size:0.75rem;color:#92400e;margin-bottom:2px;">' +
+        '⚠️ <b>Mesin SHEETS</b> — Data ini bersumber dari Google Sheets dan akan di-sync ulang besok.<br>' +
+        'Perubahan yang Anda simpan akan <b>tetap aktif sampai sync berikutnya</b>. ' +
+        'Gunakan untuk koreksi sementara (misal: perbaiki nilai DM terpasang).' +
+      '</div>'
+    : ''
+
   var modal = document.createElement('div')
   modal.id  = '_peng-mesin-modal'
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;'
   modal.innerHTML =
     '<div style="background:#fff;border-radius:12px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">' +
-      '<div style="background:#1e3a5f;color:#fff;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;justify-content:space-between;align-items:center;">' +
+      '<div style="background:' + (isSheets ? '#b45309' : '#1e3a5f') + ';color:#fff;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;justify-content:space-between;align-items:center;">' +
         '<span style="font-weight:700;font-size:0.95rem;">' + title + '</span>' +
         '<button onclick="document.getElementById(\'_peng-mesin-modal\').remove()" style="background:none;border:none;color:#fff;font-size:1.3rem;cursor:pointer;line-height:1;">&times;</button>' +
       '</div>' +
       '<div style="padding:20px;display:flex;flex-direction:column;gap:14px;">' +
+        sheetsBanner +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
           '<div>' +
             '<label style="font-size:0.78rem;color:#64748b;display:block;margin-bottom:4px;">ID Mesin *</label>' +
@@ -6700,9 +6720,13 @@ async function _pengSaveMesin(editId) {
     var btn = document.querySelector('#_peng-mesin-modal button[onclick*="_pengSaveMesin"]')
     if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan...' }
 
+    // Cek apakah mesin yang diedit adalah SHEETS (force=true diperlukan backend)
+    var editedMesin = isEdit ? _pengAllMesin.find(function(x) { return x.id_mesin == editId }) : null
+    var isEditSheets = editedMesin && !editedMesin.is_manual
     var body = { id_mesin: idMesin, up3: up3, kode_unit: kodeUnit, nama_unit: namaUnit,
                  mesin: mesin, type: type || null, s_n: sn || null,
-                 nama_mesin: namaMesin, terpasang: terpasang }
+                 nama_mesin: namaMesin, terpasang: terpasang,
+                 force: isEditSheets ? true : undefined }
     var res  = await fetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     var json = await res.json()
     if (!json.success) throw new Error(json.error || 'Gagal menyimpan')
