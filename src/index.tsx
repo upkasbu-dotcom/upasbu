@@ -4358,7 +4358,7 @@ async function autoKirimNeraca(
           excelUrl:    `${origin}/api/xlsx?tanggal=${tanggalKirim}`,
           callbackUrl
         }),
-        signal: AbortSignal.timeout(58000)  // 58s — Render cold start bisa 30-60s
+        signal: AbortSignal.timeout(25000)  // 25s — Render warm ~5s; ctx.waitUntil memberi waktu retry
       })
       let ssRes = await doNeracaShot()
       let ssJson = await ssRes.json() as any
@@ -4509,7 +4509,7 @@ async function autoKirimHopBbm(
           message:     `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`,
           callbackUrl
         }),
-        signal: AbortSignal.timeout(58000)  // 58s — Render cold start bisa 30-60s
+        signal: AbortSignal.timeout(25000)  // 25s — Render warm ~5s; ctx.waitUntil memberi waktu retry
       })
       let shotRes = await doHopShot()
       let shotJson = await shotRes.json() as any
@@ -4804,7 +4804,7 @@ const ORIGIN_PROD = 'https://upasbu.pages.dev'
 async function handleScheduled(
   event: ScheduledEvent,
   env: { DB: D1Database },
-  _ctx: ExecutionContext
+  ctx: ExecutionContext
 ): Promise<void> {
   const db       = env.DB
   const cronExpr = event.cron
@@ -4812,18 +4812,25 @@ async function handleScheduled(
   try {
     if (cronExpr === '* * * * *') {
       // Setiap menit — keep-alive ping + cek HOP BBM → screenshot + kirim
-      try {
-        await fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/health`, { signal: AbortSignal.timeout(5000) })
-      } catch(_) { /* Render free tier: spin-down normal */ }
+      // Gunakan ctx.waitUntil agar CF tidak memotong eksekusi di 30s
+      ctx.waitUntil((async () => {
+        // 1. Ping dulu — beri Render ~10 detik untuk warm up setelah cold start
+        try {
+          await fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/health`, { signal: AbortSignal.timeout(10000) })
+          // Jeda 2 detik: beri waktu Render fully ready setelah ping
+          await new Promise(r => setTimeout(r, 2000))
+        } catch(_) { /* Render free tier: spin-down normal */ }
 
-      const hopResult = await autoKirimHopBbm(db, ORIGIN_PROD)
-      if (hopResult.skipped) {
-        console.log(`[cron HOP] skip: ${hopResult.reason}`)
-      } else if (hopResult.error) {
-        console.error(`[cron HOP] error: ${hopResult.error}`)
-      } else {
-        console.log(`[cron HOP] berhasil: ${hopResult.message}`)
-      }
+        // 2. Sekarang baru trigger HOP BBM (Render sudah warm)
+        const hopResult = await autoKirimHopBbm(db, ORIGIN_PROD)
+        if (hopResult.skipped) {
+          console.log(`[cron HOP] skip: ${hopResult.reason}`)
+        } else if (hopResult.error) {
+          console.error(`[cron HOP] error: ${hopResult.error}`)
+        } else {
+          console.log(`[cron HOP] berhasil: ${hopResult.message}`)
+        }
+      })())
 
     } else if (cronExpr === '0 2 * * *') {
       // 02:00 UTC = 10:00 WITA — notif HOP BBM teks ke AMC PRINDAVAN
@@ -4832,33 +4839,42 @@ async function handleScheduled(
 
     } else if (MALAM_CRONS.includes(cronExpr)) {
       // 18:00–23:00 WITA — cek neraca malam 19/19 → kirim 3 laporan
-      console.log(`[cron ${cronExpr}] Mulai cek 3 laporan malam WITA...`)
+      // Gunakan ctx.waitUntil agar CF tidak memotong eksekusi di 30s
+      ctx.waitUntil((async () => {
+        console.log(`[cron ${cronExpr}] Mulai cek 3 laporan malam WITA...`)
 
-      // 1. Screenshot Neraca Daya (jika belum pernah dikirim untuk tanggal ini)
-      const ssResult = await autoKirimNeraca(db, ORIGIN_PROD)
-      if (ssResult.skipped) {
-        console.log(`[cron neraca-screenshot] skip: ${ssResult.reason}`)
-      } else if (ssResult.error) {
-        console.error(`[cron neraca-screenshot] error: ${ssResult.error}`)
-      } else {
-        console.log(`[cron neraca-screenshot] berhasil: ${ssResult.message}`)
-      }
+        // Ping dulu — pastikan Render warm sebelum trigger screenshot
+        try {
+          await fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/health`, { signal: AbortSignal.timeout(10000) })
+          await new Promise(r => setTimeout(r, 2000))
+        } catch(_) {}
 
-      // 2. Tabel Neraca Daya teks WA (jika belum pernah dikirim untuk tanggal ini)
-      const tblResult = await autoKirimTabelNeraca(db, ORIGIN_PROD)
-      if (tblResult.skipped) {
-        console.log(`[cron neraca-tabel] skip: ${tblResult.reason}`)
-      } else if (tblResult.error) {
-        console.error(`[cron neraca-tabel] error: ${tblResult.error}`)
-      } else {
-        console.log(`[cron neraca-tabel] berhasil: ${tblResult.message}`)
-      }
+        // 1. Screenshot Neraca Daya (jika belum pernah dikirim untuk tanggal ini)
+        const ssResult = await autoKirimNeraca(db, ORIGIN_PROD)
+        if (ssResult.skipped) {
+          console.log(`[cron neraca-screenshot] skip: ${ssResult.reason}`)
+        } else if (ssResult.error) {
+          console.error(`[cron neraca-screenshot] error: ${ssResult.error}`)
+        } else {
+          console.log(`[cron neraca-screenshot] berhasil: ${ssResult.message}`)
+        }
 
-      // 3. Notif teks status neraca daya ke AMC PRINDAVAN (hanya jam 20:00 WITA = 12:00 UTC)
-      if (cronExpr === '0 12 * * *') {
-        const { pesan, mentions } = await notifNeracaDaya(db)
-        await kirimPesanGrup(pesan, mentions)
-      }
+        // 2. Tabel Neraca Daya teks WA (jika belum pernah dikirim untuk tanggal ini)
+        const tblResult = await autoKirimTabelNeraca(db, ORIGIN_PROD)
+        if (tblResult.skipped) {
+          console.log(`[cron neraca-tabel] skip: ${tblResult.reason}`)
+        } else if (tblResult.error) {
+          console.error(`[cron neraca-tabel] error: ${tblResult.error}`)
+        } else {
+          console.log(`[cron neraca-tabel] berhasil: ${tblResult.message}`)
+        }
+
+        // 3. Notif teks status neraca daya ke AMC PRINDAVAN (hanya jam 20:00 WITA = 12:00 UTC)
+        if (cronExpr === '0 12 * * *') {
+          const { pesan, mentions } = await notifNeracaDaya(db)
+          await kirimPesanGrup(pesan, mentions)
+        }
+      })())
     }
   } catch(e:any) {
     console.error(`[cron ${cronExpr}] Error:`, e.message)
