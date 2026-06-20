@@ -4642,7 +4642,7 @@ app.get('/api/hop-check', async (c) => {
     const nowWita = new Date(new Date().getTime() + 8 * 60 * 60 * 1000)
     const hariIni  = nowWita.toISOString().split('T')[0]
 
-    // Cari tanggal yang sudah 19/19 saldo_akhir
+    // Cari tanggal yang sudah 19/19 saldo_akhir (7 hari ke belakang)
     const kandidat = await db.prepare(`
       SELECT tanggal, COUNT(*) as jumlah_unit
       FROM lap_operasional
@@ -4658,7 +4658,7 @@ app.get('/api/hop-check', async (c) => {
       return c.json({ perlu_kirim: false, reason: 'Belum ada tanggal lengkap 19/19' })
     }
 
-    // Cek sudah dikirim atau belum
+    // Cek wa_kirim_log — sudah pernah berhasil dikirim? (satu-satunya penjaga duplikat)
     const sudah = await db.prepare(
       `SELECT 1 FROM wa_kirim_log WHERE tanggal=? AND jenis='hop_screenshot' LIMIT 1`
     ).bind(kandidat.tanggal).first()
@@ -4667,23 +4667,10 @@ app.get('/api/hop-check', async (c) => {
       return c.json({ perlu_kirim: false, reason: `${kandidat.tanggal} sudah dikirim` })
     }
 
-    // Cek pending flag (sedang diproses)
-    const pending = await db.prepare(
-      `SELECT value FROM kv_store WHERE key='hop-pending-tanggal' AND (expires_at IS NULL OR expires_at > ?)`
-    ).bind(Math.floor(Date.now() / 1000)).first<{ value: string }>()
-
-    if (pending?.value === kandidat.tanggal) {
-      return c.json({ perlu_kirim: false, reason: `${kandidat.tanggal} sedang diproses` })
-    }
-
-    // Ada yang perlu dikirim — set pending flag (TTL 3 menit)
-    const expiresAt = Math.floor(Date.now() / 1000) + 180
-    await db.prepare(`
-      INSERT INTO kv_store (key, value, expires_at, updated_at)
-      VALUES ('hop-pending-tanggal', ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at, updated_at=CURRENT_TIMESTAMP
-    `).bind(kandidat.tanggal, expiresAt).run()
-
+    // Belum dikirim — langsung return perlu_kirim: true
+    // TIDAK ada pending flag — CF cron boleh fire-and-forget setiap menit sampai callback masuk
+    // Render yang handle duplikat: jika request sudah diproses, Render return queued/success dan callback
+    // wa_kirim_log UNIQUE constraint mencegah double-catat di DB
     const origin = new URL(c.req.url).origin
     return c.json({
       perlu_kirim: true,
@@ -4731,27 +4718,14 @@ app.get('/api/neraca-check', async (c) => {
 
     if (!kandidat) return c.json({ perlu_kirim: false, reason: 'Belum ada tanggal dengan data malam lengkap 19/19' })
 
-    // Cek wa_kirim_log — sudah pernah dikirim?
+    // Cek wa_kirim_log — sudah pernah berhasil dikirim? (satu-satunya penjaga duplikat)
     const sudah = await db.prepare(
       `SELECT 1 FROM wa_kirim_log WHERE tanggal=? AND jenis='neraca_screenshot' LIMIT 1`
     ).bind(kandidat.tanggal).first()
     if (sudah) return c.json({ perlu_kirim: false, reason: `${kandidat.tanggal} sudah dikirim` })
 
-    // Cek pending flag (TTL 3 menit) — sedang diproses?
-    const pending = await db.prepare(
-      `SELECT value FROM kv_store WHERE key='neraca-pending-tanggal' AND (expires_at IS NULL OR expires_at > ?)`
-    ).bind(Math.floor(Date.now() / 1000)).first<{ value: string }>()
-    if (pending?.value === kandidat.tanggal)
-      return c.json({ perlu_kirim: false, reason: `${kandidat.tanggal} sedang diproses` })
-
-    // Set pending flag TTL 3 menit
-    const expiresAt = Math.floor(Date.now() / 1000) + 180
-    await db.prepare(`
-      INSERT INTO kv_store (key, value, expires_at, updated_at)
-      VALUES ('neraca-pending-tanggal', ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at, updated_at=CURRENT_TIMESTAMP
-    `).bind(kandidat.tanggal, expiresAt).run()
-
+    // Belum dikirim — langsung return perlu_kirim: true
+    // TIDAK ada pending flag — Render handle duplikat internal, wa_kirim_log UNIQUE jaga double-catat
     const origin = new URL(c.req.url).origin
     return c.json({
       perlu_kirim: true,
