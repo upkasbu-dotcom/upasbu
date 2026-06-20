@@ -4698,6 +4698,74 @@ app.get('/api/hop-check', async (c) => {
 })
 
 // ============================================================
+// ENDPOINT: /api/neraca-check — cek apakah screenshot neraca daya perlu dikirim
+// Dipanggil oleh MALAM_CRONS fire-and-forget dan Render polling (v13+)
+// Return: { perlu_kirim, tanggal, origin, callbackUrl } | { perlu_kirim: false, reason }
+// ============================================================
+app.get('/api/neraca-check', async (c) => {
+  try {
+    const db = c.env.DB
+    const NERACA_ORDER   = [399,390,382,391,376,373,395,375,366,910,911,385,913,915,920,917,918,919,372]
+    const REQUIRED_COUNT = NERACA_ORDER.length  // 19
+
+    // Waktu WITA sekarang
+    const nowWita = new Date(new Date().getTime() + 8 * 60 * 60 * 1000)
+    const hariIni  = nowWita.toISOString().split('T')[0]
+    const batas7   = (() => { const d = new Date(nowWita); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0] })()
+
+    // Cari tanggal terbaru dengan data MALAM lengkap 19/19
+    const kandidat = await db.prepare(`
+      SELECT dm.tanggal,
+        COUNT(DISTINCT CASE
+          WHEN CAST(dm.jam AS INTEGER) >= 18 OR CAST(dm.jam AS INTEGER) <= 5
+          THEN mc.kode_unit END) as cnt_malam
+      FROM data_monitoring dm
+      JOIN mesin_cache mc ON dm.mesin_id = mc.id_mesin
+      WHERE mc.kode_unit IN (${NERACA_ORDER.join(',')})
+        AND dm.tanggal >= ? AND dm.tanggal <= ?
+      GROUP BY dm.tanggal
+      HAVING cnt_malam >= ?
+      ORDER BY dm.tanggal DESC
+      LIMIT 1
+    `).bind(batas7, hariIni, REQUIRED_COUNT).first<{ tanggal: string, cnt_malam: number }>()
+
+    if (!kandidat) return c.json({ perlu_kirim: false, reason: 'Belum ada tanggal dengan data malam lengkap 19/19' })
+
+    // Cek wa_kirim_log — sudah pernah dikirim?
+    const sudah = await db.prepare(
+      `SELECT 1 FROM wa_kirim_log WHERE tanggal=? AND jenis='neraca_screenshot' LIMIT 1`
+    ).bind(kandidat.tanggal).first()
+    if (sudah) return c.json({ perlu_kirim: false, reason: `${kandidat.tanggal} sudah dikirim` })
+
+    // Cek pending flag (TTL 3 menit) — sedang diproses?
+    const pending = await db.prepare(
+      `SELECT value FROM kv_store WHERE key='neraca-pending-tanggal' AND (expires_at IS NULL OR expires_at > ?)`
+    ).bind(Math.floor(Date.now() / 1000)).first<{ value: string }>()
+    if (pending?.value === kandidat.tanggal)
+      return c.json({ perlu_kirim: false, reason: `${kandidat.tanggal} sedang diproses` })
+
+    // Set pending flag TTL 3 menit
+    const expiresAt = Math.floor(Date.now() / 1000) + 180
+    await db.prepare(`
+      INSERT INTO kv_store (key, value, expires_at, updated_at)
+      VALUES ('neraca-pending-tanggal', ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at, updated_at=CURRENT_TIMESTAMP
+    `).bind(kandidat.tanggal, expiresAt).run()
+
+    const origin = new URL(c.req.url).origin
+    return c.json({
+      perlu_kirim: true,
+      tanggal: kandidat.tanggal,
+      cnt_malam: kandidat.cnt_malam,
+      origin,
+      callbackUrl: `${origin}/api/neraca-kirim-callback`
+    })
+  } catch(e: any) {
+    return c.json({ perlu_kirim: false, error: e.message }, 200)
+  }
+})
+
+// ============================================================
 // ENDPOINT: /api/neraca-tabel-kirim (GET) — trigger manual tabel neraca teks
 // ============================================================
 app.get('/api/neraca-tabel-kirim', async (c) => {
@@ -4944,27 +5012,51 @@ async function handleScheduled(
 
     } else if (MALAM_CRONS.includes(cronExpr)) {
       // 18:00–23:00 WITA — cek neraca malam 19/19 → kirim 3 laporan
-      // Gunakan ctx.waitUntil agar CF tidak memotong eksekusi di 30s
-      ctx.waitUntil((async () => {
-        console.log(`[cron ${cronExpr}] Mulai cek 3 laporan malam WITA...`)
+      // Strategi: sama seperti HOP — query DB dulu (cepat < 1s), lalu fire-and-forget ke Render
+      // CF cron selesai < 3 detik total, Render proses screenshot di background
 
-        // Ping dulu — pastikan Render warm sebelum trigger screenshot
-        try {
-          await fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/health`, { signal: AbortSignal.timeout(10000) })
-          await new Promise(r => setTimeout(r, 2000))
-        } catch(_) {}
+      // 1. Screenshot Neraca Daya — FIRE-AND-FORGET ke Render
+      try {
+        const neracaCheckRes = await fetch(`${ORIGIN_PROD}/api/neraca-check`, {
+          signal: AbortSignal.timeout(10000)
+        })
+        const neracaCheck = await neracaCheckRes.json() as any
 
-        // 1. Screenshot Neraca Daya (jika belum pernah dikirim untuk tanggal ini)
-        const ssResult = await autoKirimNeraca(db, ORIGIN_PROD)
-        if (ssResult.skipped) {
-          console.log(`[cron neraca-screenshot] skip: ${ssResult.reason}`)
-        } else if (ssResult.error) {
-          console.error(`[cron neraca-screenshot] error: ${ssResult.error}`)
+        if (neracaCheck.perlu_kirim && neracaCheck.tanggal) {
+          const { tanggal, origin, callbackUrl } = neracaCheck
+          const tglFmt = tanggal.split('-').reverse().join('.')
+
+          type Penerima = { type: 'nomor' | 'grup', target: string }
+          let penerimaneraca: Penerima[] = [{ type: 'grup', target: 'AMC UID KASELTENG' }]
+          try {
+            const raw = await kvGet(db, 'wa-penerima-neraca')
+            if (raw) penerimaneraca = JSON.parse(raw)
+          } catch(_) {}
+
+          for (const penerima of penerimaneraca) {
+            fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/screenshot`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                tanggal,
+                origin,
+                ...(penerima.type === 'nomor'
+                  ? { nomor: penerima.target }
+                  : { group: penerima.target }),
+                message: `⚡ *NERACA DAYA KALSELTENG — ${tglFmt}*\nData beban puncak malam seluruh ULD\n_AMC UID KASELTENG_`,
+                excelUrl: `${origin}/api/xlsx?tanggal=${tanggal}`,
+                callbackUrl
+              })
+            }).catch(() => {})  // fire-and-forget
+          }
+          console.log(`[cron neraca] fire-and-forget ke Render untuk ${tanggal}`)
         } else {
-          console.log(`[cron neraca-screenshot] berhasil: ${ssResult.message}`)
+          console.log(`[cron neraca] skip: ${neracaCheck.reason || 'tidak perlu kirim'}`)
         }
+      } catch(_) {}
 
-        // 2. Tabel Neraca Daya teks WA (jika belum pernah dikirim untuk tanggal ini)
+      // 2. Tabel Neraca Daya teks WA — eksekusi langsung (ringan, hanya Whacenter API, tidak butuh Render)
+      try {
         const tblResult = await autoKirimTabelNeraca(db, ORIGIN_PROD)
         if (tblResult.skipped) {
           console.log(`[cron neraca-tabel] skip: ${tblResult.reason}`)
@@ -4973,13 +5065,22 @@ async function handleScheduled(
         } else {
           console.log(`[cron neraca-tabel] berhasil: ${tblResult.message}`)
         }
+      } catch(e: any) {
+        console.error(`[cron neraca-tabel] exception: ${e.message}`)
+      }
 
-        // 3. Notif teks status neraca daya ke AMC PRINDAVAN (hanya jam 20:00 WITA = 12:00 UTC)
-        if (cronExpr === '0 12 * * *') {
+      // 3. Notif teks status neraca daya ke AMC PRINDAVAN (hanya jam 20:00 WITA = 12:00 UTC)
+      if (cronExpr === '0 12 * * *') {
+        try {
           const { pesan, mentions } = await notifNeracaDaya(db)
           await kirimPesanGrup(pesan, mentions)
+        } catch(e: any) {
+          console.error(`[cron notif-neraca] error: ${e.message}`)
         }
-      })())
+      }
+
+      // Keep-alive ping Render (terpisah)
+      fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/health`).catch(() => {})
     }
   } catch(e:any) {
     console.error(`[cron ${cronExpr}] Error:`, e.message)
