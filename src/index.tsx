@@ -4606,6 +4606,18 @@ app.post('/api/neraca-kirim-callback', async (c) => {
 })
 
 // ============================================================
+// ENDPOINT: /api/kv-get (GET) — baca kv_store value by key (untuk Render poll)
+// ============================================================
+app.get('/api/kv-get', async (c) => {
+  try {
+    const key = c.req.query('key')
+    if (!key) return c.json({ error: 'key required' }, 400)
+    const val = await kvGet(c.env.DB, key)
+    return c.json({ key, value: val })
+  } catch(e: any) { return c.json({ error: e.message }, 200) }
+})
+
+// ============================================================
 // ENDPOINT: /api/hop-auto-kirim (GET) — trigger manual / test
 // ============================================================
 app.get('/api/hop-auto-kirim', async (c) => {
@@ -4616,6 +4628,73 @@ app.get('/api/hop-auto-kirim', async (c) => {
     if (result.skipped) return c.json({ success: true, skipped: true, reason: result.reason, tanggal: result.tanggal })
     return c.json({ success: true, tanggal: result.tanggal, message: result.message })
   } catch(e:any) { return c.json({ success: false, error: e.message }, 200) }
+})
+
+// ============================================================
+// ENDPOINT: /api/hop-check (GET) — dipoll oleh Render.com setiap menit
+// Return: tanggal yang perlu dikirim (belum di-log) + jumlah unit
+// Render yang kemudian screenshot + kirim WA sendiri tanpa menunggu CF cron
+// ============================================================
+app.get('/api/hop-check', async (c) => {
+  try {
+    const db = c.env.DB
+    const TOTAL_UNITS = 19
+    const nowWita = new Date(new Date().getTime() + 8 * 60 * 60 * 1000)
+    const hariIni  = nowWita.toISOString().split('T')[0]
+
+    // Cari tanggal yang sudah 19/19 saldo_akhir
+    const kandidat = await db.prepare(`
+      SELECT tanggal, COUNT(*) as jumlah_unit
+      FROM lap_operasional
+      WHERE tanggal <= ? AND tanggal >= date(?, '-7 days')
+        AND saldo_akhir IS NOT NULL
+      GROUP BY tanggal
+      HAVING COUNT(*) >= ?
+      ORDER BY tanggal DESC
+      LIMIT 1
+    `).bind(hariIni, hariIni, TOTAL_UNITS).first<{ tanggal: string, jumlah_unit: number }>()
+
+    if (!kandidat) {
+      return c.json({ perlu_kirim: false, reason: 'Belum ada tanggal lengkap 19/19' })
+    }
+
+    // Cek sudah dikirim atau belum
+    const sudah = await db.prepare(
+      `SELECT 1 FROM wa_kirim_log WHERE tanggal=? AND jenis='hop_screenshot' LIMIT 1`
+    ).bind(kandidat.tanggal).first()
+
+    if (sudah) {
+      return c.json({ perlu_kirim: false, reason: `${kandidat.tanggal} sudah dikirim` })
+    }
+
+    // Cek pending flag (sedang diproses)
+    const pending = await db.prepare(
+      `SELECT value FROM kv_store WHERE key='hop-pending-tanggal' AND (expires_at IS NULL OR expires_at > ?)`
+    ).bind(Math.floor(Date.now() / 1000)).first<{ value: string }>()
+
+    if (pending?.value === kandidat.tanggal) {
+      return c.json({ perlu_kirim: false, reason: `${kandidat.tanggal} sedang diproses` })
+    }
+
+    // Ada yang perlu dikirim — set pending flag (TTL 3 menit)
+    const expiresAt = Math.floor(Date.now() / 1000) + 180
+    await db.prepare(`
+      INSERT INTO kv_store (key, value, expires_at, updated_at)
+      VALUES ('hop-pending-tanggal', ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at, updated_at=CURRENT_TIMESTAMP
+    `).bind(kandidat.tanggal, expiresAt).run()
+
+    const origin = new URL(c.req.url).origin
+    return c.json({
+      perlu_kirim: true,
+      tanggal: kandidat.tanggal,
+      jumlah_unit: kandidat.jumlah_unit,
+      origin,
+      callbackUrl: `${origin}/api/hop-kirim-callback`
+    })
+  } catch(e: any) {
+    return c.json({ perlu_kirim: false, error: e.message }, 200)
+  }
 })
 
 // ============================================================
