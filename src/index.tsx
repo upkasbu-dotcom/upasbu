@@ -4890,12 +4890,52 @@ async function handleScheduled(
 
   try {
     if (cronExpr === '* * * * *') {
-      // Setiap menit — HANYA ping keep-alive ke Render
-      // HOP BBM tidak lagi dihandle dari sini — Render yang poll /api/hop-check sendiri
-      // CF cron hanya menjaga Render tetap warm agar poll loop-nya tidak kena cold start
+      // Setiap menit:
+      // 1. Cek /api/hop-check — query DB saja, cepat < 1 detik
+      // 2. Jika perlu kirim → fire-and-forget ke Render /screenshot-hop (TIDAK await)
+      //    CF cron selesai segera, Render proses di background meski cold start
+      // 3. Keep-alive ping Render agar tetap warm
       try {
-        await fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/health`, { signal: AbortSignal.timeout(8000) })
-      } catch(_) { /* Render free tier: spin-down normal */ }
+        const hopCheckRes = await fetch(`${ORIGIN_PROD}/api/hop-check`, {
+          signal: AbortSignal.timeout(10000)
+        })
+        const hopCheck = await hopCheckRes.json() as any
+
+        if (hopCheck.perlu_kirim && hopCheck.tanggal) {
+          const { tanggal, origin, callbackUrl } = hopCheck
+          const tglFmt = tanggal.split('-').reverse().join('.')
+
+          // Baca penerima dari kv_store
+          type Penerima = { type: 'nomor' | 'grup', target: string }
+          let penerimaHop: Penerima[] = [{ type: 'grup', target: 'AMC UID KASELTENG' }]
+          try {
+            const raw = await kvGet(db, 'wa-penerima-hop')
+            if (raw) penerimaHop = JSON.parse(raw)
+          } catch(_) {}
+
+          // Fire-and-forget ke Render untuk setiap penerima — TIDAK await response
+          // CF cron langsung selesai, Render proses di background
+          for (const penerima of penerimaHop) {
+            fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/screenshot-hop`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                tanggal,
+                origin,
+                ...(penerima.type === 'nomor'
+                  ? { nomor: penerima.target }
+                  : { group: penerima.target }),
+                message: `📊 *HOP BBM KALSELTENG — ${tglFmt}*\nData stok & estimasi BBM per ULD (data H-1)\n_AMC UID KASELTENG_`,
+                callbackUrl
+              })
+            }).catch(() => {})  // fire-and-forget, abaikan error/timeout
+          }
+          console.log(`[cron HOP] fire-and-forget ke Render untuk ${tanggal}`)
+        }
+      } catch(_) {}
+
+      // Keep-alive ping (terpisah, tidak block)
+      fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/health`).catch(() => {})
 
     } else if (cronExpr === '0 2 * * *') {
       // 02:00 UTC = 10:00 WITA — notif HOP BBM teks ke AMC PRINDAVAN
