@@ -4890,26 +4890,12 @@ async function handleScheduled(
 
   try {
     if (cronExpr === '* * * * *') {
-      // Setiap menit — keep-alive ping + cek HOP BBM → screenshot + kirim
-      // Gunakan ctx.waitUntil agar CF tidak memotong eksekusi di 30s
-      ctx.waitUntil((async () => {
-        // 1. Ping dulu — beri Render ~10 detik untuk warm up setelah cold start
-        try {
-          await fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/health`, { signal: AbortSignal.timeout(10000) })
-          // Jeda 2 detik: beri waktu Render fully ready setelah ping
-          await new Promise(r => setTimeout(r, 2000))
-        } catch(_) { /* Render free tier: spin-down normal */ }
-
-        // 2. Sekarang baru trigger HOP BBM (Render sudah warm)
-        const hopResult = await autoKirimHopBbm(db, ORIGIN_PROD)
-        if (hopResult.skipped) {
-          console.log(`[cron HOP] skip: ${hopResult.reason}`)
-        } else if (hopResult.error) {
-          console.error(`[cron HOP] error: ${hopResult.error}`)
-        } else {
-          console.log(`[cron HOP] berhasil: ${hopResult.message}`)
-        }
-      })())
+      // Setiap menit — HANYA ping keep-alive ke Render
+      // HOP BBM tidak lagi dihandle dari sini — Render yang poll /api/hop-check sendiri
+      // CF cron hanya menjaga Render tetap warm agar poll loop-nya tidak kena cold start
+      try {
+        await fetch(`${SCREENSHOT_SERVICE_KEEPALIVE}/health`, { signal: AbortSignal.timeout(8000) })
+      } catch(_) { /* Render free tier: spin-down normal */ }
 
     } else if (cronExpr === '0 2 * * *') {
       // 02:00 UTC = 10:00 WITA — notif HOP BBM teks ke AMC PRINDAVAN
