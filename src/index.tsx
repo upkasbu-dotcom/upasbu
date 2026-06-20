@@ -4642,35 +4642,30 @@ app.get('/api/hop-check', async (c) => {
     const nowWita = new Date(new Date().getTime() + 8 * 60 * 60 * 1000)
     const hariIni  = nowWita.toISOString().split('T')[0]
 
-    // Cari tanggal yang sudah 19/19 saldo_akhir (7 hari ke belakang)
+    // Cari tanggal TERLAMA yang sudah 19/19 saldo_akhir tapi BELUM dikirim (7 hari ke belakang)
+    // ORDER BY ASC agar antrian urut: kirim dari yang paling lama dulu
+    // LEFT JOIN wa_kirim_log untuk filter yang belum dikirim sekaligus dalam 1 query
     const kandidat = await db.prepare(`
-      SELECT tanggal, COUNT(*) as jumlah_unit
-      FROM lap_operasional
-      WHERE tanggal <= ? AND tanggal >= date(?, '-7 days')
-        AND saldo_akhir IS NOT NULL
-      GROUP BY tanggal
+      SELECT lo.tanggal, COUNT(*) as jumlah_unit
+      FROM lap_operasional lo
+      WHERE lo.tanggal <= ? AND lo.tanggal >= date(?, '-7 days')
+        AND lo.saldo_akhir IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM wa_kirim_log wk
+          WHERE wk.tanggal = lo.tanggal AND wk.jenis = 'hop_screenshot'
+        )
+      GROUP BY lo.tanggal
       HAVING COUNT(*) >= ?
-      ORDER BY tanggal DESC
+      ORDER BY lo.tanggal ASC
       LIMIT 1
     `).bind(hariIni, hariIni, TOTAL_UNITS).first<{ tanggal: string, jumlah_unit: number }>()
 
     if (!kandidat) {
-      return c.json({ perlu_kirim: false, reason: 'Belum ada tanggal lengkap 19/19' })
+      return c.json({ perlu_kirim: false, reason: 'Semua tanggal lengkap 19/19 sudah dikirim' })
     }
 
-    // Cek wa_kirim_log — sudah pernah berhasil dikirim? (satu-satunya penjaga duplikat)
-    const sudah = await db.prepare(
-      `SELECT 1 FROM wa_kirim_log WHERE tanggal=? AND jenis='hop_screenshot' LIMIT 1`
-    ).bind(kandidat.tanggal).first()
-
-    if (sudah) {
-      return c.json({ perlu_kirim: false, reason: `${kandidat.tanggal} sudah dikirim` })
-    }
-
-    // Belum dikirim — langsung return perlu_kirim: true
-    // TIDAK ada pending flag — CF cron boleh fire-and-forget setiap menit sampai callback masuk
-    // Render yang handle duplikat: jika request sudah diproses, Render return queued/success dan callback
-    // wa_kirim_log UNIQUE constraint mencegah double-catat di DB
+    // Langsung return perlu_kirim: true — tidak ada pending flag
+    // Render handle duplikat via hopProcessing Set, wa_kirim_log UNIQUE jaga double-catat
     const origin = new URL(c.req.url).origin
     return c.json({
       perlu_kirim: true,
