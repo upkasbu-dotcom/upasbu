@@ -1,16 +1,28 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "upasbu",
+  "name": "mesin-monitor",
   "compatibility_date": "2026-04-13",
   "compatibility_flags": [
     "nodejs_compat"
   ],
   "pages_build_output_dir": "./dist",
+  "triggers": {
+    "crons": [
+      "* * * * *",
+      "0 2 * * *",
+      "0 10 * * *",
+      "0 11 * * *",
+      "0 12 * * *",
+      "0 13 * * *",
+      "0 14 * * *",
+      "0 15 * * *"
+    ]
+  },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "upasbu-production",
-      "database_id": "331a2d60-21ce-4071-a33d-8c546cf4b1f1"
+      "database_name": "mesin-monitor-production",
+      "database_id": "cb755a53-9a4c-4b5d-8976-88608d54c81c"
     }
   ]
 }
