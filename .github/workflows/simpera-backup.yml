@@ -1,0 +1,80 @@
+
+name: SIMPERA Backup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup-database:
+    name: Backup PostgreSQL to Cloudflare R2
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET_NAME: ${{ vars.R2_BUCKET_NAME }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+
+    steps:
+      - name: Install PostgreSQL client and AWS CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client awscli
+
+      - name: Check required configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL"
+          test -n "$R2_ACCOUNT_ID"
+          test -n "$R2_BUCKET_NAME"
+          test -n "$AWS_ACCESS_KEY_ID"
+          test -n "$AWS_SECRET_ACCESS_KEY"
+
+      - name: Create PostgreSQL backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p backup
+          pg_dump \
+            --dbname="$SUPABASE_DB_URL" \
+            --format=custom \
+            --no-owner \
+            --no-acl \
+            --file=backup/simpera.dump
+          test -s backup/simpera.dump
+
+      - name: Verify backup archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          pg_restore --list backup/simpera.dump > /dev/null
+          sha256sum backup/simpera.dump > backup/simpera.dump.sha256
+
+      - name: Upload backup to Cloudflare R2
+        shell: bash
+        run: |
+          set -euo pipefail
+          BACKUP_DATE="$(date -u +'%Y-%m-%dT%H-%M-%SZ')"
+          DESTINATION="s3://${R2_BUCKET_NAME}/database/${BACKUP_DATE}"
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+          aws --endpoint-url "$ENDPOINT" s3 cp \
+            backup/simpera.dump \
+            "${DESTINATION}/simpera.dump"
+
+          aws --endpoint-url "$ENDPOINT" s3 cp \
+            backup/simpera.dump.sha256 \
+            "${DESTINATION}/simpera.dump.sha256"
+
+          aws --endpoint-url "$ENDPOINT" s3api head-object \
+            --bucket "$R2_BUCKET_NAME" \
+            --key "database/${BACKUP_DATE}/simpera.dump" \
+            --query 'ContentLength' \
+            --output text
